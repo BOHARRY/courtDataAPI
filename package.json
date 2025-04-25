@@ -1,13 +1,15 @@
 {
-  "name": "divination-api",
+  "name": "court-api",
   "version": "1.0.0",
-  "main": "app.js",
+  "main": "index.js",
+  "type": "module",
   "scripts": {
-    "start": "node app.js"
+    "start": "node index.js"
   },
   "dependencies": {
     "express": "^4.18.2",
     "cors": "^2.8.5",
-    "uuid": "^9.0.0"
+    "dotenv": "^16.3.1",
+    "@elastic/elasticsearch": "^8.13.0"
   }
 }
