@@ -16,9 +16,16 @@ const client = new Client({
 
 app.get('/search', async (req, res) => {
   const q = req.query.q || ''
+  const page = parseInt(req.query.page || '1')     // 第幾頁，預設第1頁
+  const pageSize = parseInt(req.query.pageSize || '10') // 每頁幾筆，預設10筆
+
+  const from = (page - 1) * pageSize
+
   try {
     const result = await client.search({
       index: 'search-boooook',
+      from,
+      size: pageSize,
       query: {
         match_phrase: {
           JFULL: q
@@ -30,11 +37,16 @@ app.get('/search', async (req, res) => {
         }
       }
     })
-    res.json(result.hits.hits)
+
+    res.json({
+      total: result.hits.total.value,
+      hits: result.hits.hits
+    })
   } catch (e) {
     res.status(500).send(e.message)
   }
 })
+
 
 const port = process.env.PORT || 3000
 app.listen(port, () => console.log(`🚀 Listening on ${port}`))
