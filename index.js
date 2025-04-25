@@ -20,7 +20,7 @@ app.get('/search', async (req, res) => {
     const result = await client.search({
       index: 'search-boooook',
       query: {
-        match: {
+        match_phrase: {
           JFULL: q
         }
       },
