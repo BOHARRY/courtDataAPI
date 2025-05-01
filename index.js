@@ -261,8 +261,9 @@ app.get('/search', async (req, res) => {
       aggs: { // 添加聚合
         win_reasons: {
           terms: {
-            field: 'main_reasons_ai.keyword', // 或者使用正確的欄位名
-            size: 20 // 獲取最常見的 20 個
+            field: 'main_reasons_ai',
+            size: 20,
+            order: { _count: 'desc' }  // 按出現次數排序
           }
         }
       },
@@ -310,10 +311,7 @@ app.get('/search', async (req, res) => {
       totalPages: Math.ceil(result.hits.total.value / pageSize),
       // 添加聚合結果
       aggregations: {
-        win_reasons: result.aggregations.win_reasons.buckets.map(bucket => ({
-          key: bucket.key,
-          count: bucket.doc_count
-        }))
+        win_reasons: result.aggregations?.win_reasons?.buckets || []
       }
     })
   } catch (e) {
