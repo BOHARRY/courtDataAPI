@@ -1,6 +1,8 @@
 import express from 'express'
 import cors from 'cors'
-import { Client } from '@elastic/elasticsearch'
+import {
+  Client
+} from '@elastic/elasticsearch'
 import dotenv from 'dotenv'
 dotenv.config()
 
@@ -22,19 +24,19 @@ const client = new Client({
 app.get('/search', async (req, res) => {
   try {
     const {
-      query,              // 關鍵字
-      caseTypes,          // 案件類型（逗號分隔的字串）
-      verdict,            // 勝敗結果
-      laws,               // 法條（逗號分隔的字串）
-      courtLevels,        // 法院層級（逗號分隔的字串）
-      minAmount,          // 最低金額
-      maxAmount,          // 最高金額
-      reasoningStrength,  // 推理強度
-      complexity,         // 案件複雜度
-      winReasons,         // 勝訴理由（逗號分隔的字串）
-      onlyWithFullText,   // 只顯示有全文的
-      includeCitedCases,  // 包含引用案例
-      onlyRecent3Years,   // 近三年判決
+      query, // 關鍵字
+      caseTypes, // 案件類型（逗號分隔的字串）
+      verdict, // 勝敗結果
+      laws, // 法條（逗號分隔的字串）
+      courtLevels, // 法院層級（逗號分隔的字串）
+      minAmount, // 最低金額
+      maxAmount, // 最高金額
+      reasoningStrength, // 推理強度
+      complexity, // 案件複雜度
+      winReasons, // 勝訴理由（逗號分隔的字串）
+      onlyWithFullText, // 只顯示有全文的
+      includeCitedCases, // 包含引用案例
+      onlyRecent3Years, // 近三年判決
       page = 1,
       pageSize = 10
     } = req.query
@@ -65,14 +67,18 @@ app.get('/search', async (req, res) => {
     if (caseTypes) {
       const types = caseTypes.split(',')
       filter.push({
-        terms: { 'case_type': types }
+        terms: {
+          'case_type': types
+        }
       })
     }
 
     // 勝敗結果篩選
     if (verdict && verdict !== '不指定') {
       filter.push({
-        term: { 'verdict': verdict }
+        term: {
+          'verdict': verdict
+        }
       })
     }
 
@@ -81,7 +87,9 @@ app.get('/search', async (req, res) => {
       const lawList = laws.split(',')
       lawList.forEach(law => {
         must.push({
-          match: { 'legal_basis': law }
+          match: {
+            'legal_basis': law
+          }
         })
       })
     }
@@ -89,9 +97,52 @@ app.get('/search', async (req, res) => {
     // 法院層級篩選
     if (courtLevels) {
       const levels = courtLevels.split(',')
-      filter.push({
-        terms: { 'court': levels }
+
+      const courtQuery = {
+        bool: {
+          should: []
+        }
+      }
+
+      levels.forEach(level => {
+        if (level === '地方法院') {
+          // 包含 "簡易庭" 或 "地方法院" 的法院都屬於地方法院
+          courtQuery.bool.should.push({
+            wildcard: {
+              'court': '*簡易*'
+            }
+          }, {
+            wildcard: {
+              'court': '*地方*'
+            }
+          })
+        } else if (level === '高等法院') {
+          // 包含 "高等法院" 的法院
+          courtQuery.bool.should.push({
+            wildcard: {
+              'court': '*高等*'
+            }
+          })
+        } else if (level === '最高法院') {
+          // 包含 "最高法院" 的法院
+          courtQuery.bool.should.push({
+            wildcard: {
+              'court': '*最高*'
+            }
+          })
+        } else if (level === '智慧財產及商業法院') {
+          // 包含 "最高法院" 的法院
+          courtQuery.bool.should.push({
+            wildcard: {
+              'court': '*智慧財產*'
+            }
+          })
+        }
       })
+
+      if (courtQuery.bool.should.length > 0) {
+        filter.push(courtQuery)
+      }
     }
 
     // 金額範圍篩選
@@ -99,16 +150,20 @@ app.get('/search', async (req, res) => {
       const rangeQuery = {}
       if (minAmount) rangeQuery.gte = parseInt(minAmount)
       if (maxAmount) rangeQuery.lte = parseInt(maxAmount)
-      
+
       filter.push({
-        range: { 'compensation_claimed': rangeQuery }
+        range: {
+          'compensation_claimed': rangeQuery
+        }
       })
     }
 
     // 推理強度篩選
     if (reasoningStrength) {
       filter.push({
-        term: { 'outcome_reasoning_strength': reasoningStrength }
+        term: {
+          'outcome_reasoning_strength': reasoningStrength
+        }
       })
     }
 
@@ -125,10 +180,15 @@ app.get('/search', async (req, res) => {
         minScore = 6
         maxScore = 9
       }
-      
+
       if (minScore && maxScore) {
         filter.push({
-          range: { 'SCORE': { gte: minScore, lte: maxScore } }
+          range: {
+            'SCORE': {
+              gte: minScore,
+              lte: maxScore
+            }
+          }
         })
       }
     }
@@ -137,24 +197,35 @@ app.get('/search', async (req, res) => {
     if (winReasons) {
       const reasons = winReasons.split(',')
       must.push({
-        terms: { 'main_reasons_ai': reasons }
+        terms: {
+          'main_reasons_ai': reasons
+        }
       })
     }
 
     // 進階篩選
     if (onlyWithFullText === 'true') {
       filter.push({
-        exists: { 'field': 'JFULL' }
+        exists: {
+          'field': 'JFULL'
+        }
       })
     }
 
     if (includeCitedCases === 'true') {
       must.push({
         bool: {
-          should: [
-            { exists: { 'field': 'citations' } },
-            { term: { 'cited_cases_count': { gte: 1 } } }
-          ]
+          should: [{
+            exists: {
+              'field': 'citations'
+            }
+          }, {
+            term: {
+              'cited_cases_count': {
+                gte: 1
+              }
+            }
+          }]
         }
       })
     }
@@ -162,13 +233,13 @@ app.get('/search', async (req, res) => {
     if (onlyRecent3Years === 'true') {
       const threeYearsAgo = new Date()
       threeYearsAgo.setFullYear(threeYearsAgo.getFullYear() - 3)
-      
+
       filter.push({
         range: {
           'date': {
-            gte: threeYearsAgo.getFullYear() * 10000 + 
-                 (threeYearsAgo.getMonth() + 1) * 100 + 
-                 threeYearsAgo.getDate()
+            gte: threeYearsAgo.getFullYear() * 10000 +
+              (threeYearsAgo.getMonth() + 1) * 100 +
+              threeYearsAgo.getDate()
           }
         }
       })
@@ -188,7 +259,9 @@ app.get('/search', async (req, res) => {
       index: 'search-boooook',
       from,
       size: pageSize,
-      query: Object.keys(esQuery.bool).length > 0 ? esQuery : { match_all: {} },
+      query: Object.keys(esQuery.bool).length > 0 ? esQuery : {
+        match_all: {}
+      },
       highlight: {
         fields: {
           JFULL: {
@@ -201,17 +274,18 @@ app.get('/search', async (req, res) => {
           }
         }
       },
-      sort: [
-        { '_score': 'desc' },
-        { 'JDATE': 'desc' }
-      ]
+      sort: [{
+        '_score': 'desc'
+      }, {
+        'JDATE': 'desc'
+      }]
     })
 
     // 處理高亮結果
     const hits = result.hits.hits.map(hit => {
       const source = hit._source
       const highlight = hit.highlight || {}
-      
+
       // 如果有高亮結果，使用高亮文本
       if (highlight.JFULL && highlight.JFULL.length > 0) {
         source.JFULL_highlight = highlight.JFULL[0]
@@ -219,7 +293,7 @@ app.get('/search', async (req, res) => {
       if (highlight.summary_ai && highlight.summary_ai.length > 0) {
         source.summary_ai_highlight = highlight.summary_ai[0]
       }
-      
+
       return {
         id: hit._id,
         ...source
@@ -233,7 +307,9 @@ app.get('/search', async (req, res) => {
     })
   } catch (e) {
     console.error('搜尋錯誤:', e)
-    res.status(500).json({ error: e.message })
+    res.status(500).json({
+      error: e.message
+    })
   }
 })
 
@@ -244,11 +320,13 @@ app.get('/judgment/:id', async (req, res) => {
       index: 'search-boooook',
       id: req.params.id
     })
-    
+
     res.json(result._source)
   } catch (e) {
     console.error('獲取判決詳情錯誤:', e)
-    res.status(500).json({ error: e.message })
+    res.status(500).json({
+      error: e.message
+    })
   }
 })
 
@@ -260,31 +338,45 @@ app.get('/filters', async (req, res) => {
       size: 0,
       aggs: {
         case_types: {
-          terms: { field: 'case_type.keyword', size: 50 }
+          terms: {
+            field: 'case_type.keyword',
+            size: 50
+          }
         },
         court_levels: {
-          terms: { field: 'court.keyword', size: 20 }
+          terms: {
+            field: 'court.keyword',
+            size: 20
+          }
         },
         verdicts: {
-          terms: { field: 'verdict.keyword', size: 10 }
+          terms: {
+            field: 'verdict.keyword',
+            size: 10
+          }
         },
         reasoning_strengths: {
-          terms: { field: 'outcome_reasoning_strength.keyword', size: 10 }
+          terms: {
+            field: 'outcome_reasoning_strength.keyword',
+            size: 10
+          }
         }
       }
     })
-    
+
     const filters = {
       caseTypes: aggregations.aggregations.case_types.buckets.map(b => b.key),
       courtLevels: aggregations.aggregations.court_levels.buckets.map(b => b.key),
       verdicts: aggregations.aggregations.verdicts.buckets.map(b => b.key),
       reasoningStrengths: aggregations.aggregations.reasoning_strengths.buckets.map(b => b.key)
     }
-    
+
     res.json(filters)
   } catch (e) {
     console.error('獲取篩選選項錯誤:', e)
-    res.status(500).json({ error: e.message })
+    res.status(500).json({
+      error: e.message
+    })
   }
 })
 
