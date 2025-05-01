@@ -97,7 +97,6 @@ app.get('/search', async (req, res) => {
     // 法院層級篩選
     if (courtLevels) {
       const levels = courtLevels.split(',')
-
       const courtQuery = {
         bool: {
           should: []
@@ -106,35 +105,32 @@ app.get('/search', async (req, res) => {
 
       levels.forEach(level => {
         if (level === '地方法院') {
-          // 包含 "簡易庭" 或 "地方法院" 的法院都屬於地方法院
+          // 使用 match 查詢而不是 wildcard
           courtQuery.bool.should.push({
-            wildcard: {
-              'court.keyword': '*簡易*'
+            match: {
+              court: '簡易'
             }
           }, {
-            wildcard: {
-              'court.keyword': '*地方*'
+            match: {
+              court: '地方法'
             }
           })
         } else if (level === '高等法院') {
-          // 包含 "高等法院" 的法院
           courtQuery.bool.should.push({
-            wildcard: {
-              'court.keyword': '*高等*'
+            match: {
+              court: '高等'
             }
           })
         } else if (level === '最高法院') {
-          // 包含 "最高法院" 的法院
           courtQuery.bool.should.push({
-            wildcard: {
-              'court.keyword': '*最高*'
+            match: {
+              court: '最高'
             }
           })
         } else if (level === '智慧財產及商業法院') {
-          // 包含 "最高法院" 的法院
           courtQuery.bool.should.push({
-            wildcard: {
-              'court.keyword': '*智慧財產*'
+            match: {
+              court: '智慧財產'
             }
           })
         }
