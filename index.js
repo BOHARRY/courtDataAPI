@@ -38,7 +38,7 @@ app.get('/search', async (req, res) => {
       includeCitedCases, // 包含引用案例
       onlyRecent3Years, // 近三年判決
       page = 1,
-      pageSize = 10
+      pageSize = 20
     } = req.query
 
     // 建構多條件查詢
