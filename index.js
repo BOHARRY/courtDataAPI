@@ -258,6 +258,14 @@ app.get('/search', async (req, res) => {
       query: Object.keys(esQuery.bool).length > 0 ? esQuery : {
         match_all: {}
       },
+      aggs: { // 添加聚合
+        win_reasons: {
+          terms: {
+            field: 'main_reasons_ai.keyword', // 或者使用正確的欄位名
+            size: 20 // 獲取最常見的 20 個
+          }
+        }
+      },
       highlight: {
         fields: {
           JFULL: {
@@ -299,7 +307,14 @@ app.get('/search', async (req, res) => {
     res.json({
       total: result.hits.total.value,
       hits: hits,
-      totalPages: Math.ceil(result.hits.total.value / pageSize)
+      totalPages: Math.ceil(result.hits.total.value / pageSize),
+      // 添加聚合結果
+      aggregations: {
+        win_reasons: result.aggregations.win_reasons.buckets.map(bucket => ({
+          key: bucket.key,
+          count: bucket.doc_count
+        }))
+      }
     })
   } catch (e) {
     console.error('搜尋錯誤:', e)
