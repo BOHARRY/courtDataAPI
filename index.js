@@ -107,29 +107,29 @@ app.get('/search', async (req, res) => {
         if (level === '地方法院') {
           // 使用 match 查詢而不是 wildcard
           courtQuery.bool.should.push({
-            match: {
+            match_phrase: {
               court: '簡易'
             }
           }, {
-            match: {
+            match_phrase: {
               court: '地方法'
             }
           })
         } else if (level === '高等法院') {
           courtQuery.bool.should.push({
-            match: {
+            match_phrase: {
               court: '高等'
             }
           })
         } else if (level === '最高法院') {
           courtQuery.bool.should.push({
-            match: {
+            match_phrase: {
               court: '最高'
             }
           })
         } else if (level === '智慧財產及商業法院') {
           courtQuery.bool.should.push({
-            match: {
+            match_phrase: {
               court: '智慧財產'
             }
           })
