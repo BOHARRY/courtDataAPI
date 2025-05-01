@@ -109,32 +109,32 @@ app.get('/search', async (req, res) => {
           // 包含 "簡易庭" 或 "地方法院" 的法院都屬於地方法院
           courtQuery.bool.should.push({
             wildcard: {
-              'court': '*簡易*'
+              'court.keyword': '*簡易*'
             }
           }, {
             wildcard: {
-              'court': '*地方*'
+              'court.keyword': '*地方*'
             }
           })
         } else if (level === '高等法院') {
           // 包含 "高等法院" 的法院
           courtQuery.bool.should.push({
             wildcard: {
-              'court': '*高等*'
+              'court.keyword': '*高等*'
             }
           })
         } else if (level === '最高法院') {
           // 包含 "最高法院" 的法院
           courtQuery.bool.should.push({
             wildcard: {
-              'court': '*最高*'
+              'court.keyword': '*最高*'
             }
           })
         } else if (level === '智慧財產及商業法院') {
           // 包含 "最高法院" 的法院
           courtQuery.bool.should.push({
             wildcard: {
-              'court': '*智慧財產*'
+              'court.keyword': '*智慧財產*'
             }
           })
         }
