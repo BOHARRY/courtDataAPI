@@ -154,7 +154,7 @@ app.get('/search', verifyToken, async (req, res) => { // <--- 添加 verifyToken
           fields: {
             JFULL: {
               fragment_size: 60, // 調整為更合適的長度，確保可以包含前後約20個字
-              number_of_fragments: 3, // 增加到3個片段，顯示更多匹配內容
+              number_of_fragments: 2, // 增加到3個片段，顯示更多匹配內容
               pre_tags: ["<em>"], // 高亮標籤開始
               post_tags: ["</em>"] // 高亮標籤結束
             },
