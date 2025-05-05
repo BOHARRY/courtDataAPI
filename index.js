@@ -153,12 +153,16 @@ app.get('/search', verifyToken, async (req, res) => { // <--- 添加 verifyToken
         highlight: {
           fields: {
             JFULL: {
-              fragment_size: 200,
-              number_of_fragments: 1
+              fragment_size: 60,     // 調整為更合適的長度，確保可以包含前後約20個字
+              number_of_fragments: 3, // 增加到3個片段，顯示更多匹配內容
+              pre_tags: ["<em>"],     // 高亮標籤開始
+              post_tags: ["</em>"]    // 高亮標籤結束
             },
             summary_ai: {
               fragment_size: 150,
-              number_of_fragments: 1
+              number_of_fragments: 1,
+              pre_tags: ["<em>"],
+              post_tags: ["</em>"]
             }
           }
         },
@@ -458,8 +462,16 @@ function formatEsResponse(esResult, pageSize) {
   const hits = esResult.hits.hits.map(hit => {
     const source = hit._source;
     const highlight = hit.highlight || {};
-    if (highlight.JFULL?.[0]) source.JFULL_highlight = highlight.JFULL[0];
-    if (highlight.summary_ai?.[0]) source.summary_ai_highlight = highlight.summary_ai[0];
+    
+    // 收集所有高亮片段
+    if (highlight.JFULL) {
+      source.JFULL_highlights = highlight.JFULL; // 保留所有片段
+    }
+    
+    if (highlight.summary_ai?.[0]) {
+      source.summary_ai_highlight = highlight.summary_ai[0];
+    }
+    
     return {
       id: hit._id,
       ...source
