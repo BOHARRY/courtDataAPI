@@ -43,21 +43,21 @@ async function verifyToken(req, res, next) {
   // 記錄完整的授權標頭 (僅記錄開頭，避免洩露敏感資訊)
   const authHeader = req.headers.authorization || '';
   console.log("Raw Authorization header (first 20 chars):", authHeader.substring(0, 20));
-  
+
   // 嘗試提取 token
   const idToken = authHeader.startsWith('Bearer ') ? authHeader.substring(7) : null;
-  
+
   if (!idToken) {
     console.warn("verifyToken: No token provided or invalid format. Header format incorrect.");
     return res.status(401).json({
       error: 'Unauthorized: No token provided or invalid format'
     });
   }
-  
+
   // 記錄 token 特徵
   console.log("Extracted token length:", idToken.length);
   console.log("Token starts with:", idToken.substring(0, 10));
-  
+
   try {
     const decodedToken = await admin.auth().verifyIdToken(idToken);
     req.user = decodedToken;
@@ -65,7 +65,7 @@ async function verifyToken(req, res, next) {
     next();
   } catch (error) {
     console.error('Error verifying token:', error.code, error.message);
-    
+
     if (error.code === 'auth/id-token-expired') {
       return res.status(401).json({
         error: 'Unauthorized: Token expired'
@@ -75,7 +75,7 @@ async function verifyToken(req, res, next) {
         error: 'Unauthorized: Token format error - ' + error.message
       });
     }
-    
+
     return res.status(403).json({
       error: `Unauthorized: Token validation failed - ${error.code || 'unknown error'}`
     });
@@ -249,7 +249,18 @@ function buildEsQuery(filters) {
     must.push({
       multi_match: {
         query,
-        fields: ['JFULL^3', 'summary_ai^2', 'main_reasons_ai^2', 'JTITLE', 'tags'],
+        fields: [
+          'JFULL^3',
+          'summary_ai^2',
+          'main_reasons_ai^2',
+          'JTITLE',
+          'tags',
+          'lawyers^4', // 給律師欄位更高權重
+          'lawyers.raw^8', // 給原始欄位更高權重
+          'winlawyers^4',
+          'judges^4',
+          'judges.raw^8' // 給原始欄位更高權重
+        ],
         type: 'best_fields',
         operator: 'and'
       }
