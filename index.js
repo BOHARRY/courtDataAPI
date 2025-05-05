@@ -153,10 +153,10 @@ app.get('/search', verifyToken, async (req, res) => { // <--- 添加 verifyToken
         highlight: {
           fields: {
             JFULL: {
-              fragment_size: 60,     // 調整為更合適的長度，確保可以包含前後約20個字
+              fragment_size: 60, // 調整為更合適的長度，確保可以包含前後約20個字
               number_of_fragments: 3, // 增加到3個片段，顯示更多匹配內容
-              pre_tags: ["<em>"],     // 高亮標籤開始
-              post_tags: ["</em>"]    // 高亮標籤結束
+              pre_tags: ["<em>"], // 高亮標籤開始
+              post_tags: ["</em>"] // 高亮標籤結束
             },
             summary_ai: {
               fragment_size: 150,
@@ -312,7 +312,18 @@ function buildEsQuery(filters) {
       must.push({
         multi_match: {
           query,
-          fields: ['JFULL^3', 'summary_ai^2', 'main_reasons_ai^2', 'JTITLE', 'tags'],
+          fields: [
+            'JFULL^3',
+            'summary_ai^2',
+            'main_reasons_ai^2',
+            'JTITLE',
+            'tags',
+            'lawyers^4', // 給律師欄位更高權重
+            'lawyers.raw^8', // 給原始欄位更高權重
+            'winlawyers^4',
+            'judges^4',
+            'judges.raw^8' // 給原始欄位更高權重
+          ],
           type: 'best_fields',
           operator: 'and'
         }
@@ -462,16 +473,16 @@ function formatEsResponse(esResult, pageSize) {
   const hits = esResult.hits.hits.map(hit => {
     const source = hit._source;
     const highlight = hit.highlight || {};
-    
+
     // 收集所有高亮片段
     if (highlight.JFULL) {
       source.JFULL_highlights = highlight.JFULL; // 保留所有片段
     }
-    
+
     if (highlight.summary_ai?.[0]) {
       source.summary_ai_highlight = highlight.summary_ai[0];
     }
-    
+
     return {
       id: hit._id,
       ...source
