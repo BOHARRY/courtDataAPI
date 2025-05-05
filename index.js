@@ -485,15 +485,7 @@ function formatEsResponse(esResult, pageSize) {
 
     return {
       id: hit._id,
-      title: source.title || source.JTITLE || 'No Title',
-      summary_ai: source.summary_ai,
-      main_reasons_ai: source.main_reasons_ai || [],
-      legal_basis: source.legal_basis || [],
-      tags: source.tags || [],
-      SCORE: source.SCORE,
-      outcome_reasoning_strength: source.outcome_reasoning_strength,
-      // 添加高亮片段
-      JFULL_highlights: source.JFULL_highlights || []
+      ...source
     };
   });
 
