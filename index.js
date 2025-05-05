@@ -246,25 +246,74 @@ function buildEsQuery(filters) {
   const filter = [];
 
   if (query) {
-    must.push({
-      multi_match: {
-        query,
-        fields: [
-          'JFULL^3',
-          'summary_ai^2',
-          'main_reasons_ai^2',
-          'JTITLE',
-          'tags',
-          'lawyers^4', // 給律師欄位更高權重
-          'lawyers.raw^8', // 給原始欄位更高權重
-          'winlawyers^4',
-          'judges^4',
-          'judges.raw^8' // 給原始欄位更高權重
-        ],
-        type: 'best_fields',
-        operator: 'and'
-      }
-    });
+    // 檢查是否是精確匹配查詢（被雙引號包圍）
+    if (query.startsWith('"') && query.endsWith('"')) {
+      // 移除引號
+      const exactPhrase = query.slice(1, -1);
+      console.log("精確匹配查詢:", exactPhrase);
+
+      must.push({
+        bool: {
+          should: [
+            // 在多個欄位中進行短語匹配
+            {
+              match_phrase: {
+                "JFULL": {
+                  query: exactPhrase,
+                  boost: 5.0
+                }
+              }
+            }, {
+              match_phrase: {
+                "summary_ai": {
+                  query: exactPhrase,
+                  boost: 4.0
+                }
+              }
+            }, {
+              match_phrase: {
+                "lawyers": {
+                  query: exactPhrase,
+                  boost: 8.0
+                }
+              }
+            }, {
+              match_phrase: {
+                "judges": {
+                  query: exactPhrase,
+                  boost: 8.0
+                }
+              }
+            }, {
+              match_phrase: {
+                "plaintiff": {
+                  query: exactPhrase,
+                  boost: 3.0
+                }
+              }
+            }, {
+              match_phrase: {
+                "defendant": {
+                  query: exactPhrase,
+                  boost: 3.0
+                }
+              }
+            }
+          ],
+          minimum_should_match: 1
+        }
+      });
+    } else {
+      // 原有的普通搜索邏輯
+      must.push({
+        multi_match: {
+          query,
+          fields: ['JFULL^3', 'summary_ai^2', 'main_reasons_ai^2', 'JTITLE', 'tags'],
+          type: 'best_fields',
+          operator: 'and'
+        }
+      });
+    }
   }
   if (caseTypes) filter.push({
     terms: {
