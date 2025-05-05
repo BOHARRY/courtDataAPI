@@ -470,25 +470,58 @@ function buildEsQuery(filters) {
 
 // --- 輔助函數：格式化 ES 回應 ---
 function formatEsResponse(esResult, pageSize) {
-  const hits = esResult.hits.hits.map(hit => {
-    const source = hit._source;
+  // 診斷日誌，檢查 Elasticsearch 返回結果
+  console.log("===== Debug: Elasticsearch 搜尋結果 =====");
+  console.log("總結果數:", esResult.hits.total.value);
+  console.log("返回結果數量:", esResult.hits.hits.length);
+  
+  // 檢查是否有高亮片段
+  let foundHighlights = false;
+  if (esResult.hits.hits.length > 0) {
+    const firstHit = esResult.hits.hits[0];
+    console.log("第一個結果包含高亮嗎?", !!firstHit.highlight);
+    
+    if (firstHit.highlight && firstHit.highlight.JFULL) {
+      console.log("JFULL 高亮片段數量:", firstHit.highlight.JFULL.length);
+      console.log("第一個高亮片段樣本:", firstHit.highlight.JFULL[0].substring(0, 100));
+      foundHighlights = true;
+    } else {
+      console.log("沒有找到 JFULL 高亮片段");
+    }
+  }
+
+  // 處理搜尋結果
+  const hits = esResult.hits.hits.map((hit, index) => {
+    const source = hit._source || {};
     const highlight = hit.highlight || {};
-
-    // 收集所有高亮片段
-    if (highlight.JFULL) {
-      source.JFULL_highlights = highlight.JFULL; // 保留所有片段
-    }
-
-    if (highlight.summary_ai?.[0]) {
-      source.summary_ai_highlight = highlight.summary_ai[0];
-    }
-
-    return {
+    const processedItem = {
       id: hit._id,
-      ...source
+      ...source,
+      // 確保始終有這些欄位，即使為空
+      JFULL_highlights: [],
+      summary_ai_highlight: null
     };
+    
+    // 收集判決全文高亮片段
+    if (highlight.JFULL && highlight.JFULL.length > 0) {
+      processedItem.JFULL_highlights = highlight.JFULL;
+      if (index === 0) console.log(`處理結果 #${index}: 添加了 ${highlight.JFULL.length} 個 JFULL 高亮片段`);
+    }
+    
+    // 收集摘要高亮
+    if (highlight.summary_ai && highlight.summary_ai.length > 0) {
+      processedItem.summary_ai_highlight = highlight.summary_ai[0];
+      if (index === 0) console.log(`處理結果 #${index}: 添加了摘要高亮`);
+    }
+    
+    return processedItem;
   });
 
+  // 最終檢查
+  const resultsWithHighlights = hits.filter(hit => hit.JFULL_highlights && hit.JFULL_highlights.length > 0).length;
+  console.log(`處理完成: ${resultsWithHighlights}/${hits.length} 個結果包含高亮片段`);
+  
+  // 返回格式化的結果
   return {
     total: esResult.hits.total.value,
     hits: hits,
