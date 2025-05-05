@@ -48,20 +48,31 @@ async function verifyToken(req, res, next) {
     });
   }
   try {
+    console.log("verifyToken: Attempting to verify token:", idToken.substring(0, 10) + '...');
     const decodedToken = await admin.auth().verifyIdToken(idToken);
-    req.user = decodedToken; // 將 uid 等信息附加到請求
-    console.log("verifyToken: Token verified for UID:", req.user.uid);
-    next(); // Token 有效，繼續處理請求
+    console.log("verifyToken: Successfully verified token for UID:", decodedToken.uid);
+    req.user = decodedToken;
+    next();
   } catch (error) {
-    console.error('Error verifying token:', error);
-    // 區分錯誤類型，例如 token 過期
+    console.error('Error verifying token:', error.code, error.message);
+    
+    // 更詳細的錯誤處理
     if (error.code === 'auth/id-token-expired') {
       return res.status(401).json({
         error: 'Unauthorized: Token expired'
       });
+    } else if (error.code === 'auth/invalid-credential') {
+      return res.status(403).json({
+        error: 'Unauthorized: Invalid Firebase credentials'
+      });
+    } else if (error.code === 'auth/argument-error') {
+      return res.status(403).json({
+        error: 'Unauthorized: Token format error'
+      });
     }
+    
     return res.status(403).json({
-      error: 'Unauthorized: Invalid token'
+      error: `Unauthorized: Invalid token (${error.code})`
     });
   }
 }
