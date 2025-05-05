@@ -262,8 +262,8 @@ app.get('/search', async (req, res) => {
         win_reasons: {
           terms: {
             field: 'main_reasons_ai',
-            size: 20,
-            order: { _count: 'desc' }  // 按出現次數排序
+            size: 50,
+            order: { _count: 'asc' }  // 按出現次數排序
           }
         }
       },
