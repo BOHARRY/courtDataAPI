@@ -40,39 +40,44 @@ const client = new Client({
 
 // --- 中間件：驗證 Firebase ID Token ---
 async function verifyToken(req, res, next) {
-  const idToken = req.headers.authorization?.split('Bearer ')[1];
+  // 記錄完整的授權標頭 (僅記錄開頭，避免洩露敏感資訊)
+  const authHeader = req.headers.authorization || '';
+  console.log("Raw Authorization header (first 20 chars):", authHeader.substring(0, 20));
+  
+  // 嘗試提取 token
+  const idToken = authHeader.startsWith('Bearer ') ? authHeader.substring(7) : null;
+  
   if (!idToken) {
-    console.warn("verifyToken: No token provided.");
+    console.warn("verifyToken: No token provided or invalid format. Header format incorrect.");
     return res.status(401).json({
-      error: 'Unauthorized: No token provided'
+      error: 'Unauthorized: No token provided or invalid format'
     });
   }
+  
+  // 記錄 token 特徵
+  console.log("Extracted token length:", idToken.length);
+  console.log("Token starts with:", idToken.substring(0, 10));
+  
   try {
-    console.log("verifyToken: Attempting to verify token:", idToken.substring(0, 10) + '...');
     const decodedToken = await admin.auth().verifyIdToken(idToken);
-    console.log("verifyToken: Successfully verified token for UID:", decodedToken.uid);
     req.user = decodedToken;
+    console.log("verifyToken: Token verified for UID:", req.user.uid);
     next();
   } catch (error) {
     console.error('Error verifying token:', error.code, error.message);
     
-    // 更詳細的錯誤處理
     if (error.code === 'auth/id-token-expired') {
       return res.status(401).json({
         error: 'Unauthorized: Token expired'
       });
-    } else if (error.code === 'auth/invalid-credential') {
-      return res.status(403).json({
-        error: 'Unauthorized: Invalid Firebase credentials'
-      });
     } else if (error.code === 'auth/argument-error') {
       return res.status(403).json({
-        error: 'Unauthorized: Token format error'
+        error: 'Unauthorized: Token format error - ' + error.message
       });
     }
     
     return res.status(403).json({
-      error: `Unauthorized: Invalid token (${error.code})`
+      error: `Unauthorized: Token validation failed - ${error.code || 'unknown error'}`
     });
   }
 }
