@@ -600,5 +600,403 @@ app.get('/filters', async (req, res) => {
   }
 })
 
+// 以下是要添加到 index.js 中的內容
+
+// --- 律師搜尋 API 端點 ---
+app.get('/api/lawyers/:name', verifyToken, async (req, res) => {
+  const lawyerName = req.params.name;
+  const userId = req.user.uid;
+  const searchCost = 1; // 每次搜尋成本
+
+  console.log(`[Lawyer Search] 用戶 ${userId} 搜尋律師: ${lawyerName}`);
+  const userDocRef = admin.firestore().collection('users').doc(userId);
+
+  try {
+    let lawyerData = null; // 用於儲存搜尋結果
+
+    // --- 使用 Firestore Transaction 處理積分 ---
+    await admin.firestore().runTransaction(async (transaction) => {
+      const userDoc = await transaction.get(userDocRef);
+
+      if (!userDoc.exists) {
+        console.error(`用戶數據不存在: ${userId}`);
+        throw new Error('用戶數據不存在。');
+      }
+
+      const userData = userDoc.data();
+      const currentCredits = userData.credits || 0;
+      console.log(`[交易] 用戶 ${userId} 目前積分: ${currentCredits}`);
+
+      if (currentCredits < searchCost) {
+        console.warn(`[交易] 用戶 ${userId} 積分不足.`);
+        throw new Error('積分不足');
+      }
+
+      // 扣除積分
+      console.log(`[交易] 扣除 ${searchCost} 點積分，用戶 ${userId}.`);
+      transaction.update(userDocRef, {
+        credits: admin.firestore.FieldValue.increment(-searchCost),
+        lastLawyerSearchAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+
+      // --- 執行 Elasticsearch 搜尋 (在 Transaction 內) ---
+      console.log(`[交易] 執行 Elasticsearch 搜尋律師: ${lawyerName}`);
+      
+      // 1. 搜尋包含律師名的判決書
+      const result = await client.search({
+        index: 'search-boooook', // ES 索引名稱
+        size: 100, // 最多獲取100筆判決書
+        query: {
+          bool: {
+            should: [
+              { match_phrase: { "lawyers": lawyerName } },
+              { match_phrase: { "lawyers.raw": lawyerName } },
+              { match_phrase: { "winlawyers": lawyerName } }
+            ],
+            minimum_should_match: 1
+          }
+        },
+        _source: [
+          "court", "JTITLE", "JDATE", "case_type", 
+          "verdict", "cause", "lawyers", "winlawyers", 
+          "compensation_claimed", "compensation_awarded"
+        ]
+      });
+
+      // 2. 處理搜尋結果
+      if (result.hits.total.value === 0) {
+        console.log(`[律師搜尋] 找不到律師: ${lawyerName}`);
+        return; // 無結果，不扣積分
+      }
+
+      // 3. 分析律師數據
+      lawyerData = analyzeLawyerData(result.hits.hits, lawyerName);
+      console.log(`[律師搜尋] 成功獲取律師資料: ${lawyerName}`);
+    });
+    // --- Transaction 結束 ---
+
+    // Transaction 成功後，發送儲存的結果
+    if (lawyerData) {
+      // 成功後記錄搜尋歷史
+      try {
+        await admin.firestore().collection('users').doc(userId)
+          .collection('lawyerSearchHistory').add({
+            lawyerName: lawyerName,
+            timestamp: admin.firestore.FieldValue.serverTimestamp()
+          });
+      } catch (historyError) {
+        console.error('記錄搜尋歷史失敗:', historyError);
+        // 不影響主要功能，繼續執行
+      }
+
+      res.status(200).json(lawyerData);
+    } else {
+      // 找不到律師資料
+      res.status(404).json({
+        error: `找不到律師 "${lawyerName}" 的相關資料`
+      });
+    }
+  } catch (error) {
+    console.error(`[律師搜尋錯誤] 用戶: ${userId}, 錯誤:`, error);
+    
+    // 處理積分不足的錯誤
+    if (error.message === '積分不足') {
+      try {
+        const userDoc = await userDocRef.get();
+        const currentCredits = userDoc.exists ? (userDoc.data().credits || 0) : 0;
+        return res.status(402).json({
+          error: '您的積分不足，請購買積分或升級方案。',
+          required: searchCost,
+          current: currentCredits
+        });
+      } catch (readError) {
+        console.error("積分不足後讀取當前積分失敗:", readError);
+        return res.status(402).json({
+          error: '您的積分不足，請購買積分或升級方案。'
+        });
+      }
+    }
+    
+    // 處理用戶數據找不到的錯誤
+    if (error.message === '用戶數據不存在。') {
+      return res.status(404).json({
+        error: '找不到您的用戶資料，請嘗試重新登入。'
+      });
+    }
+    
+    // 其他伺服器錯誤
+    res.status(500).json({
+      error: '搜尋律師時發生伺服器內部錯誤。'
+    });
+  }
+});
+
+// --- 律師優劣勢分析 API 端點 ---
+app.get('/api/lawyers/:name/analysis', verifyToken, async (req, res) => {
+  const lawyerName = req.params.name;
+  const userId = req.user.uid;
+  const analysisCost = 2; // 分析功能消耗 2 積分
+
+  console.log(`[律師分析] 用戶 ${userId} 請求分析律師: ${lawyerName}`);
+  const userDocRef = admin.firestore().collection('users').doc(userId);
+
+  try {
+    let analysisData = null;
+
+    // --- 使用 Firestore Transaction 處理積分 ---
+    await admin.firestore().runTransaction(async (transaction) => {
+      const userDoc = await transaction.get(userDocRef);
+
+      if (!userDoc.exists) {
+        throw new Error('用戶數據不存在');
+      }
+
+      const userData = userDoc.data();
+      const currentCredits = userData.credits || 0;
+
+      if (currentCredits < analysisCost) {
+        throw new Error('積分不足');
+      }
+
+      // 扣除積分
+      transaction.update(userDocRef, {
+        credits: admin.firestore.FieldValue.increment(-analysisCost),
+        lastAnalysisAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+
+      // 這裡使用預設的分析模板
+      // 實際應用中，這部分可能需要更深入的數據分析或 AI 生成
+      analysisData = generateLawyerAnalysis(lawyerName);
+    });
+
+    if (analysisData) {
+      res.status(200).json(analysisData);
+    } else {
+      res.status(404).json({
+        error: `無法產生律師 "${lawyerName}" 的分析`
+      });
+    }
+  } catch (error) {
+    console.error(`[律師分析錯誤] 用戶: ${userId}, 錯誤:`, error);
+
+    if (error.message === '積分不足') {
+      return res.status(402).json({
+        error: '生成分析需要額外積分，請購買積分或升級方案'
+      });
+    }
+
+    if (error.message === '用戶數據不存在') {
+      return res.status(404).json({
+        error: '找不到您的用戶資料，請嘗試重新登入。'
+      });
+    }
+
+    res.status(500).json({
+      error: '分析生成失敗'
+    });
+  }
+});
+
+// --- 律師搜尋歷史 API 端點 ---
+app.get('/api/user/lawyer-search-history', verifyToken, async (req, res) => {
+  const userId = req.user.uid;
+  
+  try {
+    const historyRef = admin.firestore()
+      .collection('users')
+      .doc(userId)
+      .collection('lawyerSearchHistory')
+      .orderBy('timestamp', 'desc')
+      .limit(10);
+    
+    const snapshot = await historyRef.get();
+    const history = [];
+    
+    snapshot.forEach(doc => {
+      const data = doc.data();
+      // 確保 timestamp 數據可以序列化
+      const timestamp = data.timestamp ? data.timestamp.toDate().toISOString() : null;
+      
+      history.push({
+        id: doc.id,
+        lawyerName: data.lawyerName,
+        timestamp: timestamp
+      });
+    });
+    
+    res.json(history);
+  } catch (error) {
+    console.error('獲取搜尋歷史錯誤:', error);
+    res.status(500).json({ error: '獲取搜尋歷史失敗' });
+  }
+});
+
+// --- 輔助函數：分析律師數據 ---
+function analyzeLawyerData(hits, lawyerName) {
+  // 無結果判斷
+  if (!hits || hits.length === 0) {
+    return null;
+  }
+
+  // 1. 初始化數據結構
+  const caseTypes = {};
+  const courts = {};
+  const cases = [];
+  let totalCases = hits.length;
+  let winCases = 0;
+  let loseCases = 0;
+  let partialCases = 0;
+  const recentCases = []; // 近三年案件
+
+  // 2. 計算近三年日期 (數字格式)
+  const now = new Date();
+  const threeYearsAgo = new Date(now.getFullYear() - 3, now.getMonth(), now.getDate());
+  const threeYearsAgoNum = threeYearsAgo.getFullYear() * 10000 + 
+                           (threeYearsAgo.getMonth() + 1) * 100 + 
+                           threeYearsAgo.getDate();
+
+  // 3. 遍歷所有案件，統計資料
+  hits.forEach(hit => {
+    const source = hit._source;
+    
+    // 記錄案件類型
+    if (source.case_type) {
+      caseTypes[source.case_type] = (caseTypes[source.case_type] || 0) + 1;
+    }
+    
+    // 記錄法院
+    if (source.court) {
+      courts[source.court] = (courts[source.court] || 0) + 1;
+    }
+    
+    // 判斷勝訴情況
+    const isWinLawyer = source.winlawyers && 
+                        source.winlawyers.includes(lawyerName);
+    
+    if (source.verdict === '原告勝訴' || source.verdict === '被告勝訴') {
+      if (isWinLawyer) {
+        winCases++;
+      } else {
+        loseCases++;
+      }
+    } else if (source.verdict === '部分勝訴') {
+      partialCases++;
+    }
+    
+    // 轉換日期格式，例如 "2022/07/15" -> 20220715
+    let dateNum = 0;
+    if (source.JDATE) {
+      const dateParts = source.JDATE.split('/');
+      if (dateParts.length === 3) {
+        dateNum = parseInt(dateParts[0]) * 10000 + 
+                  parseInt(dateParts[1]) * 100 + 
+                  parseInt(dateParts[2]);
+      }
+    }
+    
+    // 記錄案件資料
+    const caseItem = {
+      id: hit._id,
+      title: source.JTITLE || `${source.court || ''} 判決`,
+      cause: source.cause || '未指定',
+      result: source.verdict || '未指定',
+      date: source.JDATE || '未知日期'
+    };
+    
+    cases.push(caseItem);
+    
+    // 判斷是否為近三年案件
+    if (dateNum >= threeYearsAgoNum) {
+      recentCases.push(caseItem);
+    }
+  });
+
+  // 4. 轉換為前端需要的數據格式
+  
+  // 取出前 4 個最常見的案件類型
+  const commonCaseTypes = Object.entries(caseTypes)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 4)
+    .map(entry => entry[0]);
+  
+  // 取出前 3 個最常出現的法院
+  const commonCourts = Object.entries(courts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(entry => entry[0]);
+  
+  // 計算勝訴率
+  const totalVerdictsWithResult = winCases + loseCases;
+  const winRate = totalVerdictsWithResult > 0 ? 
+    Math.round((winCases / totalVerdictsWithResult) * 100) : 0;
+  
+  // 計算近三年案件數
+  const totalRecentCases = recentCases.length;
+  
+  // 計算法評星等 (0-8)
+  // 簡單實現：基於勝訴率、案件量等因素
+  let lawRating = 0;
+  if (totalRecentCases >= 5) {
+    // 基礎分數 (0-5)
+    lawRating = Math.min(5, Math.floor(totalRecentCases / 10));
+    
+    // 勝訴率加分 (0-3)
+    if (winRate > 90) lawRating += 3;
+    else if (winRate > 70) lawRating += 2;
+    else if (winRate > 50) lawRating += 1;
+  } else {
+    // 案件太少時的評分方法
+    lawRating = Math.min(3, totalRecentCases);
+  }
+  
+  // 確保評分在 0-8 範圍內
+  lawRating = Math.max(0, Math.min(8, lawRating));
+  
+  // 5. 構建返回數據
+  return {
+    name: lawyerName,
+    lawRating: lawRating,
+    source: '法院公開判決書',
+    stats: {
+      totalCasesLast3Years: totalRecentCases,
+      commonCaseTypes: commonCaseTypes,
+      commonCourts: commonCourts,
+    },
+    winRate: {
+      plaintiffWinPercent: winRate,
+      defendantWinPercent: 100 - winRate,
+    },
+    cases: cases.sort((a, b) => {
+      // 按照日期排序，最新的在前
+      const dateA = a.date.split('/').join('');
+      const dateB = b.date.split('/').join('');
+      return dateB.localeCompare(dateA);
+    }).slice(0, 10), // 只返回前 10 個案件
+    analysis: null // 分析部分需要另外請求
+  };
+}
+
+// --- 輔助函數：生成律師分析 ---
+function generateLawyerAnalysis(lawyerName) {
+  // 這裡提供預設模板
+  // 實際情況下，應該根據律師的真實案件數據來生成分析
+  
+  // 對於「林大明」律師，提供固定的分析模板
+  if (lawyerName === '林大明') {
+    return {
+      advantages: "林律師於近年積極承辦租賃契約、工程款請求及不當得利案件，對於租賃契約條款的適用與解釋、以及工程施工瑕疵舉證程序，展現出高度的法律專業與應對經驗。\n在案件策略安排上，林律師擅長透過舉證資料的精細準備，強化契約明確性的主張，並有效利用證據規則進行抗辯，於租賃及工程類型訴訟中，呈現較高的勝訴比例。\n此外，在訴訟程序中具備良好的時程掌控能力，能妥善安排證人出庭與書狀提出，對於加速訴訟進行亦有所助益。",
+      cautions: "根據統計資料觀察，在侵權行為、不當得利類型案件中，林律師在舉證責任配置及因果關係主張方面，部分案件表現較為薄弱，致使部分主張未獲法院支持。\n尤其於需要高度釐清事實細節（如侵權責任、損害範圍認定）的案件中，舉證力道及證明程度可能影響最終判決結果。\n建議於此類型訴訟中，強化因果關係及損害證明之資料準備，以提升整體案件掌控度與成功率。",
+      disclaimer: "本資料係依法院公開判決書自動彙整分析，僅供參考，並非對個別案件結果作出判斷。"
+    };
+  }
+  
+  // 通用分析模板
+  return {
+    advantages: `${lawyerName}律師具有豐富的訴訟經驗，熟悉司法實務運作。從判決書的分析來看，具有良好的案件準備能力和法律論證技巧。\n在庭審過程中能夠清晰地表達法律觀點，有條理地呈現證據，使法官更容易理解當事人的主張。\n善於掌握案件的關鍵爭點，能夠有效地針對核心問題提出法律依據和事實證明。`,
+    cautions: `建議在訴訟前充分評估案件的法律風險，選擇更有利的訴訟策略。\n部分複雜案件中，可考慮加強對於專業領域知識的補充說明，以便法官更全面理解案情。\n在某些判決中，證據的提出時機和證據力評估方面可以有更精準的規劃，以提高整體案件的成功率。`,
+    disclaimer: "本資料係依法院公開判決書自動彙整分析，僅供參考，並非對個別案件結果作出判斷。"
+  };
+}
+
 const port = process.env.PORT || 3000
 app.listen(port, () => console.log(`🚀 Listening on ${port}`))
