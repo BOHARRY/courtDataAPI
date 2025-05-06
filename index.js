@@ -611,10 +611,6 @@ app.get('/api/lawyers/:name', verifyToken, async (req, res) => {
   console.log(`[Lawyer Search] 用戶 ${userId} 搜尋律師: ${lawyerName}`);
   const userDocRef = admin.firestore().collection('users').doc(userId);
 
-  console.log(`API響應發送前檢查 - 返回狀態碼: ${res.statusCode}`);
-  console.log(`API響應發送前檢查 - 返回內容類型: ${res.get('Content-Type')}`);
-  console.log(`API響應發送前檢查 - 律師數據有效性: ${lawyerData ? '有效' : '無效'}`);
-
   try {
     let lawyerData = null; // 用於儲存搜尋結果
 
