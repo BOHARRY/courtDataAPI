@@ -649,32 +649,32 @@ app.get('/api/lawyers/:name', verifyToken, async (req, res) => {
         query: {
           bool: {
             should: [{
-                match: {
+                match_phrase: {
                   "lawyers": lawyerName
                 }
               }, // 原告律師
               {
-                match: {
+                match_phrase: {
                   "lawyers.raw": lawyerName
                 }
               }, // 原告律師 (raw)
               {
-                match: {
+                match_phrase: {
                   "lawyersdef": lawyerName
                 }
               }, // 被告律師
               {
-                match: {
+                match_phrase: {
                   "lawyersdef.raw": lawyerName
                 }
               }, // 被告律師 (raw)
               {
-                match: {
+                match_phrase: {
                   "winlawyers": lawyerName
                 }
               }, // 勝訴律師
               {
-                match: {
+                match_phrase: {
                   "loselawyers": lawyerName
                 }
               } // 敗訴律師
