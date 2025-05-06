@@ -644,29 +644,48 @@ app.get('/api/lawyers/:name', verifyToken, async (req, res) => {
 
       // 1. 搜尋包含律師名的判決書
       const result = await client.search({
-        index: 'search-boooook', // ES 索引名稱
-        size: 100, // 最多獲取100筆判決書
+        index: 'search-boooook',
+        size: 100,
         query: {
           bool: {
             should: [{
-              match_phrase: {
-                "lawyers": lawyerName
-              }
-            }, {
-              match_phrase: {
-                "lawyers.raw": lawyerName
-              }
-            }, {
-              match_phrase: {
-                "winlawyers": lawyerName
-              }
-            }],
+                match_phrase: {
+                  "lawyers": lawyerName
+                }
+              }, // 原告律師
+              {
+                match_phrase: {
+                  "lawyers.raw": lawyerName
+                }
+              }, // 原告律師 (raw)
+              {
+                match_phrase: {
+                  "lawyersdef": lawyerName
+                }
+              }, // 被告律師
+              {
+                match_phrase: {
+                  "lawyersdef.raw": lawyerName
+                }
+              }, // 被告律師 (raw)
+              {
+                match_phrase: {
+                  "winlawyers": lawyerName
+                }
+              }, // 勝訴律師
+              {
+                match_phrase: {
+                  "loselawyers": lawyerName
+                }
+              } // 敗訴律師
+            ],
             minimum_should_match: 1
           }
         },
         _source: [
           "court", "JTITLE", "JDATE", "case_type",
-          "verdict", "cause", "lawyers", "winlawyers",
+          "verdict", "cause", "lawyers", "lawyersdef",
+          "winlawyers", "loselawyers",
           "compensation_claimed", "compensation_awarded"
         ]
       });
@@ -896,16 +915,30 @@ function analyzeLawyerData(hits, lawyerName) {
       courts[source.court] = (courts[source.court] || 0) + 1;
     }
 
-    // 判斷勝訴情況
+    // 判斷勝訴情況 - 修改後
+    // 1. 檢查律師是否為勝訴律師
     const isWinLawyer = source.winlawyers &&
       source.winlawyers.includes(lawyerName);
 
-    if (source.verdict === '原告勝訴' || source.verdict === '被告勝訴') {
-      if (isWinLawyer) {
-        winCases++;
-      } else {
-        loseCases++;
-      }
+    // 2. 檢查律師是否為敗訴律師
+    const isLoseLawyer = source.loselawyers &&
+      source.loselawyers.includes(lawyerName);
+
+    // 3. 檢查律師的角色（原告/被告）
+    const isPlaintiffLawyer = source.lawyers &&
+      source.lawyers.includes(lawyerName);
+    const isDefendantLawyer = source.lawyersdef &&
+      source.lawyersdef.includes(lawyerName);
+
+    // 根據角色和結果來判斷勝敗
+    if (isWinLawyer ||
+      (isPlaintiffLawyer && source.verdict === '原告勝訴') ||
+      (isDefendantLawyer && source.verdict === '被告勝訴')) {
+      winCases++;
+    } else if (isLoseLawyer ||
+      (isPlaintiffLawyer && source.verdict === '被告勝訴') ||
+      (isDefendantLawyer && source.verdict === '原告勝訴')) {
+      loseCases++;
     } else if (source.verdict === '部分勝訴') {
       partialCases++;
     }
@@ -927,7 +960,8 @@ function analyzeLawyerData(hits, lawyerName) {
       title: source.JTITLE || `${source.court || ''} 判決`,
       cause: source.cause || '未指定',
       result: source.verdict || '未指定',
-      date: source.JDATE || '未知日期'
+      date: source.JDATE || '未知日期',
+      role: isPlaintiffLawyer ? '原告代表' : isDefendantLawyer ? '被告代表' : '未知角色'
     };
 
     cases.push(caseItem);
