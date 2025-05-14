@@ -661,13 +661,15 @@ function getMainType(source) {
 // --- 輔助函數：獲取詳細判決結果 (基於 lawyerperformance) ---
 function getDetailedResult(source, mainType, lawyerName) {
   let outcomeCode = 'unknown_outcome';
-  let description = source.verdict_type || source.verdict || '結果未明'; // 優先使用 verdict_type，其次 verdict
+  // 預設的 description，優先使用 lawyerperformance 中的，其次是案件本身的
+  let description = source.verdict_type || source.verdict || '結果未明'; 
 
-  const performances = source.lawyerperformance;
+  const performances = source.lawyerperformance; // <--- 第一次且唯一一次宣告 performances
+
   if (performances && Array.isArray(performances)) {
     const perf = performances.find(p => p.lawyer === lawyerName);
     if (perf && perf.verdict) {
-      description = perf.verdict; // 主要描述來自 lawyerperformance.verdict
+      description = perf.verdict; // 如果 lawyerperformance 中有，就用它的 verdict 更新 description
       const perfVerdict = perf.verdict.toLowerCase();
       const isProcedural = perf.is_procedural === 'true' || perf.is_procedural === true;
 
@@ -691,10 +693,8 @@ function getDetailedResult(source, mainType, lawyerName) {
         else if (perfVerdict.includes("有罪且符合預期")) outcomeCode = 'criminal_guilty_expected';
         else if (perfVerdict.includes("有罪且加重")) outcomeCode = 'criminal_guilty_aggravated';
         else if (perfVerdict.includes("有罪依法量刑")) outcomeCode = 'criminal_guilty_sentenced';
-        // 可以考慮 source.verdict_type 中的 "免訴", "不受理"
-        else if (source.verdict_type && source.verdict_type.toLowerCase().includes("免訴")) outcomeCode = 'criminal_dismissed_charge_no_prosecution'; // 例如
+        else if (source.verdict_type && source.verdict_type.toLowerCase().includes("免訴")) outcomeCode = 'criminal_dismissed_charge_no_prosecution';
         else if (source.verdict_type && source.verdict_type.toLowerCase().includes("不受理")) outcomeCode = 'criminal_dismissed_charge_not_accepted';
-
       } else if (mainType === 'administrative') {
         if (isProcedural || perfVerdict.includes("procedural")) outcomeCode = 'admin_procedural';
         else if (perfVerdict.includes("撤銷原處分") && !perfVerdict.includes("部分")) outcomeCode = 'admin_win_full_revoke';
@@ -704,28 +704,22 @@ function getDetailedResult(source, mainType, lawyerName) {
       }
     }
   }
-
-  // 如果 outcomeCode 仍然是 unknown_outcome，但 description 有內容，嘗試從 description 再推斷一次
-  if (outcomeCode === 'unknown_outcome' && description && description !== '結果未明') {
-    const descLower = description.toLowerCase();
-    // 這裡可以放一些基於案件總體 verdict/verdict_type 的兜底判斷 (類似 getDetailedResult 的早期版本)
-    if (mainType === 'civil') {
-      if (descLower.includes("和解")) outcomeCode = 'civil_settlement';
-      // ...
-    }
-  }
   
-  let finalDescription = source.verdict_type || source.verdict || '結果未分類'; // 預設值
-
-  const performances = source.lawyerperformance;
-  if (performances && Array.isArray(performances)) {
-    const perf = performances.find(p => p.lawyer === lawyerName);
-    if (perf && perf.verdict) {
-      finalDescription = perf.verdict; // 優先使用 lawyerperformance 中的描述
-    }
+  // 如果經過 lawyerperformance 的處理後，description 仍然是 "結果未明" 或 outcomeCode 是 unknown_outcome
+  // 並且 source.verdict 或 source.verdict_type 有更具體的值，可以再嘗試賦值一次
+  // 主要是確保 description 盡可能使用最優信息源
+  if ((description === '結果未明' || outcomeCode === 'unknown_outcome') && (source.verdict || source.verdict_type)) {
+      description = source.verdict_type || source.verdict || '結果未分類';
+      // 可以根據 outcomeCode 嘗試給 description 一個更標準的名稱，如果它仍然是 '結果未分類'
+      if (description === '結果未分類' && outcomeCode !== 'unknown_outcome') {
+          // 這裡可以添加一個基於 outcomeCode 轉換為可讀描述的邏輯
+          // 例如： if (outcomeCode === 'civil_win_high') description = '民事高度有利';
+          // 但通常 lawyerperformance.verdict 已經是好的描述了
+      }
   }
 
-  return { outcomeCode, description: finalDescription };
+
+  return { outcomeCode, description };
 }
 
 // --- 輔助函數：獲取律師角色 ---
