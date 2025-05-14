@@ -601,160 +601,402 @@ app.get('/filters', async (req, res) => {
 })
 
 // 以下是要添加到 index.js 中的內容
+// 確保在index.js中分析案件類型的分佈數據
+app.get('/api/lawyers/:name/cases-distribution', verifyToken, async (req, res) => {
+  const lawyerName = req.params.name;
+  const userId = req.user.uid;
+  const analysisCost = 1; // 消耗1積分
+
+  console.log(`[律師案件分佈] 用戶 ${userId} 請求律師: ${lawyerName} 的案件分佈`);
+
+  try {
+    // 假設我們已經在API中有這些數據
+    const distribution = {
+      caseTypes: {
+        labels: ['民事租賃', '工程款請求', '侵權行為', '債務請求', '其他'],
+        values: [25, 18, 15, 12, 30]
+      }
+    };
+
+    res.status(200).json(distribution);
+  } catch (error) {
+    console.error(`[案件分佈錯誤]`, error);
+    res.status(500).json({
+      error: '獲取案件分佈失敗'
+    });
+  }
+});
+
+const criminalKeywordsTitle = ['違反', '妨害', '殺人', '傷害', '竊盜', '詐欺', '貪污', '瀆職', '偽造文書', '毒品', '槍砲', '公共危險', '過失致死', '背信'];
+const civilKeywordsTitle = ['給付', '返還', '確認', '分割', '所有權', '抵押權', '租賃', '買賣', '承攬', '工程款', '醫療疏失', '離婚', '繼承', '監護', '票據', '債務不履行', '侵權行為損害賠償'];
+
+function getMainType(source) {
+  const caseType = (source.case_type || '').toLowerCase();
+  const court = (source.court || '').toLowerCase();
+  const jtitle = (source.JTITLE || '').toLowerCase();
+  const jcase = (source.JCASE || '').toLowerCase();
+
+  if (caseType.includes('行政') || court.includes('行政法院') || (jtitle.includes('稅') || jtitle.includes('徵收') || jtitle.includes('處分')) && !jtitle.includes('民事')) {
+    return 'administrative';
+  }
+  if (caseType.includes('刑事') || court.includes('刑事庭') || criminalKeywordsTitle.some(kw => jtitle.includes(kw) && !civilKeywordsTitle.some(cKw => jtitle.includes(cKw)))) {
+    return 'criminal';
+  }
+  if (caseType.includes('民事') || caseType.includes('家事') || court.includes('民事庭') || court.includes('家事法庭') || court.includes('簡易庭') || civilKeywordsTitle.some(kw => jtitle.includes(kw))) {
+    return 'civil';
+  }
+  if (jcase.startsWith('行')) return 'administrative';
+  if (jcase.startsWith('刑') || jcase.startsWith('少刑')) return 'criminal';
+  // 如果不是明確的行政或刑事，且包含民事/家事相關字，或常見的程序字，傾向歸為民事
+  const civilJcaseChars = ['民', '家', '訴', '執', '全', '抗', '促', '裁', '督', '易', '簡']; // 增加一些常見字
+  if (civilJcaseChars.some(char => jcase.includes(char))) {
+    // 若 JTITLE 或 CASE_TYPE 有更強的刑事/行政指標，前面應該已經匹配了
+    return 'civil';
+  }
+
+  console.warn(`[getMainType] Unidentifiable case type for JTITLE: ${source.JTITLE}, JCASE: ${source.JCASE}, case_type: ${source.case_type}, court: ${source.court}. Defaulting to 'civil'.`);
+  return 'civil';
+}
+
+// --- 輔助函數：獲取詳細判決結果 (基於 lawyerperformance) ---
+function getDetailedResult(source, mainType, lawyerName) {
+  let outcomeCode = 'unknown_outcome';
+  let description = source.verdict_type || source.verdict || '結果未明'; // 優先使用 verdict_type，其次 verdict
+
+  const performances = source.lawyerperformance;
+  if (performances && Array.isArray(performances)) {
+    const perf = performances.find(p => p.lawyer === lawyerName);
+    if (perf && perf.verdict) {
+      description = perf.verdict; // 主要描述來自 lawyerperformance.verdict
+      const perfVerdict = perf.verdict.toLowerCase();
+      const isProcedural = perf.is_procedural === 'true' || perf.is_procedural === true;
+
+      if (mainType === 'civil') {
+        if (isProcedural) outcomeCode = 'civil_procedural';
+        else if (perfVerdict.includes("完全勝訴")) outcomeCode = 'civil_win_high';
+        else if (perfVerdict.includes("大部分勝訴")) outcomeCode = 'civil_win_medium';
+        else if (perfVerdict.includes("部分勝訴")) outcomeCode = 'civil_win_low';
+        else if (perfVerdict.includes("小部分勝訴")) outcomeCode = 'civil_win_minor';
+        else if (perfVerdict.includes("完全敗訴")) outcomeCode = 'civil_lose_full';
+        else if (perfVerdict.includes("和解")) outcomeCode = 'civil_settlement';
+        else if (perfVerdict.includes("撤訴")) outcomeCode = 'civil_withdraw';
+        else if (perfVerdict.includes("大部分減免")) outcomeCode = 'civil_defendant_mitigate_high';
+        else if (perfVerdict.includes("部分減免")) outcomeCode = 'civil_defendant_mitigate_medium';
+        else if (perfVerdict.includes("小部分減免")) outcomeCode = 'civil_defendant_mitigate_low';
+      } else if (mainType === 'criminal') {
+        if (isProcedural) outcomeCode = 'criminal_procedural';
+        else if (perfVerdict.includes("無罪")) outcomeCode = 'criminal_acquitted';
+        else if (perfVerdict.includes("有罪但顯著減輕")) outcomeCode = 'criminal_guilty_mitigate_high';
+        else if (perfVerdict.includes("有罪但略微減輕")) outcomeCode = 'criminal_guilty_mitigate_medium';
+        else if (perfVerdict.includes("有罪且符合預期")) outcomeCode = 'criminal_guilty_expected';
+        else if (perfVerdict.includes("有罪且加重")) outcomeCode = 'criminal_guilty_aggravated';
+        else if (perfVerdict.includes("有罪依法量刑")) outcomeCode = 'criminal_guilty_sentenced';
+        // 可以考慮 source.verdict_type 中的 "免訴", "不受理"
+        else if (source.verdict_type && source.verdict_type.toLowerCase().includes("免訴")) outcomeCode = 'criminal_dismissed_charge_no_prosecution'; // 例如
+        else if (source.verdict_type && source.verdict_type.toLowerCase().includes("不受理")) outcomeCode = 'criminal_dismissed_charge_not_accepted';
+
+      } else if (mainType === 'administrative') {
+        if (isProcedural || perfVerdict.includes("procedural")) outcomeCode = 'admin_procedural';
+        else if (perfVerdict.includes("撤銷原處分") && !perfVerdict.includes("部分")) outcomeCode = 'admin_win_full_revoke';
+        else if (perfVerdict.includes("部分撤銷原處分")) outcomeCode = 'admin_win_partial_revoke';
+        else if (perfVerdict.includes("駁回訴訟")) outcomeCode = 'admin_lose_dismissed';
+        else if (perfVerdict.includes("義務訴訟勝訴")) outcomeCode = 'admin_win_obligation';
+      }
+    }
+  }
+
+  // 如果 outcomeCode 仍然是 unknown_outcome，但 description 有內容，嘗試從 description 再推斷一次
+  if (outcomeCode === 'unknown_outcome' && description && description !== '結果未明') {
+    const descLower = description.toLowerCase();
+    // 這裡可以放一些基於案件總體 verdict/verdict_type 的兜底判斷 (類似 getDetailedResult 的早期版本)
+    if (mainType === 'civil') {
+      if (descLower.includes("和解")) outcomeCode = 'civil_settlement';
+      // ...
+    }
+  }
+  
+  let finalDescription = source.verdict_type || source.verdict || '結果未分類'; // 預設值
+
+  const performances = source.lawyerperformance;
+  if (performances && Array.isArray(performances)) {
+    const perf = performances.find(p => p.lawyer === lawyerName);
+    if (perf && perf.verdict) {
+      finalDescription = perf.verdict; // 優先使用 lawyerperformance 中的描述
+    }
+  }
+
+  return { outcomeCode, description: finalDescription };
+}
+
+// --- 輔助函數：獲取律師角色 ---
+function getLawyerRole(source, lawyerName) {
+  const plaintiffLawyers = source.lawyers || [];
+  const defendantLawyers = source.lawyersdef || [];
+  // 確保 lawyerName 是字符串
+  const targetLawyerName = String(lawyerName);
+  const isPlaintiffLawyer = plaintiffLawyers.map(String).includes(targetLawyerName);
+  const isDefendantLawyer = defendantLawyers.map(String).includes(targetLawyerName);
+
+  if (isPlaintiffLawyer && isDefendantLawyer) return '雙方代理';
+  if (isPlaintiffLawyer) return '原告代理人';
+  if (isDefendantLawyer) return '被告代理人';
+  return '未知角色';
+}
+
+// --- 輔助函數：創建統計對象的模板 ---
+function createCivilRoleStats() {
+  return {
+    total: 0,
+    win_high: 0,
+    win_medium: 0,
+    win_low: 0,
+    win_minor: 0,
+    lose_full: 0,
+    settlement: 0,
+    withdraw: 0,
+    procedural: 0,
+    defendant_mitigate_high: 0,
+    defendant_mitigate_medium: 0,
+    defendant_mitigate_low: 0,
+    other: 0
+  };
+}
+
+function createCriminalRoleStats() {
+  return {
+    total: 0,
+    acquitted: 0,
+    dismissed_charge_no_prosecution: 0,
+    dismissed_charge_not_accepted: 0,
+    guilty_probation: 0,
+    guilty_fine_convertible: 0,
+    guilty_fine_only: 0,
+    guilty_imprisonment: 0,
+    guilty_mitigate_high: 0,
+    guilty_mitigate_medium: 0,
+    guilty_expected: 0,
+    guilty_aggravated: 0,
+    guilty_sentenced: 0,
+    procedural: 0,
+    other: 0
+  };
+}
+
+function createAdminRoleStats() {
+  return {
+    total: 0,
+    win_full_revoke: 0,
+    win_partial_revoke: 0,
+    admin_win_obligation: 0,
+    lose_dismissed: 0,
+    procedural: 0,
+    other: 0
+  };
+}
+
+// --- 輔助函數：計算詳細勝訴率 ---
+function calculateDetailedWinRates(processedCases, detailedWinRatesStats, lawyerName) {
+  processedCases.forEach(caseInfo => {
+    const {
+      mainType,
+      role,
+      _outcomeCodeForStat,
+      originalSource
+    } = caseInfo; // 使用 _outcomeCodeForStat
+    if (!_outcomeCodeForStat || _outcomeCodeForStat === 'unknown_outcome') return;
+
+    const statsBucketRoot = detailedWinRatesStats[mainType];
+    if (!statsBucketRoot) return;
+
+    let targetBucket;
+    if (mainType === 'civil') {
+      targetBucket = role === '原告代理人' ? statsBucketRoot.plaintiff : (role === '被告代理人' ? statsBucketRoot.defendant : null);
+    } else if (mainType === 'criminal' && role === '被告代理人') {
+      targetBucket = statsBucketRoot.defendant;
+    } else if (mainType === 'administrative' && role === '原告代理人') {
+      targetBucket = statsBucketRoot.plaintiff;
+    }
+
+    if (targetBucket) {
+      targetBucket.total = (targetBucket.total || 0) + 1; // 確保 total 初始化
+      if (targetBucket[_outcomeCodeForStat] !== undefined) {
+        targetBucket[_outcomeCodeForStat]++;
+      } else {
+        targetBucket.other = (targetBucket.other || 0) + 1;
+      }
+    }
+  });
+
+  // 計算 overall 勝訴/有利結果率
+  // 民事
+  const civilP = detailedWinRatesStats.civil.plaintiff;
+  const civilD = detailedWinRatesStats.civil.defendant;
+  const civilPFavorable = civilP.win_high + civilP.win_medium + civilP.win_low + civilP.win_minor;
+  const civilDFavorable = civilD.defendant_mitigate_high + civilD.defendant_mitigate_medium + civilD.defendant_mitigate_low + (civilD.total > 0 && civilP.lose_full > 0 ? civilD.total : 0); // 假設對方敗訴算我方勝
+  const civilTotalConsidered = (civilP.total - (civilP.settlement + civilP.withdraw + civilP.procedural + civilP.other)) +
+    (civilD.total - (civilD.settlement + civilD.withdraw + civilD.procedural + civilD.other));
+  detailedWinRatesStats.civil.overall = civilTotalConsidered > 0 ? Math.round(((civilPFavorable + civilDFavorable) / civilTotalConsidered) * 100) : 0;
+
+  // 刑事 (對被告有利的)
+  const crimD = detailedWinRatesStats.criminal.defendant;
+  const crimTotalConsidered = crimD.total - (crimD.dismissed_charge_no_prosecution + crimD.dismissed_charge_not_accepted + crimD.procedural + crimD.other);
+  if (crimTotalConsidered > 0) {
+    const crimFavorable = crimD.acquitted + crimD.guilty_mitigate_high + crimD.guilty_mitigate_medium + crimD.guilty_probation + crimD.guilty_fine_convertible + crimD.guilty_fine_only;
+    detailedWinRatesStats.criminal.overall = Math.round((crimFavorable / crimTotalConsidered) * 100);
+  }
+  // 行政 (對原告有利的)
+  const adminP = detailedWinRatesStats.administrative.plaintiff;
+  const adminTotalConsidered = adminP.total - (adminP.procedural + adminP.other);
+  if (adminTotalConsidered > 0) {
+    const adminFavorable = adminP.win_full_revoke + adminP.win_partial_revoke + adminP.admin_win_obligation;
+    detailedWinRatesStats.administrative.overall = Math.round((adminFavorable / adminTotalConsidered) * 100);
+  }
+}
+
+// --- 輔助函數：填充動態篩選選項 ---
+function populateDynamicFilterOptions(optionsTarget, esAggregations, allProcessedCases, lawyerName) {
+  // 目前我們假設在後端手動聚合，因為 ES 中沒有 mainType 欄位用於高效的 filter aggregation
+  ['civil', 'criminal', 'administrative'].forEach(mainType => {
+    const typeCases = allProcessedCases.filter(c => c.mainType === mainType);
+    const uniqueCauses = new Set();
+    const uniqueLawyerVerdicts = new Set();
+
+    typeCases.forEach(c => {
+      if (c.cause && c.cause !== '未指定') {
+        uniqueCauses.add(c.cause);
+      }
+      // 從 lawyerperformance 中提取該律師的 verdict
+      if (c.originalSource && c.originalSource.lawyerperformance && Array.isArray(c.originalSource.lawyerperformance)) {
+        const perf = c.originalSource.lawyerperformance.find(p => p.lawyer === lawyerName);
+        if (perf && perf.verdict) {
+          uniqueLawyerVerdicts.add(perf.verdict);
+        }
+      }
+    });
+    optionsTarget[mainType].causes = Array.from(uniqueCauses).sort();
+    optionsTarget[mainType].verdicts = Array.from(uniqueLawyerVerdicts).sort();
+  });
+}
+
+
 
 // --- 律師搜尋 API 端點 ---
 app.get('/api/lawyers/:name', verifyToken, async (req, res) => {
   const lawyerName = req.params.name;
   const userId = req.user.uid;
-  const searchCost = 1; // 每次搜尋成本
+  const searchCost = 1;
 
-  console.log(`[Lawyer Search] 用戶 ${userId} 搜尋律師: ${lawyerName}`);
+  console.log(`[Lawyer Search] User: ${userId} searching for lawyer: ${lawyerName}`);
   const userDocRef = admin.firestore().collection('users').doc(userId);
 
   try {
-    let lawyerData = null; // 用於儲存搜尋結果
+    let lawyerApiData = null;
 
-    // --- 使用 Firestore Transaction 處理積分 ---
     await admin.firestore().runTransaction(async (transaction) => {
       const userDoc = await transaction.get(userDocRef);
-
-      if (!userDoc.exists) {
-        console.error(`用戶數據不存在: ${userId}`);
-        throw new Error('用戶數據不存在。');
-      }
+      if (!userDoc.exists) throw new Error('用戶數據不存在。');
 
       const userData = userDoc.data();
       const currentCredits = userData.credits || 0;
-      console.log(`[交易] 用戶 ${userId} 目前積分: ${currentCredits}`);
+      if (currentCredits < searchCost) throw new Error('積分不足');
 
-      if (currentCredits < searchCost) {
-        console.warn(`[交易] 用戶 ${userId} 積分不足.`);
-        throw new Error('積分不足');
-      }
-
-      // 扣除積分
-      console.log(`[交易] 扣除 ${searchCost} 點積分，用戶 ${userId}.`);
       transaction.update(userDocRef, {
         credits: admin.firestore.FieldValue.increment(-searchCost),
         lastLawyerSearchAt: admin.firestore.FieldValue.serverTimestamp()
       });
 
-      // --- 執行 Elasticsearch 搜尋 (在 Transaction 內) ---
-      console.log(`[交易] 執行 Elasticsearch 搜尋律師: ${lawyerName}`);
-
-      // 1. 搜尋包含律師名的判決書
-      const result = await client.search({
+      console.log(`[Transaction] Performing ES search for lawyer: ${lawyerName}`);
+      const esResult = await client.search({
         index: 'search-boooook',
-        size: 100,
+        size: 300, // 獲取足夠案件進行分析
         query: {
-          bool: {
-            should: [{
-                match_phrase: {
-                  "lawyers": lawyerName
-                }
-              }, // 原告律師
-              {
-                match_phrase: {
-                  "lawyers.raw": lawyerName
-                }
-              }, // 原告律師 (raw)
-              {
-                match_phrase: {
-                  "lawyersdef": lawyerName
-                }
-              }, // 被告律師
-              {
-                match_phrase: {
-                  "lawyersdef.raw": lawyerName
-                }
-              }, // 被告律師 (raw)
-              {
-                match_phrase: {
-                  "winlawyers": lawyerName
-                }
-              }, // 勝訴律師
-              {
-                match_phrase: {
-                  "loselawyers": lawyerName
-                }
-              } // 敗訴律師
-            ],
-            minimum_should_match: 1
+          bool: { // 確保查詢只針對包含該律師的案件
+            must: [{
+              bool: {
+                should: [{
+                    match_phrase: {
+                      "lawyers": lawyerName
+                    }
+                  }, {
+                    match_phrase: {
+                      "lawyers.raw": lawyerName
+                    }
+                  }, {
+                    match_phrase: {
+                      "lawyersdef": lawyerName
+                    }
+                  }, {
+                    match_phrase: {
+                      "lawyersdef.raw": lawyerName
+                    }
+                  },
+                  // "winlawyers" 和 "loselawyers" 可能不準確，主要依賴 lawyers 和 lawyersdef
+                ],
+                minimum_should_match: 1
+              }
+            }]
           }
         },
-        _source: [
-          "court", "JTITLE", "JDATE", "case_type",
-          "verdict", "cause", "lawyers", "lawyersdef",
-          "winlawyers", "loselawyers",
-          "compensation_claimed", "compensation_awarded"
-        ]
+        _source: [ // 確保獲取所有需要的欄位
+          "court", "JTITLE", "JDATE", "case_type", "verdict", "verdict_type",
+          "cause", "lawyers", "lawyersdef", "JCASE", "lawyerperformance"
+        ],
+        // aggs: {} // 如果不在 ES 層面做聚合，這裡可以是空的
       });
 
-      // 2. 處理搜尋結果
-      if (result.hits.total.value === 0) {
-        console.log(`[律師搜尋] 找不到律師: ${lawyerName}`);
-        return; // 無結果，不扣積分
-      }
-
-      // 3. 分析律師數據
-      lawyerData = analyzeLawyerData(result.hits.hits, lawyerName);
-      console.log(`[律師搜尋] 成功獲取律師資料: ${lawyerName}`);
+      // 即使 esResult.hits.total.value === 0，也調用 analyzeLawyerData 
+      // analyzeLawyerData 內部會處理空 hits 的情況
+      lawyerApiData = analyzeLawyerData(esResult.hits.hits, lawyerName, esResult.aggregations);
+      // 如果沒有 aggs，esResult.aggregations 會是 undefined
     });
-    // --- Transaction 結束 ---
 
-    // Transaction 成功後，發送儲存的結果
-    if (lawyerData) {
-      // 成功後記錄搜尋歷史
+    if (lawyerApiData) {
       try {
         await admin.firestore().collection('users').doc(userId)
           .collection('lawyerSearchHistory').add({
             lawyerName: lawyerName,
-            timestamp: admin.firestore.FieldValue.serverTimestamp()
+            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+            foundResults: lawyerApiData.cases.length > 0
           });
       } catch (historyError) {
-        console.error('記錄搜尋歷史失敗:', historyError);
-        // 不影響主要功能，繼續執行
+        console.error('記錄律師搜尋歷史失敗:', historyError);
       }
 
-      res.status(200).json(lawyerData);
+      // 即使案件列表為空，只要成功執行到這裡，就返回 200 和數據結構
+      res.status(200).json(lawyerApiData);
+
     } else {
-      // 找不到律師資料
-      res.status(404).json({
-        error: `找不到律師 "${lawyerName}" 的相關資料`
+      console.error(`[Lawyer Search Error] lawyerApiData is unexpectedly null for ${lawyerName} after transaction.`);
+      res.status(500).json({
+        error: '搜尋律師時發生未預期的伺服器內部錯誤（資料分析後為空）。'
       });
     }
-  } catch (error) {
-    console.error(`[律師搜尋錯誤] 詳細錯誤:`, error);
 
-    // 處理積分不足的錯誤
+  } catch (error) {
+    console.error(`[Lawyer Search API Error] User: ${userId}, Lawyer: ${lawyerName}, Error Details:`, error);
     if (error.message === '積分不足') {
       try {
         const userDoc = await userDocRef.get();
-        const currentCredits = userDoc.exists ? (userDoc.data().credits || 0) : 0;
+        const currentCredits = userDoc.exists() ? (userDoc.data().credits || 0) : 0;
         return res.status(402).json({
           error: '您的積分不足，請購買積分或升級方案。',
           required: searchCost,
           current: currentCredits
         });
       } catch (readError) {
-        console.error("積分不足後讀取當前積分失敗:", readError);
         return res.status(402).json({
           error: '您的積分不足，請購買積分或升級方案。'
         });
       }
-    }
-
-    // 處理用戶數據找不到的錯誤
-    if (error.message === '用戶數據不存在。') {
+    } else if (error.message === '用戶數據不存在。') {
       return res.status(404).json({
         error: '找不到您的用戶資料，請嘗試重新登入。'
       });
+    } else {
+      res.status(500).json({
+        error: error.message || '搜尋律師時發生伺服器內部錯誤。'
+      });
     }
-
-    // 其他伺服器錯誤
-    res.status(500).json({
-      error: '搜尋律師時發生伺服器內部錯誤。'
-    });
   }
 });
 
@@ -861,180 +1103,121 @@ app.get('/api/user/lawyer-search-history', verifyToken, async (req, res) => {
 });
 
 // --- 輔助函數：分析律師數據 ---
-function analyzeLawyerData(hits, lawyerName) {
-  // 無結果判斷
-  if (!hits || hits.length === 0) {
-    console.log(`[律師搜尋] 找不到律師: ${lawyerName} 的任何案件`);
-    // 返回空結構而非null
-    return {
-      name: lawyerName,
-      lawRating: 0,
-      source: '法院公開判決書',
-      stats: {
-        totalCasesLast3Years: 0,
-        commonCaseTypes: [],
-        commonCourts: [],
+function analyzeLawyerData(esHits, lawyerName, esAggregations) {
+  const initialStats = {
+    totalCasesLast3Years: 0,
+    commonCaseTypes: [],
+    caseTypeValues: [],
+    detailedWinRates: {
+      civil: {
+        overall: 0,
+        plaintiff: createCivilRoleStats(),
+        defendant: createCivilRoleStats()
       },
-      winRate: {
-        plaintiffWinPercent: 0,
-        defendantWinPercent: 0,
+      criminal: {
+        overall: 0,
+        defendant: createCriminalRoleStats()
       },
-      cases: [],
-      analysis: null
-    };
-  }
-
-  // 1. 初始化數據結構
-  const caseTypes = {};
-  const courts = {};
-  const cases = [];
-  let totalCases = hits.length;
-  let winCases = 0;
-  let loseCases = 0;
-  let partialCases = 0;
-  const recentCases = []; // 近三年案件
-
-  // 2. 計算近三年日期 (數字格式)
-  const now = new Date();
-  const threeYearsAgo = new Date(now.getFullYear() - 3, now.getMonth(), now.getDate());
-  const threeYearsAgoNum = threeYearsAgo.getFullYear() * 10000 +
-    (threeYearsAgo.getMonth() + 1) * 100 +
-    threeYearsAgo.getDate();
-
-  // 3. 遍歷所有案件，統計資料
-  hits.forEach(hit => {
-    const source = hit._source;
-
-    // 記錄案件類型
-    if (source.case_type) {
-      caseTypes[source.case_type] = (caseTypes[source.case_type] || 0) + 1;
-    }
-
-    // 記錄法院
-    if (source.court) {
-      courts[source.court] = (courts[source.court] || 0) + 1;
-    }
-
-    // 判斷勝訴情況 - 修改後
-    // 1. 檢查律師是否為勝訴律師
-    const isWinLawyer = source.winlawyers &&
-      source.winlawyers.includes(lawyerName);
-
-    // 2. 檢查律師是否為敗訴律師
-    const isLoseLawyer = source.loselawyers &&
-      source.loselawyers.includes(lawyerName);
-
-    // 3. 檢查律師的角色（原告/被告）
-    const isPlaintiffLawyer = source.lawyers &&
-      source.lawyers.includes(lawyerName);
-    const isDefendantLawyer = source.lawyersdef &&
-      source.lawyersdef.includes(lawyerName);
-
-    // 根據角色和結果來判斷勝敗
-    if (isWinLawyer ||
-      (isPlaintiffLawyer && source.verdict === '原告勝訴') ||
-      (isDefendantLawyer && source.verdict === '被告勝訴')) {
-      winCases++;
-    } else if (isLoseLawyer ||
-      (isPlaintiffLawyer && source.verdict === '被告勝訴') ||
-      (isDefendantLawyer && source.verdict === '原告勝訴')) {
-      loseCases++;
-    } else if (source.verdict === '部分勝訴') {
-      partialCases++;
-    }
-
-    // 轉換日期格式，例如 "2022/07/15" -> 20220715
-    let dateNum = 0;
-    if (source.JDATE) {
-      const dateParts = source.JDATE.split('/');
-      if (dateParts.length === 3) {
-        dateNum = parseInt(dateParts[0]) * 10000 +
-          parseInt(dateParts[1]) * 100 +
-          parseInt(dateParts[2]);
+      administrative: {
+        overall: 0,
+        plaintiff: createAdminRoleStats()
+      }
+    },
+    dynamicFilterOptions: {
+      civil: {
+        causes: [],
+        verdicts: []
+      },
+      criminal: {
+        causes: [],
+        verdicts: []
+      },
+      administrative: {
+        causes: [],
+        verdicts: []
       }
     }
+  };
+  const resultData = {
+    name: lawyerName,
+    lawRating: 0,
+    source: '法院公開判決書',
+    stats: JSON.parse(JSON.stringify(initialStats)),
+    cases: [],
+    analysis: null // analysis 欄位保留，但目前為 null
+  };
 
-    // 記錄案件資料
-    const caseItem = {
-      id: hit._id,
-      title: source.JTITLE || `${source.court || ''} 判決`,
-      cause: source.cause || '未指定',
-      result: source.verdict || '未指定',
-      date: source.JDATE || '未知日期',
-      role: isPlaintiffLawyer ? '原告代表' : isDefendantLawyer ? '被告代表' : '未知角色'
-    };
-
-    cases.push(caseItem);
-
-    // 判斷是否為近三年案件
-    if (dateNum >= threeYearsAgoNum) {
-      recentCases.push(caseItem);
-    }
-  });
-
-  // 4. 轉換為前端需要的數據格式
-
-  // 取出前 4 個最常見的案件類型
-  const commonCaseTypes = Object.entries(caseTypes)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 4)
-    .map(entry => entry[0]);
-
-  // 取出前 3 個最常出現的法院
-  const commonCourts = Object.entries(courts)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 3)
-    .map(entry => entry[0]);
-
-  // 計算勝訴率
-  const totalVerdictsWithResult = winCases + loseCases;
-  const winRate = totalVerdictsWithResult > 0 ?
-    Math.round((winCases / totalVerdictsWithResult) * 100) : 0;
-
-  // 計算近三年案件數
-  const totalRecentCases = recentCases.length;
-
-  // 計算法評星等 (0-8)
-  // 簡單實現：基於勝訴率、案件量等因素
-  let lawRating = 0;
-  if (totalRecentCases >= 5) {
-    // 基礎分數 (0-5)
-    lawRating = Math.min(5, Math.floor(totalRecentCases / 10));
-
-    // 勝訴率加分 (0-3)
-    if (winRate > 90) lawRating += 3;
-    else if (winRate > 70) lawRating += 2;
-    else if (winRate > 50) lawRating += 1;
-  } else {
-    // 案件太少時的評分方法
-    lawRating = Math.min(3, totalRecentCases);
+  if (!esHits || esHits.length === 0) {
+    console.log(`[analyzeLawyerData] No cases found for lawyer: ${lawyerName}`);
+    return resultData;
   }
 
-  // 確保評分在 0-8 範圍內
-  lawRating = Math.max(0, Math.min(8, lawRating));
+  const now = new Date();
+  const threeYearsAgoNum = parseInt(`${now.getFullYear() - 3}${("0" + (now.getMonth() + 1)).slice(-2)}${("0" + now.getDate()).slice(-2)}`, 10);
 
-  // 5. 構建返回數據
-  return {
-    name: lawyerName,
-    lawRating: lawRating,
-    source: '法院公開判決書',
-    stats: {
-      totalCasesLast3Years: totalRecentCases,
-      commonCaseTypes: commonCaseTypes,
-      commonCourts: commonCourts,
-    },
-    winRate: {
-      plaintiffWinPercent: winRate,
-      defendantWinPercent: 100 - winRate,
-    },
-    cases: cases.sort((a, b) => {
-      // 按照日期排序，最新的在前
-      const dateA = a.date.split('/').join('');
-      const dateB = b.date.split('/').join('');
-      return dateB.localeCompare(dateA);
-    }).slice(0, 10), // 只返回前 10 個案件
-    analysis: null // 分析部分需要另外請求
-  };
+  const allCaseTypesCounter = {};
+
+  resultData.cases = esHits.map(hit => {
+    const source = hit._source;
+    const mainType = getMainType(source);
+    const detailedResult = getDetailedResult(source, mainType, lawyerName);
+    const role = getLawyerRole(source, lawyerName);
+    const caseDateStr = (source.JDATE || "").replace(/\//g, '');
+
+    if (caseDateStr && parseInt(caseDateStr, 10) >= threeYearsAgoNum) {
+      resultData.stats.totalCasesLast3Years++;
+    }
+
+    if (source.case_type) { // 使用原始的 case_type 進行統計
+      allCaseTypesCounter[source.case_type] = (allCaseTypesCounter[source.case_type] || 0) + 1;
+    }
+
+    return {
+      id: hit._id,
+      mainType: mainType,
+      title: source.JTITLE || `${source.court || ''} 判決`,
+      cause: source.cause || '未指定',
+      result: detailedResult.description, // 這是給前端顯示的，基於 lawyerperformance.verdict
+      originalVerdict: source.verdict, // 案件本身的 verdict
+      originalVerdictType: source.verdict_type, // 案件本身的 verdict_type
+      date: caseDateStr,
+      role: role,
+      _outcomeCodeForStat: detailedResult.outcomeCode, // 用於內部統計
+      originalSource: source // 保留原始 source 以便 populateDynamicFilterOptions 使用
+    };
+  });
+
+  calculateDetailedWinRates(resultData.cases, resultData.stats.detailedWinRates, lawyerName);
+
+  const sortedCommonCaseTypes = Object.entries(allCaseTypesCounter)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 3);
+  resultData.stats.commonCaseTypes = sortedCommonCaseTypes.map(entry => entry[0]);
+  resultData.stats.caseTypeValues = sortedCommonCaseTypes.map(entry => entry[1]);
+
+  populateDynamicFilterOptions(resultData.stats.dynamicFilterOptions, esAggregations, resultData.cases, lawyerName);
+
+  // 計算 lawRating (示例: 可以用民事整體有利結果率)
+  const overallFavorableRate = resultData.stats.detailedWinRates.civil.overall ||
+    resultData.stats.detailedWinRates.criminal.overall ||
+    resultData.stats.detailedWinRates.administrative.overall || 0;
+  if (resultData.stats.totalCasesLast3Years >= 3) { // 降低案件數門檻
+    resultData.lawRating = Math.min(4, Math.floor(resultData.stats.totalCasesLast3Years / 5)); // 調整基礎分
+    if (overallFavorableRate > 70) resultData.lawRating += 3;
+    else if (overallFavorableRate > 55) resultData.lawRating += 2;
+    else if (overallFavorableRate > 40) resultData.lawRating += 1;
+  } else {
+    resultData.lawRating = Math.min(2, resultData.stats.totalCasesLast3Years);
+  }
+  resultData.lawRating = Math.max(0, Math.min(8, Math.round(resultData.lawRating)));
+
+
+  resultData.cases.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  // 不在此處 slice，讓前端根據需要決定顯示多少
+  // resultData.cases = resultData.cases.slice(0, 50); 
+
+  console.log(`[analyzeLawyerData] Processed ${resultData.cases.length} cases for ${lawyerName}.`);
+  return resultData;
 }
 
 // --- 輔助函數：生成律師分析 ---
