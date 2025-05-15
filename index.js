@@ -727,7 +727,7 @@ function getDetailedResult(perfVerdictText, mainType, sourceForContext, lawyerPe
       else neutralOutcomeCode = 'CRIMINAL_UNCATEGORIZED_NEUTRAL';
 
     } else if (mainType === 'administrative') {
-      if (sideFromPerf === 'plaintiff' || role === '聲請人代理人') {
+      if (sideFromPerf === 'plaintiff') {
         if (isRulingCase) {
           if (pv.includes("准予停止執行")) outcomeCode = 'ADMIN_RULING_FAVORABLE_COUNT'; // OK
           else if (pv.includes("駁回停止執行")) outcomeCode = 'ADMIN_RULING_UNFAVORABLE_COUNT'; // OK
@@ -799,7 +799,7 @@ function getDetailedResult(perfVerdictText, mainType, sourceForContext, lawyerPe
   }
 
   return {
-    neutralOutcomeCode,  // 直接使用 neutralOutcomeCode
+    neutralOutcomeCode, // 直接使用 neutralOutcomeCode
     description
   }; // 返回 outcomeCode (之前打錯字)
 }
@@ -821,6 +821,10 @@ function createFinalOutcomeStats() { // 改名以區分
 
 // --- 輔助函數：計算詳細勝訴率 ---
 function calculateDetailedWinRates(processedCases, detailedWinRatesStats) {
+  console.log("開始處理案件勝訴率統計，案件數量:", processedCases.length);
+  for (let i = 0; i < processedCases.length; i++) {
+    console.log(`案件[${i}]: ID=${processedCases[i].id}, mainType=${processedCases[i].mainType}, sideFromPerf=${processedCases[i].sideFromPerf}, neutralOutcomeCode=${processedCases[i].neutralOutcomeCode}`);
+  }
   processedCases.forEach(caseInfo => {
     const {
       mainType,
@@ -842,8 +846,9 @@ function calculateDetailedWinRates(processedCases, detailedWinRatesStats) {
     let targetRoleBucket;
 
     if (!targetRoleBucket) return;
-
+    console.log(`增加前: ${mainType} ${sideFromPerf} 總計=${targetRoleBucket.total}`);
     targetRoleBucket.total = (targetRoleBucket.total || 0) + 1;
+    console.log(`增加後: ${mainType} ${sideFromPerf} 總計=${targetRoleBucket.total}`);
     let finalStatKeyToIncrement = 'OTHER_UNKNOWN_COUNT'; // 預設
 
     // --- 核心映射：將 (mainType, sideFromPerf, neutralOutcomeCode) 映射到 finalStatKeyToIncrement ---
@@ -856,6 +861,7 @@ function calculateDetailedWinRates(processedCases, detailedWinRatesStats) {
     } else {
       if (mainType === 'civil') {
         if (sideFromPerf === 'plaintiff') {
+          console.log(`原告案件檢查: neutralOutcomeCode=${neutralOutcomeCode}`);
           if (['CIVIL_P_WIN_FULL', 'CIVIL_P_WIN_MAJOR', 'GENERIC_WIN_FULL', 'RULING_GRANTED'].includes(neutralOutcomeCode)) finalStatKeyToIncrement = 'FAVORABLE_FULL_COUNT';
           else if (['CIVIL_P_WIN_PARTIAL', 'CIVIL_P_WIN_MINOR', 'GENERIC_WIN_PARTIAL'].includes(neutralOutcomeCode)) finalStatKeyToIncrement = 'FAVORABLE_PARTIAL_COUNT';
           else if (['CIVIL_P_LOSE_FULL', 'CIVIL_D_WIN_FULL', 'RULING_DISMISSED', 'GENERIC_LOSE_FULL'].includes(neutralOutcomeCode)) finalStatKeyToIncrement = 'UNFAVORABLE_FULL_COUNT';
@@ -1259,7 +1265,7 @@ function analyzeLawyerData(esHits, lawyerName, esAggregations) {
       originalVerdictType: source.verdict_type,
       date: caseDateStr,
       sideFromPerf: sideFromPerf,
-      neutralOutcomeCode: neutralOutcomeCode,
+      neutralOutcomeCode, // 確保這裡正確設置了 neutralOutcomeCode
       originalSource: source
     };
   });
