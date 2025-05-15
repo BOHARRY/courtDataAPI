@@ -878,33 +878,35 @@ function calculateDetailedWinRates(processedCases, detailedWinRatesStats) {
     }
 
     let targetRoleBucket;
-    // 根據 sideFromPerf 決定目標統計桶
-    if (sideFromPerf === 'plaintiff') { // 假設 perf.side 返回的是小寫的 'plaintiff' 或 'defendant'
+    if (sideFromPerf === 'plaintiff') {
       targetRoleBucket = statsBucketRoot.plaintiff;
     } else if (sideFromPerf === 'defendant') {
       targetRoleBucket = statsBucketRoot.defendant;
     } else {
-      console.warn(`[calculateDetailedWinRates] Unknown sideFromPerf: ${sideFromPerf} for case ${caseInfo.id}`);
+      // 如果 sideFromPerf 是 'unknown' 或其他意外值，我們不應該嘗試更新統計
+      console.warn(`[calculateDetailedWinRates] Case ${caseInfo.id} has unknown sideFromPerf '${sideFromPerf}', skipping detailed stat update for this case.`);
       return;
     }
 
     if (!targetRoleBucket) {
-      console.warn(`[calculateDetailedWinRates] Target role bucket is undefined for mainType: ${mainType}, side: ${sideFromPerf}`);
+      // 這理論上不應該發生，因為 analyzeLawyerData 中 initialStats 已經創建了 plaintiff 和 defendant
+      console.error(`[calculateDetailedWinRates] CRITICAL: Target role bucket is undefined for mainType: ${mainType}, side: ${sideFromPerf}. This should not happen.`);
       return;
     }
 
-    //targetRoleBucket.total = (targetRoleBucket.total || 0) + 1; // 先加總案件數
-
-
+    targetRoleBucket.total = (targetRoleBucket.total || 0) + 1; // 先加總案件數
 
     // 根據 neutralOutcomeCode 和 sideFromPerf 映射到有利/不利的統計槽
     // ***** 這是最需要細化和擴充的映射邏輯 *****
     let finalStatCode = 'OTHER_UNKNOWN_COUNT'; // 預設
 
-    if (neutralOutcomeCode === 'PROCEDURAL') finalStatCode = 'PROCEDURAL_COUNT';
-    else if (neutralOutcomeCode === 'SETTLEMENT' || neutralOutcomeCode === 'WITHDRAWAL') finalStatCode = 'NEUTRAL_SETTLEMENT_COUNT';
-    else if (neutralOutcomeCode === 'NOT_APPLICABLE_OR_UNKNOWN') finalStatCode = 'OTHER_UNKNOWN_COUNT';
-    else {
+    if (neutralOutcomeCode === 'PROCEDURAL') { // 來自 getDetailedResult 的 PROC_COUNT
+      finalStatCode = 'PROCEDURAL_COUNT';
+    } else if (neutralOutcomeCode === 'SETTLEMENT' || neutralOutcomeCode === 'WITHDRAWAL') {
+      finalStatCode = 'NEUTRAL_SETTLEMENT_COUNT';
+    } else if (neutralOutcomeCode === 'NOT_APPLICABLE_OR_UNKNOWN' || neutralOutcomeCode.endsWith('_UNCATEGORIZED')) {
+      finalStatCode = 'OTHER_UNKNOWN_COUNT';
+    } else {
       if (mainType === 'civil') {
         if (sideFromPerf === 'plaintiff') {
           if (['CIVIL_PLAINTIFF_WIN_FULL', 'CIVIL_PLAINTIFF_WIN_MAJOR', 'RULING_GRANTED', 'GENERIC_WIN_FULL'].includes(neutralOutcomeCode)) finalStatCode = 'FAVORABLE_FULL_COUNT';
@@ -915,14 +917,16 @@ function calculateDetailedWinRates(processedCases, detailedWinRatesStats) {
           else if (['CIVIL_DEFENDANT_MITIGATE_PARTIAL', 'CIVIL_DEFENDANT_MITIGATE_MINOR', 'GENERIC_WIN_PARTIAL'].includes(neutralOutcomeCode)) finalStatCode = 'FAVORABLE_PARTIAL_COUNT';
           else if (['CIVIL_DEFENDANT_LOSE_FULL', 'CIVIL_PLAINTIFF_WIN_FULL', 'RULING_GRANTED', 'GENERIC_LOSE_FULL'].includes(neutralOutcomeCode)) finalStatCode = 'UNFAVORABLE_FULL_COUNT';
         }
-      } else if (mainType === 'criminal') { // 主要看被告
-        if (sideFromPerf === 'defendant') {
-          if (neutralOutcomeCode === 'CRIMINAL_ACQUITTED') finalStatCode = 'FAVORABLE_FULL_COUNT';
-          else if (['CRIMINAL_GUILTY_FAVORABLE_COUNT', 'CRIMINAL_GUILTY_MITIGATE_HIGH', 'CRIMINAL_GUILTY_MITIGATE_MEDIUM', 'CRIMINAL_GUILTY_PROBATION', 'CRIMINAL_GUILTY_FINE_CONVERTIBLE', 'CRIMINAL_GUILTY_FINE_ONLY', 'CRIMINAL_RULING_FAVORABLE_COUNT'].includes(neutralOutcomeCode)) finalStatCode = 'FAVORABLE_PARTIAL_COUNT'; // 或 FAVORABLE_FULL
-          else if (['CRIMINAL_GUILTY_UNFAVORABLE_COUNT', 'CRIMINAL_GUILTY_AGGRAVATED', 'CRIMINAL_GUILTY_EXPECTED_OR_SENTENCED', 'CRIMINAL_RULING_UNFAVORABLE_COUNT'].includes(neutralOutcomeCode)) finalStatCode = 'UNFAVORABLE_FULL_COUNT';
+      } else if (mainType === 'criminal') {
+        if (sideFromPerf === 'defendant') { // 刑事主要看被告
+          if (neutralOutcomeCode === 'CRIMINAL_ACQUITTED') finalStatCode = 'FAVORABLE_FULL_COUNT'; // 對應前端 "無罪/免訴"
+          else if (['CRIMINAL_GUILTY_FAVORABLE_COUNT', 'CRIMINAL_GUILTY_MITIGATE_HIGH', 'CRIMINAL_GUILTY_MITIGATE_MEDIUM', 'CRIMINAL_GUILTY_PROBATION', 'CRIMINAL_GUILTY_FINE_CONVERTIBLE', 'CRIMINAL_GUILTY_FINE_ONLY'].includes(neutralOutcomeCode)) finalStatCode = 'FAVORABLE_PARTIAL_COUNT'; // 對應前端 "輕判/緩刑"
+          else if (['CRIMINAL_GUILTY_UNFAVORABLE_COUNT', 'CRIMINAL_GUILTY_AGGRAVATED', 'CRIMINAL_GUILTY_AS_EXPECTED_OR_SENTENCED', 'CRIMINAL_GUILTY_IMPRISONMENT_COUNT'].includes(neutralOutcomeCode)) finalStatCode = 'UNFAVORABLE_FULL_COUNT'; // 對應前端 "重判/有罪"
+          else if (['CRIMINAL_RULING_FAVORABLE_COUNT'].includes(neutralOutcomeCode)) finalStatCode = 'RULING_FAVORABLE_COUNT'; // 有利裁定可以計入 "其他" 或單獨一類
+          else if (['CRIMINAL_RULING_UNFAVORABLE_COUNT'].includes(neutralOutcomeCode)) finalStatCode = 'RULING_UNFAVORABLE_COUNT'; // 不利裁定
           else if (['CRIMINAL_CHARGE_DISMISSED_NO_PROSECUTION', 'CRIMINAL_CHARGE_DISMISSED_NOT_ACCEPTED'].includes(neutralOutcomeCode)) finalStatCode = 'PROCEDURAL_COUNT';
         }
-      } else if (mainType === 'administrative') { // 主要看原告
+      } else if (mainType === 'administrative') { // 行政主要看原告
         if (sideFromPerf === 'plaintiff') {
           if (['ADMIN_WIN_FULL_REVOKE', 'ADMIN_WIN_OBLIGATION', 'ADMIN_RULING_FAVORABLE_COUNT'].includes(neutralOutcomeCode)) finalStatCode = 'FAVORABLE_FULL_COUNT';
           else if (neutralOutcomeCode === 'ADMIN_WIN_PARTIAL_REVOKE') finalStatCode = 'FAVORABLE_PARTIAL_COUNT';
@@ -931,10 +935,12 @@ function calculateDetailedWinRates(processedCases, detailedWinRatesStats) {
       }
     }
 
-    if (targetRoleBucket[neutralOutcomeCode] !== undefined) {
-      targetRoleBucket[neutralOutcomeCode]++;
+    if (targetRoleBucket[finalStatCode] !== undefined) { // <--- 關鍵：用 finalStatCode 檢查和累加
+      targetRoleBucket[finalStatCode]++;
     } else {
-      console.warn(`[calculateDetailedWinRates] Unknown neutralOutcomeCode '${neutralOutcomeCode}' for mainType '${mainType}', side '${sideFromPerf}'. Counting as OTHER_UNKNOWN_COUNT.`);
+      // 如果 finalStatCode 仍然是 OTHER_UNKNOWN_COUNT (因為前面的映射沒匹配上 neutralOutcomeCode)
+      // 或者 neutralOutcomeCode 本身就是一個我們不期望的、但又不是程序/和解/未知的 code
+      console.warn(`[calculateDetailedWinRates] Fallback: NeutralCode '${neutralOutcomeCode}' resulted in finalStatCode '${finalStatCode}' which is not a primary stat key for mainType '${mainType}', side '${sideFromPerf}'. Counting as OTHER_UNKNOWN_COUNT.`);
       targetRoleBucket.OTHER_UNKNOWN_COUNT = (targetRoleBucket.OTHER_UNKNOWN_COUNT || 0) + 1;
     }
   });
@@ -1271,24 +1277,27 @@ function analyzeLawyerData(esHits, lawyerName, esAggregations) {
   resultData.cases = esHits.map(hit => {
     const source = hit._source;
     const mainType = getMainType(source);
-    
+
     let sideFromPerf = 'unknown';
     let perfVerdictText = null;
     let lawyerPerfObjectForDetailedResult = null; // <--- 新增變數
 
     const performances = source.lawyerperformance;
     if (performances && Array.isArray(performances)) {
-        const perf = performances.find(p => p.lawyer === lawyerName);
-        if (perf) {
-            lawyerPerfObjectForDetailedResult = perf; // <--- 賦值
-            sideFromPerf = (perf.side || 'unknown').toLowerCase();
-            perfVerdictText = perf.verdict;
-        }
+      const perf = performances.find(p => p.lawyer === lawyerName);
+      if (perf) {
+        lawyerPerfObjectForDetailedResult = perf; // <--- 賦值
+        sideFromPerf = (perf.side || 'unknown').toLowerCase();
+        perfVerdictText = perf.verdict;
+      }
     }
-    
+
     // 將 lawyerPerfObjectForDetailedResult 傳遞給 getDetailedResult
-    const { outcomeCode, description } = getDetailedResult(perfVerdictText, mainType, source, lawyerPerfObjectForDetailedResult); 
-                                                                                                // ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    const {
+      outcomeCode,
+      description
+    } = getDetailedResult(perfVerdictText, mainType, source, lawyerPerfObjectForDetailedResult);
+    // ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
     const caseDateStr = (source.JDATE || "").replace(/\//g, '');
     if (caseDateStr && parseInt(caseDateStr, 10) >= threeYearsAgoNum) {
@@ -1299,16 +1308,18 @@ function analyzeLawyerData(esHits, lawyerName, esAggregations) {
     }
 
     return {
-      id: hit._id, mainType,
+      id: hit._id,
+      mainType,
       title: source.JTITLE || `${source.court || ''} 判決`,
       cause: source.cause || '未指定',
-      result: description, 
-      originalVerdict: source.verdict, originalVerdictType: source.verdict_type,
+      result: description,
+      originalVerdict: source.verdict,
+      originalVerdictType: source.verdict_type,
       date: caseDateStr,
       // role: getLawyerRole(source, lawyerName), // 考慮是否仍需要這個基於頂層的 role
-      sideFromPerf: sideFromPerf, 
-      neutralOutcomeCode: outcomeCode, 
-      originalSource: source 
+      sideFromPerf: sideFromPerf,
+      neutralOutcomeCode: outcomeCode,
+      originalSource: source
     };
   });
 
