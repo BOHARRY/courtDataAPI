@@ -858,8 +858,47 @@ function calculateDetailedWinRates(processedCases, detailedWinRatesStats) {
 
     let finalStatKeyToIncrement = 'OTHER_UNKNOWN_COUNT'; // 預設
 
+    // 檢查結果文本是否包含明確的勝敗信息
+    const hasWinIndication = result && (
+      result.includes('勝訴') || 
+      result.includes('無罪') || 
+      result.includes('減免') || 
+      result.includes('緩刑') || 
+      result.includes('撤銷原處分') ||
+      (result.includes('准') && !result.includes('不准'))
+    );
+    
+    const hasLoseIndication = result && (
+      result.includes('敗訴') || 
+      result.includes('有罪') || 
+      result.includes('駁回') && !result.includes('撤銷')
+    );
+
+    // 即使是程序性裁定，如果有明確勝敗結果，也納入計算
+    if (neutralOutcomeCode === 'PROCEDURAL_NEUTRAL' && (hasWinIndication || hasLoseIndication)) {
+      console.log(`程序性裁定案件，但有明確結果: ${result}`);
+      
+      // 根據實際文本結果判斷
+      if (hasWinIndication) {
+        console.log(`判定為有利結果`);
+        finalStatKeyToIncrement = 'FAVORABLE_FULL_COUNT';
+      } else if (hasLoseIndication) {
+        console.log(`判定為不利結果`);
+        finalStatKeyToIncrement = 'UNFAVORABLE_FULL_COUNT';
+      } else {
+        // 保持為程序性
+        finalStatKeyToIncrement = 'PROCEDURAL_COUNT';
+      }
+    }
+    // 真正的無關勝負程序性裁定
+    else if (neutralOutcomeCode === 'PROCEDURAL_NEUTRAL' || 
+             neutralOutcomeCode === 'CRIMINAL_CHARGE_DISMISSED_NO_PROSECUTION' || 
+             neutralOutcomeCode === 'CRIMINAL_CHARGE_DISMISSED_NOT_ACCEPTED') {
+      finalStatKeyToIncrement = 'PROCEDURAL_COUNT';
+    } 
+
     // --- 核心映射：將 (mainType, sideFromPerf, neutralOutcomeCode) 映射到 finalStatKeyToIncrement ---
-    if (neutralOutcomeCode === 'PROCEDURAL_NEUTRAL' || neutralOutcomeCode === 'CRIMINAL_CHARGE_DISMISSED_NO_PROSECUTION' || neutralOutcomeCode === 'CRIMINAL_CHARGE_DISMISSED_NOT_ACCEPTED') {
+    else if (neutralOutcomeCode === 'PROCEDURAL_NEUTRAL' || neutralOutcomeCode === 'CRIMINAL_CHARGE_DISMISSED_NO_PROSECUTION' || neutralOutcomeCode === 'CRIMINAL_CHARGE_DISMISSED_NOT_ACCEPTED') {
       finalStatKeyToIncrement = 'PROCEDURAL_COUNT';
     } else if (neutralOutcomeCode === 'SETTLEMENT_NEUTRAL' || neutralOutcomeCode === 'WITHDRAWAL_NEUTRAL') {
       finalStatKeyToIncrement = 'NEUTRAL_SETTLEMENT_COUNT';
@@ -910,20 +949,33 @@ function calculateDetailedWinRates(processedCases, detailedWinRatesStats) {
     // 累加有利結果 (分子) - 這裡只統計明確的實體有利結果
     favorableSum += (plaintiffStats.FAVORABLE_FULL_COUNT || 0) + (plaintiffStats.FAVORABLE_PARTIAL_COUNT || 0);
     favorableSum += (defendantStats.FAVORABLE_FULL_COUNT || 0) + (defendantStats.FAVORABLE_PARTIAL_COUNT || 0);
+
     if (mainType === 'criminal') favorableSum += (defendantStats.RULING_FAVORABLE_COUNT || 0); // 刑事有利裁定計入
     if (mainType === 'administrative') favorableSum += (plaintiffStats.RULING_FAVORABLE_COUNT || 0); // 行政有利裁定計入
 
 
     // 累加有效案件總數 (分母) - 排除程序性、中性(和解/撤訴)、未知、以及不利的裁定(如果裁定單獨統計)
-    consideredSum += Math.max(0, (plaintiffStats.total || 0) - ((plaintiffStats.PROCEDURAL_COUNT || 0) + (plaintiffStats.NEUTRAL_SETTLEMENT_COUNT || 0) + (plaintiffStats.OTHER_UNKNOWN_COUNT || 0) + (plaintiffStats.RULING_UNFAVORABLE_COUNT || 0)));
-    consideredSum += Math.max(0, (defendantStats.total || 0) - ((defendantStats.PROCEDURAL_COUNT || 0) + (defendantStats.NEUTRAL_SETTLEMENT_COUNT || 0) + (defendantStats.OTHER_UNKNOWN_COUNT || 0) + (defendantStats.RULING_UNFAVORABLE_COUNT || 0)));
+    consideredSum += (plaintiffStats.FAVORABLE_FULL_COUNT || 0) + 
+                     (plaintiffStats.FAVORABLE_PARTIAL_COUNT || 0) + 
+                     (plaintiffStats.UNFAVORABLE_FULL_COUNT || 0);
+    
+    consideredSum += (defendantStats.FAVORABLE_FULL_COUNT || 0) + 
+                     (defendantStats.FAVORABLE_PARTIAL_COUNT || 0) + 
+                     (defendantStats.UNFAVORABLE_FULL_COUNT || 0);
 
     stats.overall = consideredSum > 0 ? Math.round((favorableSum / consideredSum) * 100) : 0;
     console.log(`[calculateOverall - ${mainType}] Favorable=${favorableSum}, Considered=${consideredSum}, Final Overall: ${stats.overall}`);
-    if (mainType === 'criminal' && defendantStats) console.log(`[calculateOverallCriminal] Defendant Stats for Overall: ${JSON.stringify(defendantStats)}`);
-    if (mainType === 'civil' && plaintiffStats) console.log(`[calculateOverallCivil] Plaintiff Stats for Overall: ${JSON.stringify(plaintiffStats)}`);
-    if (mainType === 'administrative' && plaintiffStats) console.log(`[calculateOverallAdmin] Plaintiff Stats for Overall: ${JSON.stringify(plaintiffStats)}`);
-  });
+    
+    if (mainType === 'civil') {
+      console.log(`[calculateOverallCivil] 原告統計: ${JSON.stringify(plaintiffStats)}`);
+      console.log(`[calculateOverallCivil] 被告統計: ${JSON.stringify(defendantStats)}`);
+    }
+    if (mainType === 'criminal' && defendantStats) 
+      console.log(`[calculateOverallCriminal] 被告統計: ${JSON.stringify(defendantStats)}`);
+    if (mainType === 'administrative' && plaintiffStats) 
+      console.log(`[calculateOverallAdmin] 原告統計: ${JSON.stringify(plaintiffStats)}`);
+
+    });
   console.log("處理後的統計資料:", JSON.stringify(detailedWinRatesStats));
   // 確保函數最後返回更新後的統計資料
   return detailedWinRatesStats;
