@@ -837,18 +837,18 @@ function createOutcomeStats() {
     PROCEDURAL_COUNT: 0, // 純程序性結果 (不計入勝敗)
     RULING_FAVORABLE_COUNT: 0, // 有利的裁定 (如果單獨統計)
     RULING_UNFAVORABLE_COUNT: 0, // 不利的裁定 (如果單獨統計)
-    CRIMINAL_ACQUITTED_COUNT: 0,
-    CRIMINAL_GUILTY_FAVORABLE_COUNT: 0, // 包含輕判/緩刑/得易科罰金/僅罰金/顯著減輕/略微減輕
-    CRIMINAL_GUILTY_UNFAVORABLE_COUNT: 0, // 包含重判/有罪/符合預期/加重
-    CRIMINAL_PROCEDURAL_COUNT: 0, // 包含免訴/不受理/程序性裁定
-    CRIMINAL_RULING_FAVORABLE_COUNT: 0, // 有利裁定，如准予交保
-    CRIMINAL_RULING_UNFAVORABLE_COUNT: 0, // 不利裁定，如羈押
     OTHER_UNKNOWN_COUNT: 0 // 其他無法歸類的實體結果
   };
 }
 function createCriminalRoleStats() {
   return {
     total: 0,
+    CRIMINAL_ACQUITTED_COUNT: 0,
+    CRIMINAL_GUILTY_FAVORABLE_COUNT: 0, // 包含輕判/緩刑/得易科罰金/僅罰金/顯著減輕/略微減輕
+    CRIMINAL_GUILTY_UNFAVORABLE_COUNT: 0, // 包含重判/有罪/符合預期/加重
+    CRIMINAL_PROCEDURAL_COUNT: 0, // 包含免訴/不受理/程序性裁定
+    CRIMINAL_RULING_FAVORABLE_COUNT: 0, // 有利裁定，如准予交保
+    CRIMINAL_RULING_UNFAVORABLE_COUNT: 0, // 不利裁定，如羈押
     OTHER_UNKNOWN_COUNT: 0
   };
 }
