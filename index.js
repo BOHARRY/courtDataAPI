@@ -820,7 +820,7 @@ function createFinalOutcomeStats() {
 function calculateDetailedWinRates(processedCases, detailedWinRatesStats) {
 
   console.log("處理前的統計資料:", JSON.stringify(detailedWinRatesStats));
-  console.log("detailedWinRatesStats 身份檢查:", detailedWinRatesStats === resultData.stats.detailedWinRates);
+  console.log("準備處理統計數據...");
   console.log("開始處理案件勝訴率統計，案件數量:", processedCases.length);
 
   for (let i = 0; i < processedCases.length; i++) {
