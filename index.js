@@ -664,7 +664,7 @@ function getMainType(source) {
 
 function getDetailedResult(perfVerdictText, mainType, sourceForContext) {
   // sourceForContext 包含 is_ruling, JCASE, JTITLE, verdict, verdict_type 等用於兜底或判斷裁定
-  let outcomeCode = `UNKNOWN`; // 通用未知
+  let outcomeCode = `${mainType.toUpperCase()}_OTHER_UNKNOWN_COUNT`;
   let description = perfVerdictText || sourceForContext.verdict || sourceForContext.verdict_type || '結果資訊不足';
   const pv = (perfVerdictText || "").toLowerCase();
 
@@ -675,10 +675,7 @@ function getDetailedResult(perfVerdictText, mainType, sourceForContext) {
     (sourceForContext.JCASE || '').toLowerCase().includes("聲") ||
     (sourceForContext.JTITLE || '').toLowerCase().includes("裁定");
 
-  const isProceduralByPerf = sourceForContext.lawyerperformance && Array.isArray(sourceForContext.lawyerperformance) ?
-    (sourceForContext.lawyerperformance.find(p => p.verdict === perfVerdictText)?.is_procedural === true ||
-      sourceForContext.lawyerperformance.find(p => p.verdict === perfVerdictText)?.is_procedural === 'true') : false;
-
+  const isProceduralFromPerf = lawyerPerfObject ? (lawyerPerfObject.is_procedural === true || lawyerPerfObject.is_procedural === 'true') : false;
 
   if (isProceduralByPerf || pv.includes("程序性裁定") || pv.includes("procedural")) {
     outcomeCode = 'PROCEDURAL';
@@ -773,26 +770,37 @@ function calculateDetailedWinRates(processedCases, detailedWinRatesStats) {
       sideFromPerf,
       neutralOutcomeCode
     } = caseInfo;
-    if (!neutralOutcomeCode || !mainType || mainType === 'unknown') return; // 跳過未知主類型或無結果代碼的
+    if (!neutralOutcomeCode || !mainType || mainType === 'unknown' || !sideFromPerf || sideFromPerf === 'unknown') {
+      // 如果主類型未知，或 outcomeCode 未知，或 side 未知，則跳過此案件的精確統計，但其 total 可能已在外部計算
+      console.warn(`[calculateDetailedWinRates] Skipping case due to unknown mainType, outcomeCode, or side: ${caseInfo.id}`);
+      return;
+    }
 
     const statsBucketRoot = detailedWinRatesStats[mainType];
-    if (!statsBucketRoot) return;
+    if (!statsBucketRoot) {
+      console.warn(`[calculateDetailedWinRates] No stats bucket for mainType: ${mainType}`);
+      return;
+    }
 
-    let targetRoleBucket; // 指向 plaintiff 或 defendant 的統計物件
-    if (sideFromPerf === 'plaintiff') {
+    let targetRoleBucket;
+    // 根據 sideFromPerf 決定目標統計桶
+    if (sideFromPerf === 'plaintiff') { // 假設 perf.side 返回的是小寫的 'plaintiff' 或 'defendant'
       targetRoleBucket = statsBucketRoot.plaintiff;
     } else if (sideFromPerf === 'defendant') {
       targetRoleBucket = statsBucketRoot.defendant;
     } else {
-      return; // 如果沒有明確的 side，則不計入特定角色統計
-    }
-
-    if (!targetRoleBucket) { // 理論上 create...RoleStats 已經創建了
-      console.warn(`Missing role bucket for ${mainType} -> ${sideFromPerf}`);
+      console.warn(`[calculateDetailedWinRates] Unknown sideFromPerf: ${sideFromPerf} for case ${caseInfo.id}`);
       return;
     }
 
-    targetRoleBucket.total = (targetRoleBucket.total || 0) + 1; // 先加總案件數
+    if (!targetRoleBucket) {
+      console.warn(`[calculateDetailedWinRates] Target role bucket is undefined for mainType: ${mainType}, side: ${sideFromPerf}`);
+      return;
+    }
+
+    //targetRoleBucket.total = (targetRoleBucket.total || 0) + 1; // 先加總案件數
+
+
 
     // 根據 neutralOutcomeCode 和 sideFromPerf 映射到有利/不利的統計槽
     // ***** 這是最需要細化和擴充的映射邏輯 *****
@@ -828,39 +836,43 @@ function calculateDetailedWinRates(processedCases, detailedWinRatesStats) {
       }
     }
 
-    if (targetBucket[finalStatCode] !== undefined) {
-      targetBucket[finalStatCode]++;
+    if (targetRoleBucket[neutralOutcomeCode] !== undefined) {
+      targetRoleBucket[neutralOutcomeCode]++;
     } else {
-      console.warn(`[calculateDetailedWinRates] Fallback: Unknown finalStatCode '${finalStatCode}' for mainType '${mainType}', side '${sideForStat}', neutralCode '${neutralOutcomeCode}'. Counting as OTHER_UNKNOWN_COUNT.`);
-      targetBucket.OTHER_UNKNOWN_COUNT = (targetBucket.OTHER_UNKNOWN_COUNT || 0) + 1;
+      console.warn(`[calculateDetailedWinRates] Unknown neutralOutcomeCode '${neutralOutcomeCode}' for mainType '${mainType}', side '${sideFromPerf}'. Counting as OTHER_UNKNOWN_COUNT.`);
+      targetRoleBucket.OTHER_UNKNOWN_COUNT = (targetRoleBucket.OTHER_UNKNOWN_COUNT || 0) + 1;
     }
   });
 
   // 計算 overall (有利結果率)
   ['civil', 'criminal', 'administrative'].forEach(mainType => {
     const stats = detailedWinRatesStats[mainType];
+    if (!stats) return; // 如果某個 mainType 沒有數據，跳過
+
     let favorableSum = 0;
     let consideredSum = 0;
 
-    const plaintiffStats = stats.plaintiff || createOutcomeStats(); // 使用 || 避免 undefined 錯誤
+    const plaintiffStats = stats.plaintiff || createOutcomeStats();
     const defendantStats = stats.defendant || createOutcomeStats();
 
     if (mainType === 'civil') {
       favorableSum += (plaintiffStats.FAVORABLE_FULL_COUNT || 0) + (plaintiffStats.FAVORABLE_PARTIAL_COUNT || 0);
-      consideredSum += (plaintiffStats.total || 0) - ((plaintiffStats.PROCEDURAL_COUNT || 0) + (plaintiffStats.NEUTRAL_SETTLEMENT_COUNT || 0) + (plaintiffStats.OTHER_UNKNOWN_COUNT || 0));
-      favorableSum += (defendantStats.FAVORABLE_FULL_COUNT || 0) + (defendantStats.FAVORABLE_PARTIAL_COUNT || 0); // 被告的有利也算
-      consideredSum += (defendantStats.total || 0) - ((defendantStats.PROCEDURAL_COUNT || 0) + (defendantStats.NEUTRAL_SETTLEMENT_COUNT || 0) + (defendantStats.OTHER_UNKNOWN_COUNT || 0));
-    } else if (mainType === 'criminal') { // 刑事主要看被告
+      consideredSum += Math.max(0, (plaintiffStats.total || 0) - ((plaintiffStats.PROCEDURAL_COUNT || 0) + (plaintiffStats.NEUTRAL_SETTLEMENT_COUNT || 0) + (plaintiffStats.OTHER_UNKNOWN_COUNT || 0)));
+
+      favorableSum += (defendantStats.FAVORABLE_FULL_COUNT || 0) + (defendantStats.FAVORABLE_PARTIAL_COUNT || 0);
+      consideredSum += Math.max(0, (defendantStats.total || 0) - ((defendantStats.PROCEDURAL_COUNT || 0) + (defendantStats.NEUTRAL_SETTLEMENT_COUNT || 0) + (defendantStats.OTHER_UNKNOWN_COUNT || 0)));
+    } else if (mainType === 'criminal') {
       favorableSum += (defendantStats.FAVORABLE_FULL_COUNT || 0) + (defendantStats.FAVORABLE_PARTIAL_COUNT || 0) + (defendantStats.RULING_FAVORABLE_COUNT || 0);
-      consideredSum += (defendantStats.total || 0) - ((defendantStats.PROCEDURAL_COUNT || 0) + (defendantStats.OTHER_UNKNOWN_COUNT || 0) + (defendantStats.RULING_UNFAVORABLE_COUNT || 0)); // 排除不利裁定
-    } else if (mainType === 'administrative') { // 行政主要看原告
+      consideredSum += Math.max(0, (defendantStats.total || 0) - ((defendantStats.PROCEDURAL_COUNT || 0) + (defendantStats.OTHER_UNKNOWN_COUNT || 0) + (defendantStats.RULING_UNFAVORABLE_COUNT || 0)));
+    } else if (mainType === 'administrative') {
       favorableSum += (plaintiffStats.FAVORABLE_FULL_COUNT || 0) + (plaintiffStats.FAVORABLE_PARTIAL_COUNT || 0) + (plaintiffStats.RULING_FAVORABLE_COUNT || 0);
-      consideredSum += (plaintiffStats.total || 0) - ((plaintiffStats.PROCEDURAL_COUNT || 0) + (plaintiffStats.NEUTRAL_SETTLEMENT_COUNT || 0) + (plaintiffStats.OTHER_UNKNOWN_COUNT || 0) + (plaintiffStats.RULING_UNFAVORABLE_COUNT || 0));
+      consideredSum += Math.max(0, (plaintiffStats.total || 0) - ((plaintiffStats.PROCEDURAL_COUNT || 0) + (plaintiffStats.NEUTRAL_SETTLEMENT_COUNT || 0) + (plaintiffStats.OTHER_UNKNOWN_COUNT || 0) + (plaintiffStats.RULING_UNFAVORABLE_COUNT || 0)));
     }
     stats.overall = consideredSum > 0 ? Math.round((favorableSum / consideredSum) * 100) : 0;
     console.log(`[calculateOverall - ${mainType}] Favorable=${favorableSum}, Considered=${consideredSum}, Final Overall: ${stats.overall}`);
-    if (mainType === 'criminal') console.log(`[calculateOverallCriminal] Defendant Stats for Overall: ${JSON.stringify(defendantStats)}`);
-
+    if (mainType === 'criminal' && defendantStats) console.log(`[calculateOverallCriminal] Defendant Stats for Overall: ${JSON.stringify(defendantStats)}`);
+    if (mainType === 'civil' && plaintiffStats) console.log(`[calculateOverallCivil] Plaintiff Stats for Overall: ${JSON.stringify(plaintiffStats)}`);
+    if (mainType === 'administrative' && plaintiffStats) console.log(`[calculateOverallAdmin] Plaintiff Stats for Overall: ${JSON.stringify(plaintiffStats)}`);
   });
 }
 
@@ -1125,12 +1137,12 @@ function analyzeLawyerData(esHits, lawyerName, esAggregations) {
         overall: 0,
         plaintiff: createOutcomeStats(),
         defendant: createOutcomeStats()
-      }, // Criminal 也為 plaintiff 創建桶
+      },
       administrative: {
         overall: 0,
         plaintiff: createOutcomeStats(),
         defendant: createOutcomeStats()
-      } // Admin 也為 defendant 創建桶
+      }
     },
     dynamicFilterOptions: {
       civil: {
@@ -1153,71 +1165,75 @@ function analyzeLawyerData(esHits, lawyerName, esAggregations) {
     source: '法院公開判決書',
     stats: JSON.parse(JSON.stringify(initialStats)),
     cases: [],
-    analysis: null // analysis 欄位保留，但目前為 null
+    analysis: null
   };
-
   if (!esHits || esHits.length === 0) return resultData;
 
   const now = new Date();
   const threeYearsAgoNum = parseInt(`${now.getFullYear() - 3}${("0" + (now.getMonth() + 1)).slice(-2)}${("0" + now.getDate()).slice(-2)}`, 10);
-
   const allCaseTypesCounter = {};
 
   resultData.cases = esHits.map(hit => {
     const source = hit._source;
     const mainType = getMainType(source);
+    
+    let sideFromPerf = 'unknown';
+    let perfVerdictText = null; // 這是傳給 getDetailedResult 的
+    let lawyerPerfObject = null; // 用於獲取 is_procedural
 
-    let sideFromPerf = 'unknown'; // 預設 side
-    let perfVerdictText = null;
     const performances = source.lawyerperformance;
     if (performances && Array.isArray(performances)) {
-      const perf = performances.find(p => p.lawyer === lawyerName);
-      if (perf) {
-        sideFromPerf = (perf.side || 'unknown').toLowerCase();
-        perfVerdictText = perf.verdict;
-      }
+        const perf = performances.find(p => p.lawyer === lawyerName);
+        if (perf) {
+            lawyerPerfObject = perf; // 保存整個 perf 對象
+            sideFromPerf = (perf.side || 'unknown').toLowerCase();
+            perfVerdictText = perf.verdict;
+        }
     }
+    
+    // 將 sourceForContext 傳遞給 getDetailedResult，它包含了 is_ruling 等案件級別信息
+    // 以及 lawyerPerfObject 以便 getDetailedResult 內部可以訪問 is_procedural
+    const { outcomeCode, description } = getDetailedResult(perfVerdictText, mainType, source, lawyerPerfObject);
 
-    const {
-      outcomeCode,
-      description
-    } = getDetailedResult(perfVerdictText, mainType, source);
+    if (caseDateStr && parseInt(caseDateStr, 10) >= threeYearsAgoNum) {
+      resultData.stats.totalCasesLast3Years++;
+    }
+    if (source.case_type) {
+      allCaseTypesCounter[source.case_type] = (allCaseTypesCounter[source.case_type] || 0) + 1;
+    }
+    const caseDateStr = (source.JDATE || "").replace(/\//g, '');
+
 
     return {
-      id: hit._id,
-      mainType,
+      id: hit._id, mainType,
       title: source.JTITLE || `${source.court || ''} 判決`,
       cause: source.cause || '未指定',
-      result: description, // 來自 getDetailedResult
-      originalVerdict: source.verdict,
-      originalVerdictType: source.verdict_type,
-      date: (source.JDATE || "").replace(/\//g, ''),
-      role: getLawyerRole(source, lawyerName), // 總體角色，可能與 sideFromPerf 不同
-      sideFromPerf: sideFromPerf, // lawyerperformance 中的 side
-      neutralOutcomeCode: outcomeCode, // getDetailedResult 返回的中性 code
-      originalSource: source
+      result: description, 
+      originalVerdict: source.verdict, originalVerdictType: source.verdict_type,
+      date: caseDateStr,
+      // role: getLawyerRole(source, lawyerName), // <--- 移除或用 sideFromPerf 替代
+      sideFromPerf: sideFromPerf, 
+      neutralOutcomeCode: outcomeCode, 
+      originalSource: source 
     };
   });
 
   console.log(`--- Cases Breakdown for ${lawyerName} (${resultData.cases.length} total processed from ES) ---`);
   resultData.cases.forEach(c => {
-    console.log(`  ID: ${c.id}, mainType: ${c.mainType}, role: ${c.role}, outcomeCode: ${c._outcomeCodeForStat}, description: ${c.result}`);
+    // 注意：caseInfo 中沒有 _outcomeCodeForStat 了，而是 neutralOutcomeCode
+    console.log(`  ID: ${c.id}, mainType: ${c.mainType}, sideFromPerf: ${c.sideFromPerf}, neutralOutcomeCode: ${c.neutralOutcomeCode}, description: ${c.result}`);
   });
 
   calculateDetailedWinRates(resultData.cases, resultData.stats.detailedWinRates);
 
-  const sortedCommonCaseTypes = Object.entries(allCaseTypesCounter)
-    .sort(([, a], [, b]) => b - a)
-    .slice(0, 3);
-  resultData.stats.commonCaseTypes = sortedCommonCaseTypes.map(entry => entry[0]);
-  resultData.stats.caseTypeValues = sortedCommonCaseTypes.map(entry => entry[1]);
+  const sortedCommonCaseTypes = Object.entries(allCaseTypesCounter).sort(([,a],[,b]) => b-a).slice(0,3);
+  resultData.stats.commonCaseTypes = sortedCommonCaseTypes.map(e => e[0]);
+  resultData.stats.caseTypeValues = sortedCommonCaseTypes.map(e => e[1]);
 
   populateDynamicFilterOptions(resultData.stats.dynamicFilterOptions, esAggregations, resultData.cases, lawyerName);
 
-  // 計算 lawRating (示例: 可以用民事整體有利結果率)
-  const overallFavorableRate = resultData.stats.detailedWinRates.civil.overall ||
-    resultData.stats.detailedWinRates.criminal.overall ||
-    resultData.stats.detailedWinRates.administrative.overall || 0;
+  const overallFavorableRate = resultData.stats.detailedWinRates.civil.overall || resultData.stats.detailedWinRates.criminal.overall || resultData.stats.detailedWinRates.administrative.overall ||0;
+
   if (resultData.stats.totalCasesLast3Years >= 3) { // 降低案件數門檻
     resultData.lawRating = Math.min(4, Math.floor(resultData.stats.totalCasesLast3Years / 5)); // 調整基礎分
     if (overallFavorableRate > 70) resultData.lawRating += 3;
@@ -1232,7 +1248,6 @@ function analyzeLawyerData(esHits, lawyerName, esAggregations) {
   // 不在此處 slice，讓前端根據需要決定顯示多少
   // resultData.cases = resultData.cases.slice(0, 50); 
   console.log(`[analyzeLawyerData] Processed ${resultData.cases.length} cases for ${lawyerName}.`);
-  // Log detailedWinRates 以便調試
   console.log(`[analyzeLawyerData] Detailed Win Rates for ${lawyerName}: `, JSON.stringify(resultData.stats.detailedWinRates, null, 2));
   return resultData;
 }
