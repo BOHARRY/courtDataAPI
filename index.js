@@ -1059,14 +1059,28 @@ function calculateDetailedWinRates(processedCases, detailedWinRatesStats, lawyer
 
   // 刑事 (對被告有利的) - 確保鍵名一致
   const crimD = detailedWinRatesStats.criminal.defendant;
-  const crimTotalConsideredForRate = (crimD.total || 0) - ((crimD.PROCEDURAL_COUNT || 0) + (crimD.CRIMINAL_DISMISSED_CHARGE_NO_PROSECUTION_COUNT || 0) + (crimD.CRIMINAL_DISMISSED_CHARGE_NOT_ACCEPTED_COUNT || 0) + (crimD.OTHER_UNKNOWN_COUNT || 0));
+  // 分母：總案件數減去程序性、裁定中不明確的、以及其他未知
+  const crimTotalConsideredForRate = (crimD.total || 0) - (
+      (crimD.CRIMINAL_PROCEDURAL_COUNT || 0) + 
+      (crimD.OTHER_UNKNOWN_COUNT || 0) +
+      // 如果有利和不利的裁定都算實體結果，則不需要從 total 中減去它們
+      // 如果 RULING_FAVORABLE 和 RULING_UNFAVORABLE 也是要從總數中排除以計算純判決勝率，則要加上
+      // (crimD.CRIMINAL_RULING_FAVORABLE_COUNT || 0) + 
+      // (crimD.CRIMINAL_RULING_UNFAVORABLE_COUNT || 0)
+      0 // 暫時假設裁定結果也參與實體判斷
+  );
   if (crimTotalConsideredForRate > 0) {
-    const crimFavorable = (crimD.CRIMINAL_ACQUITTED_COUNT || 0) + (crimD.CRIMINAL_GUILTY_MITIGATE_HIGH_COUNT || 0) + (crimD.CRIMINAL_GUILTY_MITIGATE_MEDIUM_COUNT || 0) + (crimD.CRIMINAL_GUILTY_PROBATION_COUNT || 0) + (crimD.CRIMINAL_GUILTY_FINE_CONVERTIBLE_COUNT || 0) + (crimD.CRIMINAL_GUILTY_FINE_ONLY_COUNT || 0);
+    const crimFavorable = 
+        (crimD.CRIMINAL_ACQUITTED_COUNT || 0) + 
+        (crimD.CRIMINAL_GUILTY_FAVORABLE_COUNT || 0) + // 包含所有 "有罪但有利" 的情況
+        (crimD.CRIMINAL_GUILTY_PROBATION_COUNT || 0) + // 如果緩刑單獨統計且算有利
+        (crimD.CRIMINAL_RULING_FAVORABLE_COUNT || 0);  // 有利的裁定
     detailedWinRatesStats.criminal.overall = Math.round((crimFavorable / crimTotalConsideredForRate) * 100);
   } else {
     detailedWinRatesStats.criminal.overall = 0;
   }
-  console.log(`[calculateOverallCriminal] Final Criminal Overall: ${detailedWinRatesStats.criminal.overall}`);
+  console.log(`[calculateOverallCriminal] Defendant Stats: ${JSON.stringify(crimD)}`);
+  console.log(`[calculateOverallCriminal] Favorable=${crimFavorableTotal}, Considered=${crimTotalConsideredForRate}, Final Overall: ${detailedWinRatesStats.criminal.overall}`);
 
   // 行政 (對原告有利的) - 確保鍵名一致
   const adminP = detailedWinRatesStats.administrative.plaintiff;
