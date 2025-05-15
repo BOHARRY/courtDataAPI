@@ -799,7 +799,7 @@ function getDetailedResult(perfVerdictText, mainType, sourceForContext, lawyerPe
   }
 
   return {
-    neutralOutcomeCode: outcomeCode,
+    neutralOutcomeCode,  // 直接使用 neutralOutcomeCode
     description
   }; // 返回 outcomeCode (之前打錯字)
 }
@@ -840,9 +840,6 @@ function calculateDetailedWinRates(processedCases, detailedWinRatesStats) {
     }
 
     let targetRoleBucket;
-    if (sideFromPerf === 'plaintiff') targetRoleBucket = statsBucketRoot.plaintiff;
-    else if (sideFromPerf === 'defendant') targetRoleBucket = statsBucketRoot.defendant;
-    else return;
 
     if (!targetRoleBucket) return;
 
