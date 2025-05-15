@@ -828,6 +828,7 @@ function calculateDetailedWinRates(processedCases, detailedWinRatesStats) {
   }
   processedCases.forEach(caseInfo => {
     const { mainType, sideFromPerf, neutralOutcomeCode } = caseInfo;
+    const resultText = caseInfo.description || caseInfo.result || '';
 
     console.log(`處理案件: ${caseInfo.id}, 類型=${mainType}, 方=${sideFromPerf}, 代碼=${neutralOutcomeCode}`);
 
@@ -859,24 +860,24 @@ function calculateDetailedWinRates(processedCases, detailedWinRatesStats) {
     let finalStatKeyToIncrement = 'OTHER_UNKNOWN_COUNT'; // 預設
 
     // 檢查結果文本是否包含明確的勝敗信息
-    const hasWinIndication = result && (
-      result.includes('勝訴') || 
-      result.includes('無罪') || 
-      result.includes('減免') || 
-      result.includes('緩刑') || 
-      result.includes('撤銷原處分') ||
-      (result.includes('准') && !result.includes('不准'))
+    const hasWinIndication = resultText && (
+      resultText.includes('勝訴') || 
+      resultText.includes('無罪') || 
+      resultText.includes('減免') || 
+      resultText.includes('緩刑') || 
+      resultText.includes('撤銷原處分') ||
+      (resultText.includes('准') && !resultText.includes('不准'))
     );
     
-    const hasLoseIndication = result && (
-      result.includes('敗訴') || 
-      result.includes('有罪') || 
-      result.includes('駁回') && !result.includes('撤銷')
+    const hasLoseIndication = resultText && (
+      resultText.includes('敗訴') || 
+      resultText.includes('有罪') || 
+      resultText.includes('駁回') && !resultText.includes('撤銷')
     );
 
     // 即使是程序性裁定，如果有明確勝敗結果，也納入計算
     if (neutralOutcomeCode === 'PROCEDURAL_NEUTRAL' && (hasWinIndication || hasLoseIndication)) {
-      console.log(`程序性裁定案件，但有明確結果: ${result}`);
+      console.log(`程序性裁定案件，但有明確結果: ${resultText}`);
       
       // 根據實際文本結果判斷
       if (hasWinIndication) {
@@ -925,14 +926,17 @@ function calculateDetailedWinRates(processedCases, detailedWinRatesStats) {
         // 可以擴充原告方(告訴代理人)的刑事案件統計
       } else if (mainType === 'administrative') {
         if (sideFromPerf === 'plaintiff') { // 行政主要看原告
-          if (['ADMIN_WIN_REVOKE_FULL', 'ADMIN_WIN_OBLIGATION', 'ADMIN_RULING_STAY_GRANTED'].includes(neutralOutcomeCode)) finalStatKeyToIncrement = 'FAVORABLE_FULL_COUNT';
-          else if (neutralOutcomeCode === 'ADMIN_WIN_REVOKE_PARTIAL') finalStatKeyToIncrement = 'FAVORABLE_PARTIAL_COUNT';
-          else if (['ADMIN_LOSE_DISMISSED', 'ADMIN_RULING_STAY_DENIED'].includes(neutralOutcomeCode)) finalStatKeyToIncrement = 'UNFAVORABLE_FULL_COUNT';
+          if (['ADMIN_WIN_REVOKE_FULL', 'ADMIN_WIN_OBLIGATION', 'ADMIN_RULING_STAY_GRANTED', 'ADMIN_WIN_FULL_COUNT'].includes(neutralOutcomeCode)) 
+            finalStatKeyToIncrement = 'FAVORABLE_FULL_COUNT';
+          else if (neutralOutcomeCode === 'ADMIN_WIN_REVOKE_PARTIAL' || neutralOutcomeCode === 'ADMIN_WIN_PARTIAL_COUNT') 
+            finalStatKeyToIncrement = 'FAVORABLE_PARTIAL_COUNT';
+          else if (['ADMIN_LOSE_DISMISSED', 'ADMIN_RULING_STAY_DENIED', 'ADMIN_LOSE_COUNT'].includes(neutralOutcomeCode)) 
+            finalStatKeyToIncrement = 'UNFAVORABLE_FULL_COUNT';
         }
       }
     }
 
-    console.log(`增加前 ${finalStatKeyToIncrement}: ${targetRoleBucket[finalStatKeyToIncrement]}`);
+    console.log(`增加前 ${finalStatKeyToIncrement}: ${targetRoleBucket[finalStatKeyToIncrement] || 0}`);
     targetRoleBucket[finalStatKeyToIncrement] = (targetRoleBucket[finalStatKeyToIncrement] || 0) + 1;
     console.log(`增加後 ${finalStatKeyToIncrement}: ${targetRoleBucket[finalStatKeyToIncrement]}`);
   });
@@ -943,8 +947,8 @@ function calculateDetailedWinRates(processedCases, detailedWinRatesStats) {
     if (!stats) return;
     let favorableSum = 0;
     let consideredSum = 0;
-    const plaintiffStats = stats.plaintiff || createFinalOutcomeStats();
-    const defendantStats = stats.defendant || createFinalOutcomeStats();
+    const plaintiffStats = stats.plaintiff || { total: 0 };
+    const defendantStats = stats.defendant || { total: 0 };
 
     // 累加有利結果 (分子) - 這裡只統計明確的實體有利結果
     favorableSum += (plaintiffStats.FAVORABLE_FULL_COUNT || 0) + (plaintiffStats.FAVORABLE_PARTIAL_COUNT || 0);
@@ -965,7 +969,7 @@ function calculateDetailedWinRates(processedCases, detailedWinRatesStats) {
 
     stats.overall = consideredSum > 0 ? Math.round((favorableSum / consideredSum) * 100) : 0;
     console.log(`[calculateOverall - ${mainType}] Favorable=${favorableSum}, Considered=${consideredSum}, Final Overall: ${stats.overall}`);
-    
+  
     if (mainType === 'civil') {
       console.log(`[calculateOverallCivil] 原告統計: ${JSON.stringify(plaintiffStats)}`);
       console.log(`[calculateOverallCivil] 被告統計: ${JSON.stringify(defendantStats)}`);
