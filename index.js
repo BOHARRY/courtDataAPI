@@ -804,7 +804,7 @@ function getDetailedResult(perfVerdictText, mainType, sourceForContext, lawyerPe
   }; // 返回 outcomeCode (之前打錯字)
 }
 
-function createFinalOutcomeStats() { // 改名以區分
+function createFinalOutcomeStats() {
   return {
     total: 0,
     FAVORABLE_FULL_COUNT: 0,
@@ -812,9 +812,6 @@ function createFinalOutcomeStats() { // 改名以區分
     UNFAVORABLE_FULL_COUNT: 0,
     NEUTRAL_SETTLEMENT_COUNT: 0,
     PROCEDURAL_COUNT: 0,
-    // 如果要單獨統計裁定結果，可以加在這裡，否則有利/不利裁定會映射到上面的槽
-    // RULING_FAVORABLE_COUNT: 0, 
-    // RULING_UNFAVORABLE_COUNT: 0,
     OTHER_UNKNOWN_COUNT: 0
   };
 }
@@ -896,12 +893,9 @@ function calculateDetailedWinRates(processedCases, detailedWinRatesStats) {
       }
     }
 
-    if (targetRoleBucket[finalStatKeyToIncrement] !== undefined) {
-      targetRoleBucket[finalStatKeyToIncrement]++;
-    } else {
-      console.warn(`[calculateDetailedWinRates] Fallback: NeutralCode '${neutralOutcomeCode}' with mainType '${mainType}' and side '${sideFromPerf}' resulted in finalStatKey '${finalStatKeyToIncrement}' which is not a primary stat key. Counting as OTHER_UNKNOWN_COUNT.`);
-      targetRoleBucket.OTHER_UNKNOWN_COUNT = (targetRoleBucket.OTHER_UNKNOWN_COUNT || 0) + 1;
-    }
+    console.log(`增加前 ${finalStatKeyToIncrement}: ${targetRoleBucket[finalStatKeyToIncrement]}`);
+    targetRoleBucket[finalStatKeyToIncrement] = (targetRoleBucket[finalStatKeyToIncrement] || 0) + 1;
+    console.log(`增加後 ${finalStatKeyToIncrement}: ${targetRoleBucket[finalStatKeyToIncrement]}`);
   });
 
   // 計算 overall (有利結果率)
@@ -1288,7 +1282,8 @@ function analyzeLawyerData(esHits, lawyerName, esAggregations) {
     console.log(`  ID: ${c.id}, mainType: ${c.mainType}, sideFromPerf: ${c.sideFromPerf}, neutralOutcomeCode: ${c.neutralOutcomeCode}, description: ${c.result}`);
   });
 
-  resultData.stats.detailedWinRates = calculateDetailedWinRates(resultData.cases, resultData.stats.detailedWinRates);
+  const updatedWinRates = calculateDetailedWinRates(resultData.cases, resultData.stats.detailedWinRates);
+  resultData.stats.detailedWinRates = updatedWinRates;
 
   // ... (後續的 commonCaseTypes, dynamicFilterOptions, lawRating 計算) ...
   const sortedCommonCaseTypes = Object.entries(allCaseTypesCounter).sort(([, a], [, b]) => b - a).slice(0, 3);
