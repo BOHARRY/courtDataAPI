@@ -658,69 +658,94 @@ function getMainType(source) {
   return 'civil';
 }
 
-// --- 輔助函數：獲取詳細判決結果 (基於 lawyerperformance) ---
 function getDetailedResult(source, mainType, lawyerName) {
-  let outcomeCode = 'unknown_outcome';
-  // 預設的 description，優先使用 lawyerperformance 中的，其次是案件本身的
-  let description = source.verdict_type || source.verdict || '結果未明'; 
+  let outcomeCode = 'CIVIL_OTHER_UNKNOWN'; // 預設為未知
+  let description = source.verdict_type || source.verdict || '結果未明'; // 預設描述
 
-  const performances = source.lawyerperformance; // <--- 第一次且唯一一次宣告 performances
-
-  if (performances && Array.isArray(performances)) {
+  const performances = source.lawyerperformance;
+  if (mainType === 'civil' && performances && Array.isArray(performances)) {
     const perf = performances.find(p => p.lawyer === lawyerName);
     if (perf && perf.verdict) {
-      description = perf.verdict; // 如果 lawyerperformance 中有，就用它的 verdict 更新 description
-      const perfVerdict = perf.verdict.toLowerCase();
-      const isProcedural = perf.is_procedural === 'true' || perf.is_procedural === true;
+      description = perf.verdict; // 使用 lawyerperformance.verdict 作為主要描述
+      const pv = perf.verdict.toLowerCase(); // perfVerdict 小寫
+      const role = getLawyerRole(source, lawyerName); // 獲取律師角色
 
-      if (mainType === 'civil') {
-        if (isProcedural) outcomeCode = 'civil_procedural';
-        else if (perfVerdict.includes("完全勝訴")) outcomeCode = 'civil_win_high';
-        else if (perfVerdict.includes("大部分勝訴")) outcomeCode = 'civil_win_medium';
-        else if (perfVerdict.includes("部分勝訴")) outcomeCode = 'civil_win_low';
-        else if (perfVerdict.includes("小部分勝訴")) outcomeCode = 'civil_win_minor';
-        else if (perfVerdict.includes("完全敗訴")) outcomeCode = 'civil_lose_full';
-        else if (perfVerdict.includes("和解")) outcomeCode = 'civil_settlement';
-        else if (perfVerdict.includes("撤訴")) outcomeCode = 'civil_withdraw';
-        else if (perfVerdict.includes("大部分減免")) outcomeCode = 'civil_defendant_mitigate_high';
-        else if (perfVerdict.includes("部分減免")) outcomeCode = 'civil_defendant_mitigate_medium';
-        else if (perfVerdict.includes("小部分減免")) outcomeCode = 'civil_defendant_mitigate_low';
-      } else if (mainType === 'criminal') {
-        if (isProcedural) outcomeCode = 'criminal_procedural';
-        else if (perfVerdict.includes("無罪")) outcomeCode = 'criminal_acquitted';
-        else if (perfVerdict.includes("有罪但顯著減輕")) outcomeCode = 'criminal_guilty_mitigate_high';
-        else if (perfVerdict.includes("有罪但略微減輕")) outcomeCode = 'criminal_guilty_mitigate_medium';
-        else if (perfVerdict.includes("有罪且符合預期")) outcomeCode = 'criminal_guilty_expected';
-        else if (perfVerdict.includes("有罪且加重")) outcomeCode = 'criminal_guilty_aggravated';
-        else if (perfVerdict.includes("有罪依法量刑")) outcomeCode = 'criminal_guilty_sentenced';
-        else if (source.verdict_type && source.verdict_type.toLowerCase().includes("免訴")) outcomeCode = 'criminal_dismissed_charge_no_prosecution';
-        else if (source.verdict_type && source.verdict_type.toLowerCase().includes("不受理")) outcomeCode = 'criminal_dismissed_charge_not_accepted';
-      } else if (mainType === 'administrative') {
-        if (isProcedural || perfVerdict.includes("procedural")) outcomeCode = 'admin_procedural';
-        else if (perfVerdict.includes("撤銷原處分") && !perfVerdict.includes("部分")) outcomeCode = 'admin_win_full_revoke';
-        else if (perfVerdict.includes("部分撤銷原處分")) outcomeCode = 'admin_win_partial_revoke';
-        else if (perfVerdict.includes("駁回訴訟")) outcomeCode = 'admin_lose_dismissed';
-        else if (perfVerdict.includes("義務訴訟勝訴")) outcomeCode = 'admin_win_obligation';
+      // 處理程序性裁定 (高優先級)
+      if (perf.is_procedural === 'true' || perf.is_procedural === true || pv.includes("程序性裁定") || pv.includes("procedural")) {
+        outcomeCode = 'CIVIL_PROCEDURAL';
+      }
+      // 處理和解與撤訴
+      else if (pv.includes("和解")) {
+        outcomeCode = 'CIVIL_NEUTRAL_SETTLEMENT';
+      } else if (pv.includes("撤訴")) {
+        outcomeCode = 'CIVIL_NEUTRAL_WITHDRAW';
+      }
+      // 根據律師角色判斷勝敗有利程度
+      else if (role === '原告代理人') {
+        if (pv.includes("原告: 完全勝訴") && !pv.includes("被告:")) outcomeCode = 'CIVIL_HIGHLY_FAVORABLE';
+        else if (pv.includes("原告: 大部分勝訴")) outcomeCode = 'CIVIL_HIGHLY_FAVORABLE'; // 可視為高度有利
+        else if (pv.includes("原告: 部分勝訴")) outcomeCode = 'CIVIL_MODERATELY_FAVORABLE';
+        else if (pv.includes("原告: 小部分勝訴")) outcomeCode = 'CIVIL_SLIGHTLY_FAVORABLE';
+        else if (pv.includes("原告: 完全敗訴") && !pv.includes("被告:")) outcomeCode = 'CIVIL_HIGHLY_UNFAVORABLE';
+        // 混合情況，例如 "原告: 完全勝訴; 被告: 完全敗訴"
+        else if (pv.includes("原告: 完全勝訴") && pv.includes("被告: 完全敗訴")) outcomeCode = 'CIVIL_HIGHLY_FAVORABLE';
+        else if (pv.includes("原告: 部分勝訴") && pv.includes("被告: 部分減免")) outcomeCode = 'CIVIL_MODERATELY_FAVORABLE';
+        else if (pv.includes("原告: 完全敗訴") && pv.includes("被告: 完全勝訴")) outcomeCode = 'CIVIL_HIGHLY_UNFAVORABLE';
+        // 兜底一些只描述勝訴/敗訴的
+        else if (pv.startsWith("完全勝訴") || pv.startsWith("大部分勝訴")) outcomeCode = 'CIVIL_HIGHLY_FAVORABLE';
+        else if (pv.startsWith("部分勝訴")) outcomeCode = 'CIVIL_MODERATELY_FAVORABLE';
+        else if (pv.startsWith("小部分勝訴")) outcomeCode = 'CIVIL_SLIGHTLY_FAVORABLE';
+        else if (pv.startsWith("完全敗訴")) outcomeCode = 'CIVIL_HIGHLY_UNFAVORABLE';
+      } else if (role === '被告代理人') {
+        if (pv.includes("被告: 完全勝訴") && !pv.includes("原告:")) outcomeCode = 'CIVIL_HIGHLY_FAVORABLE'; // 對被告而言是高度有利
+        else if (pv.includes("被告: 大部分減免")) outcomeCode = 'CIVIL_HIGHLY_FAVORABLE';
+        else if (pv.includes("被告: 部分減免")) outcomeCode = 'CIVIL_MODERATELY_FAVORABLE';
+        else if (pv.includes("被告: 小部分減免")) outcomeCode = 'CIVIL_SLIGHTLY_FAVORABLE';
+        else if (pv.includes("被告: 完全敗訴") && !pv.includes("原告:")) outcomeCode = 'CIVIL_HIGHLY_UNFAVORABLE'; // 對被告而言是高度不利
+        // 混合情況
+        else if (pv.includes("被告: 完全勝訴") && pv.includes("原告: 完全敗訴")) outcomeCode = 'CIVIL_HIGHLY_FAVORABLE';
+        else if (pv.includes("被告: 部分減免") && pv.includes("原告: 部分勝訴")) outcomeCode = 'CIVIL_MODERATELY_FAVORABLE';
+        else if (pv.includes("被告: 完全敗訴") && pv.includes("原告: 完全勝訴")) outcomeCode = 'CIVIL_HIGHLY_UNFAVORABLE';
+        // 兜底
+        else if (pv.startsWith("完全勝訴") || pv.startsWith("大部分減免")) outcomeCode = 'CIVIL_HIGHLY_FAVORABLE';
+        else if (pv.startsWith("部分減免")) outcomeCode = 'CIVIL_MODERATELY_FAVORABLE';
+        else if (pv.startsWith("小部分減免")) outcomeCode = 'CIVIL_SLIGHTLY_FAVORABLE';
+        else if (pv.startsWith("完全敗訴")) outcomeCode = 'CIVIL_HIGHLY_UNFAVORABLE';
+      }
+      // 對於 N/A 或未明確記載等，可以歸為 UNKNOWN 或 OTHER
+      if (pv.includes("n/a") || pv.includes("未明確記載")) {
+        outcomeCode = 'CIVIL_OTHER_UNKNOWN';
       }
     }
-  }
-  
-  // 如果經過 lawyerperformance 的處理後，description 仍然是 "結果未明" 或 outcomeCode 是 unknown_outcome
-  // 並且 source.verdict 或 source.verdict_type 有更具體的值，可以再嘗試賦值一次
-  // 主要是確保 description 盡可能使用最優信息源
-  if ((description === '結果未明' || outcomeCode === 'unknown_outcome') && (source.verdict || source.verdict_type)) {
-      description = source.verdict_type || source.verdict || '結果未分類';
-      // 可以根據 outcomeCode 嘗試給 description 一個更標準的名稱，如果它仍然是 '結果未分類'
-      if (description === '結果未分類' && outcomeCode !== 'unknown_outcome') {
-          // 這裡可以添加一個基於 outcomeCode 轉換為可讀描述的邏輯
-          // 例如： if (outcomeCode === 'civil_win_high') description = '民事高度有利';
-          // 但通常 lawyerperformance.verdict 已經是好的描述了
-      }
+  } else if (mainType === 'criminal') {
+    if (isProcedural) outcomeCode = 'criminal_procedural';
+    else if (perfVerdict.includes("無罪")) outcomeCode = 'criminal_acquitted';
+    else if (perfVerdict.includes("有罪但顯著減輕")) outcomeCode = 'criminal_guilty_mitigate_high';
+    else if (perfVerdict.includes("有罪但略微減輕")) outcomeCode = 'criminal_guilty_mitigate_medium';
+    else if (perfVerdict.includes("有罪且符合預期")) outcomeCode = 'criminal_guilty_expected';
+    else if (perfVerdict.includes("有罪且加重")) outcomeCode = 'criminal_guilty_aggravated';
+    else if (perfVerdict.includes("有罪依法量刑")) outcomeCode = 'criminal_guilty_sentenced';
+    else if (source.verdict_type && source.verdict_type.toLowerCase().includes("免訴")) outcomeCode = 'criminal_dismissed_charge_no_prosecution';
+    else if (source.verdict_type && source.verdict_type.toLowerCase().includes("不受理")) outcomeCode = 'criminal_dismissed_charge_not_accepted';
+  } else if (mainType === 'administrative') {
+    if (isProcedural || perfVerdict.includes("procedural")) outcomeCode = 'admin_procedural';
+    else if (perfVerdict.includes("撤銷原處分") && !perfVerdict.includes("部分")) outcomeCode = 'admin_win_full_revoke';
+    else if (perfVerdict.includes("部分撤銷原處分")) outcomeCode = 'admin_win_partial_revoke';
+    else if (perfVerdict.includes("駁回訴訟")) outcomeCode = 'admin_lose_dismissed';
+    else if (perfVerdict.includes("義務訴訟勝訴")) outcomeCode = 'admin_win_obligation';
   }
 
+  // 如果 description 仍然是初始值且不夠好，可以嘗試用 source.verdict (案件總體verdict)
+  if ((description === '結果未明' || description === source.verdict_type) && source.verdict && source.verdict !== description) {
+    description = source.verdict;
+  }
 
-  return { outcomeCode, description };
+  return {
+    outcomeCode,
+    description
+  };
 }
+
 
 // --- 輔助函數：獲取律師角色 ---
 function getLawyerRole(source, lawyerName) {
@@ -741,18 +766,16 @@ function getLawyerRole(source, lawyerName) {
 function createCivilRoleStats() {
   return {
     total: 0,
-    win_high: 0,
-    win_medium: 0,
-    win_low: 0,
-    win_minor: 0,
-    lose_full: 0,
-    settlement: 0,
-    withdraw: 0,
-    procedural: 0,
-    defendant_mitigate_high: 0,
-    defendant_mitigate_medium: 0,
-    defendant_mitigate_low: 0,
-    other: 0
+    CIVIL_HIGHLY_FAVORABLE: 0,
+    CIVIL_MODERATELY_FAVORABLE: 0,
+    CIVIL_SLIGHTLY_FAVORABLE: 0,
+    CIVIL_NEUTRAL_SETTLEMENT: 0,
+    CIVIL_NEUTRAL_WITHDRAW: 0,
+    CIVIL_PROCEDURAL: 0,
+    CIVIL_SLIGHTLY_UNFAVORABLE: 0,
+    CIVIL_MODERATELY_UNFAVORABLE: 0,
+    CIVIL_HIGHLY_UNFAVORABLE: 0,
+    CIVIL_OTHER_UNKNOWN: 0
   };
 }
 
@@ -825,11 +848,19 @@ function calculateDetailedWinRates(processedCases, detailedWinRatesStats, lawyer
   // 民事
   const civilP = detailedWinRatesStats.civil.plaintiff;
   const civilD = detailedWinRatesStats.civil.defendant;
-  const civilPFavorable = civilP.win_high + civilP.win_medium + civilP.win_low + civilP.win_minor;
-  const civilDFavorable = civilD.defendant_mitigate_high + civilD.defendant_mitigate_medium + civilD.defendant_mitigate_low + (civilD.total > 0 && civilP.lose_full > 0 ? civilD.total : 0); // 假設對方敗訴算我方勝
-  const civilTotalConsidered = (civilP.total - (civilP.settlement + civilP.withdraw + civilP.procedural + civilP.other)) +
-    (civilD.total - (civilD.settlement + civilD.withdraw + civilD.procedural + civilD.other));
-  detailedWinRatesStats.civil.overall = civilTotalConsidered > 0 ? Math.round(((civilPFavorable + civilDFavorable) / civilTotalConsidered) * 100) : 0;
+
+  let civilFavorableCount = 0;
+  let civilTotalConsidered = 0;
+
+  // 原告方
+  civilFavorableCount += civilP.CIVIL_HIGHLY_FAVORABLE + civilP.CIVIL_MODERATELY_FAVORABLE + civilP.CIVIL_SLIGHTLY_FAVORABLE;
+  civilTotalConsidered += (civilP.total - (civilP.CIVIL_NEUTRAL_SETTLEMENT + civilP.CIVIL_NEUTRAL_WITHDRAW + civilP.CIVIL_PROCEDURAL + civilP.CIVIL_OTHER_UNKNOWN));
+
+  // 被告方 (假設被告的 favorable code 也是類似的)
+  civilFavorableCount += civilD.CIVIL_HIGHLY_FAVORABLE + civilD.CIVIL_MODERATELY_FAVORABLE + civilD.CIVIL_SLIGHTLY_FAVORABLE; // 這裡的 code 應該是被告角度的有利
+  civilTotalConsidered += (civilD.total - (civilD.CIVIL_NEUTRAL_SETTLEMENT + civilD.CIVIL_NEUTRAL_WITHDRAW + civilD.CIVIL_PROCEDURAL + civilD.CIVIL_OTHER_UNKNOWN));
+
+  detailedWinRatesStats.civil.overall = civilTotalConsidered > 0 ? Math.round((civilFavorableCount / civilTotalConsidered) * 100) : 0;
 
   // 刑事 (對被告有利的)
   const crimD = detailedWinRatesStats.criminal.defendant;
