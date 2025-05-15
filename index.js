@@ -829,6 +829,9 @@ function getDetailedResult(perfVerdictText, mainType, sourceForContext, lawyerPe
 
     // 最後的 outcomeCode 兜底
     if (outcomeCode === `${mainType.toUpperCase()}_OTHER_UNKNOWN_COUNT` && description !== '結果資訊不足') {
+      // 如果 description 有效，但 outcomeCode 還是初始的 XXX_OTHER_UNKNOWN_COUNT
+      // 說明我們的規則沒有覆蓋到這個 lawyerperformance.verdict 或案件 verdict
+      // 保持 outcomeCode 為通用的 OTHER_UNKNOWN_COUNT
       console.warn(`[getDetailedResult ${mainType.toUpperCase()}] 최종 Unmapped description: ${description}. Defaulting to OTHER_UNKNOWN_COUNT.`);
       outcomeCode = 'OTHER_UNKNOWN_COUNT';
     }
@@ -1270,32 +1273,34 @@ function getDetailedResult(perfVerdictText, mainType, sourceForContext, lawyerPe
       const mainType = getMainType(source);
 
       let sideFromPerf = 'unknown';
-      let perfVerdictText = null;
-      let lawyerPerfObjectForDetailedResult = null; // <--- 新增變數
+      let perfVerdictText = null; // 這是傳給 getDetailedResult 的
+      let lawyerPerfObject = null; // 用於獲取 is_procedural
 
       const performances = source.lawyerperformance;
       if (performances && Array.isArray(performances)) {
         const perf = performances.find(p => p.lawyer === lawyerName);
         if (perf) {
-          lawyerPerfObjectForDetailedResult = perf; // <--- 賦值
+          lawyerPerfObject = perf; // 保存整個 perf 對象
           sideFromPerf = (perf.side || 'unknown').toLowerCase();
           perfVerdictText = perf.verdict;
         }
       }
 
-      // 將 lawyerPerfObjectForDetailedResult 傳遞給 getDetailedResult
+      // 將 sourceForContext 傳遞給 getDetailedResult，它包含了 is_ruling 等案件級別信息
+      // 以及 lawyerPerfObject 以便 getDetailedResult 內部可以訪問 is_procedural
       const {
         outcomeCode,
         description
-      } = getDetailedResult(perfVerdictText, mainType, source, lawyerPerfObjectForDetailedResult);
+      } = getDetailedResult(perfVerdictText, mainType, source, lawyerPerfObject);
 
-      const caseDateStr = (source.JDATE || "").replace(/\//g, '');
       if (caseDateStr && parseInt(caseDateStr, 10) >= threeYearsAgoNum) {
         resultData.stats.totalCasesLast3Years++;
       }
       if (source.case_type) {
         allCaseTypesCounter[source.case_type] = (allCaseTypesCounter[source.case_type] || 0) + 1;
       }
+      const caseDateStr = (source.JDATE || "").replace(/\//g, '');
+
 
       return {
         id: hit._id,
@@ -1306,7 +1311,7 @@ function getDetailedResult(perfVerdictText, mainType, sourceForContext, lawyerPe
         originalVerdict: source.verdict,
         originalVerdictType: source.verdict_type,
         date: caseDateStr,
-        // role: getLawyerRole(source, lawyerName), // 考慮是否仍需要這個基於頂層的 role
+        // role: getLawyerRole(source, lawyerName), // <--- 移除或用 sideFromPerf 替代
         sideFromPerf: sideFromPerf,
         neutralOutcomeCode: outcomeCode,
         originalSource: source
