@@ -711,7 +711,10 @@ function getDetailedResult(perfVerdictText, mainType, sourceForContext, lawyerPe
       else neutralOutcomeCode = 'CIVIL_UNCATEGORIZED_NEUTRAL';
 
     } else if (mainType === 'criminal') {
-      if (pv.includes("無罪")) neutralOutcomeCode = 'CRIMINAL_ACQUITTED';
+      if (pv.includes("程序性裁定") || pv.includes("procedural")) neutralOutcomeCode = 'PROCEDURAL_NEUTRAL';
+      else if (pv.includes("無罪")) neutralOutcomeCode = 'CRIMINAL_ACQUITTED';
+      else if (pv.includes("有罪但顯著減輕") || pv.includes("刑度低於求刑50%以上")) neutralOutcomeCode = 'CRIMINAL_GUILTY_SIG_REDUCED';
+      else if (pv.includes("有罪但略微減輕") || pv.includes("刑度低於求刑但未達50%")) neutralOutcomeCode = 'CRIMINAL_GUILTY_SLIGHT_REDUCED';
       else if (pv.includes("有罪但顯著減輕")) neutralOutcomeCode = 'CRIMINAL_GUILTY_SIG_REDUCED';
       else if (pv.includes("有罪但略微減輕")) neutralOutcomeCode = 'CRIMINAL_GUILTY_SLIGHT_REDUCED';
       else if (pv.includes("緩刑")) neutralOutcomeCode = 'CRIMINAL_GUILTY_PROBATION';
