@@ -858,32 +858,33 @@ function createCivilRoleStats() {
 function createCriminalRoleStats() {
   return {
     total: 0,
-    acquitted: 0,
-    dismissed_charge_no_prosecution: 0,
-    dismissed_charge_not_accepted: 0,
-    guilty_probation: 0,
-    guilty_fine_convertible: 0,
-    guilty_fine_only: 0,
-    guilty_imprisonment: 0,
-    guilty_mitigate_high: 0,
-    guilty_mitigate_medium: 0,
-    guilty_expected: 0,
-    guilty_aggravated: 0,
-    guilty_sentenced: 0,
-    procedural: 0,
-    other: 0
+    CRIMINAL_ACQUITTED_COUNT: 0,
+    CRIMINAL_DISMISSED_CHARGE_NO_PROSECUTION_COUNT: 0,
+    CRIMINAL_DISMISSED_CHARGE_NOT_ACCEPTED_COUNT: 0,
+    CRIMINAL_GUILTY_PROBATION_COUNT: 0,
+    CRIMINAL_GUILTY_FINE_CONVERTIBLE_COUNT: 0,
+    CRIMINAL_GUILTY_FINE_ONLY_COUNT: 0,
+    CRIMINAL_GUILTY_IMPRISONMENT_COUNT: 0,
+    CRIMINAL_GUILTY_MITIGATE_HIGH_COUNT: 0,
+    CRIMINAL_GUILTY_MITIGATE_MEDIUM_COUNT: 0,
+    CRIMINAL_GUILTY_EXPECTED_COUNT: 0,
+    CRIMINAL_GUILTY_AGGRAVATED_COUNT: 0,
+    CRIMINAL_GUILTY_SENTENCED_COUNT: 0,
+    CRIMINAL_PROCEDURAL_COUNT: 0, // 注意這裡的命名
+    OTHER_UNKNOWN_COUNT: 0 // 通用未知
   };
 }
 
 function createAdminRoleStats() {
   return {
     total: 0,
-    win_full_revoke: 0,
-    win_partial_revoke: 0,
-    admin_win_obligation: 0,
-    lose_dismissed: 0,
-    procedural: 0,
-    other: 0
+    ADMIN_WIN_FULL_REVOKE_COUNT: 0,
+    ADMIN_WIN_PARTIAL_REVOKE_COUNT: 0,
+    ADMIN_WIN_OBLIGATION_COUNT: 0,
+    ADMIN_LOSE_DISMISSED_COUNT: 0,
+    ADMIN_PROCEDURAL_COUNT: 0, // 注意這裡的命名
+    ADMIN_NEUTRAL_SETTLEMENT_COUNT: 0, // 假設行政可能有和解
+    OTHER_UNKNOWN_COUNT: 0 // 通用未知
   };
 }
 
@@ -893,13 +894,18 @@ function calculateDetailedWinRates(processedCases, detailedWinRatesStats, lawyer
     const {
       mainType,
       role,
-      _outcomeCodeForStat,
-      originalSource
-    } = caseInfo; // 使用 _outcomeCodeForStat
-    if (!_outcomeCodeForStat || _outcomeCodeForStat === 'unknown_outcome') return;
+      _outcomeCodeForStat // 這個是從 getDetailedResult 返回的，例如 WIN_FULL_COUNT
+    } = caseInfo;
+    if (!_outcomeCodeForStat || _outcomeCodeForStat.endsWith('_OTHER_UNKNOWN') || _outcomeCodeForStat.endsWith('_PROCEDURAL')) {
+      // 對於 UNKNOWN 和 PROCEDURAL，我們可能不希望它們參與後續的有利/不利計數，但 total 還是要算
+      // 但如果 outcomeCode 本身就是 XXX_PROCEDURAL_COUNT 或 XXX_OTHER_UNKNOWN_COUNT, 則下面會正確計數
+    }
 
     const statsBucketRoot = detailedWinRatesStats[mainType];
-    if (!statsBucketRoot) return;
+    if (!statsBucketRoot) {
+      console.warn(`[calculateDetailedWinRates] No stats bucket for mainType: ${mainType}`);
+      return;
+    }
 
     let targetBucket;
     if (mainType === 'civil') {
@@ -911,11 +917,16 @@ function calculateDetailedWinRates(processedCases, detailedWinRatesStats, lawyer
     }
 
     if (targetBucket) {
-      targetBucket.total = (targetBucket.total || 0) + 1; // 確保 total 初始化
+      targetBucket.total = (targetBucket.total || 0) + 1;
       if (targetBucket[_outcomeCodeForStat] !== undefined) {
         targetBucket[_outcomeCodeForStat]++;
       } else {
-        targetBucket.other = (targetBucket.other || 0) + 1;
+        // 如果 _outcomeCodeForStat 在 targetBucket 中沒有對應的鍵，
+        // 並且我們希望有一個通用的 'other' 來捕捉這些，
+        // 則需要確保 create...RoleStats() 中有 'other' 鍵。
+        // 目前的 createCivilRoleStats 有 OTHER_UNKNOWN_COUNT，可以考慮將未定義的 code 歸入此類。
+        console.warn(`[calculateDetailedWinRates] Unknown outcomeCode '${_outcomeCodeForStat}' for mainType '${mainType}', role '${role}'. Counting as OTHER_UNKNOWN_COUNT.`);
+        targetBucket.OTHER_UNKNOWN_COUNT = (targetBucket.OTHER_UNKNOWN_COUNT || 0) + 1;
       }
     }
   });
@@ -929,35 +940,42 @@ function calculateDetailedWinRates(processedCases, detailedWinRatesStats, lawyer
   console.log(`[calculateOverallCivil] Defendant Stats: WIN_FULL=${civilD.WIN_FULL_COUNT}, WIN_PARTIAL=${civilD.WIN_PARTIAL_COUNT}, LOSE_FULL=${civilD.LOSE_FULL_COUNT}, OTHER_SETTLEMENT=${civilD.OTHER_SETTLEMENT_COUNT}, PROCEDURAL=${civilD.PROCEDURAL_COUNT}, UNKNOWN=${civilD.OTHER_UNKNOWN_COUNT}, TOTAL=${civilD.total}`);
 
   let civilFavorableTotal = 0;
-  let civilConsideredTotal = 0;
+  let civilTotalConsideredForRate = 0;
 
-  // 原告方
-  civilFavorableTotal += (civilP.WIN_FULL || 0) + (civilP.WIN_PARTIAL || 0);
-  civilConsideredTotal += (civilP.total - ((civilP.PROCEDURAL || 0) + (civilP.OTHER_SETTLEMENT || 0) + (civilP.OTHER_UNKNOWN || 0)));
-  console.log(`[calculateOverallCivil] After Plaintiff: Favorable=${civilFavorableTotal}, Considered=${civilTotalConsidered}`);
+  /// 原告方有利結果累加 (只計算實質勝敗，排除程序、和解、未知)
+  civilFavorableTotal += (civilP.WIN_FULL_COUNT || 0) + (civilP.WIN_PARTIAL_COUNT || 0);
+  civilTotalConsideredForRate += Math.max(0, (civilP.total || 0) - ((civilP.PROCEDURAL_COUNT || 0) + (civilP.OTHER_SETTLEMENT_COUNT || 0) + (civilP.OTHER_UNKNOWN_COUNT || 0)));
+  console.log(`[calculateOverallCivil] After Plaintiff: Favorable=${civilFavorableTotal}, ConsideredForRate=${civilTotalConsideredForRate}`);
 
-  // 被告方 (假設其 WIN_FULL, WIN_PARTIAL 也是對己方有利的統計)
-  civilFavorableTotal += (civilD.WIN_FULL || 0) + (civilD.WIN_PARTIAL || 0);
-  civilConsideredTotal += (civilD.total - ((civilD.PROCEDURAL || 0) + (civilD.OTHER_SETTLEMENT || 0) + (civilD.OTHER_UNKNOWN || 0)));
-  console.log(`[calculateOverallCivil] After Defendant: Favorable=${civilFavorableTotal}, Considered=${civilTotalConsidered}`);
+  // 被告方有利結果累加 (被告的 WIN_FULL_COUNT 指的是被告完全有利，例如原告的 LOSE_FULL_COUNT)
+  civilFavorableTotal += (civilD.WIN_FULL_COUNT || 0) + (civilD.WIN_PARTIAL_COUNT || 0);
+  civilTotalConsideredForRate += Math.max(0, (civilD.total || 0) - ((civilD.PROCEDURAL_COUNT || 0) + (civilD.OTHER_SETTLEMENT_COUNT || 0) + (civilD.OTHER_UNKNOWN_COUNT || 0)));
+  console.log(`[calculateOverallCivil] After Defendant: Favorable=${civilFavorableTotal}, ConsideredForRate=${civilTotalConsideredForRate}`);
 
-  detailedWinRatesStats.civil.overall = civilConsideredTotal > 0 ? Math.round((civilFavorableTotal / civilConsideredTotal) * 100) : 0;
+  detailedWinRatesStats.civil.overall = civilTotalConsideredForRate > 0 ? Math.round((civilFavorableTotal / civilTotalConsideredForRate) * 100) : 0;
   console.log(`[calculateOverallCivil] Final Civil Overall: ${detailedWinRatesStats.civil.overall}`);
-  
-  // 刑事 (對被告有利的)
+
+  // 刑事 (對被告有利的) - 確保鍵名一致
   const crimD = detailedWinRatesStats.criminal.defendant;
-  const crimTotalConsidered = crimD.total - (crimD.dismissed_charge_no_prosecution + crimD.dismissed_charge_not_accepted + crimD.procedural + crimD.other);
-  if (crimTotalConsidered > 0) {
-    const crimFavorable = crimD.acquitted + crimD.guilty_mitigate_high + crimD.guilty_mitigate_medium + crimD.guilty_probation + crimD.guilty_fine_convertible + crimD.guilty_fine_only;
-    detailedWinRatesStats.criminal.overall = Math.round((crimFavorable / crimTotalConsidered) * 100);
+  const crimTotalConsideredForRate = (crimD.total || 0) - ((crimD.PROCEDURAL_COUNT || 0) + (crimD.CRIMINAL_DISMISSED_CHARGE_NO_PROSECUTION_COUNT || 0) + (crimD.CRIMINAL_DISMISSED_CHARGE_NOT_ACCEPTED_COUNT || 0) + (crimD.OTHER_UNKNOWN_COUNT || 0));
+  if (crimTotalConsideredForRate > 0) {
+    const crimFavorable = (crimD.CRIMINAL_ACQUITTED_COUNT || 0) + (crimD.CRIMINAL_GUILTY_MITIGATE_HIGH_COUNT || 0) + (crimD.CRIMINAL_GUILTY_MITIGATE_MEDIUM_COUNT || 0) + (crimD.CRIMINAL_GUILTY_PROBATION_COUNT || 0) + (crimD.CRIMINAL_GUILTY_FINE_CONVERTIBLE_COUNT || 0) + (crimD.CRIMINAL_GUILTY_FINE_ONLY_COUNT || 0);
+    detailedWinRatesStats.criminal.overall = Math.round((crimFavorable / crimTotalConsideredForRate) * 100);
+  } else {
+    detailedWinRatesStats.criminal.overall = 0;
   }
-  // 行政 (對原告有利的)
+  console.log(`[calculateOverallCriminal] Final Criminal Overall: ${detailedWinRatesStats.criminal.overall}`);
+
+  // 行政 (對原告有利的) - 確保鍵名一致
   const adminP = detailedWinRatesStats.administrative.plaintiff;
-  const adminTotalConsidered = adminP.total - (adminP.procedural + adminP.other);
-  if (adminTotalConsidered > 0) {
-    const adminFavorable = adminP.win_full_revoke + adminP.win_partial_revoke + adminP.admin_win_obligation;
-    detailedWinRatesStats.administrative.overall = Math.round((adminFavorable / adminTotalConsidered) * 100);
+  const adminTotalConsideredForRate = (adminP.total || 0) - ((adminP.PROCEDURAL_COUNT || 0) + (adminP.ADMIN_NEUTRAL_SETTLEMENT_COUNT || 0) + (adminP.OTHER_UNKNOWN_COUNT || 0)); // 假設行政也有和解
+  if (adminTotalConsideredForRate > 0) {
+    const adminFavorable = (adminP.ADMIN_WIN_FULL_REVOKE_COUNT || 0) + (adminP.ADMIN_WIN_PARTIAL_REVOKE_COUNT || 0) + (adminP.ADMIN_WIN_OBLIGATION_COUNT || 0);
+    detailedWinRatesStats.administrative.overall = Math.round((adminFavorable / adminTotalConsideredForRate) * 100);
+  } else {
+    detailedWinRatesStats.administrative.overall = 0;
   }
+  console.log(`[calculateOverallAdmin] Final Admin Overall: ${detailedWinRatesStats.administrative.overall}`);
 }
 
 // --- 輔助函數：填充動態篩選選項 ---
