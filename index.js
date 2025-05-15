@@ -763,93 +763,90 @@ function getDetailedResult(source, mainType, lawyerName) {
         }
       } else if (mainType === 'criminal') {
         // 刑事案件通常是分析被告方律師的表現
-        if (role === '被告代理人' || role === '辯護人') { // 確保角色正確
+        if (role === '被告代理人' || role === '辯護人') {
+          let specificOutcomeFound = false; // 用於標記是否已匹配到具體結果
+
+          // 處理程序性標記 (來自 lawyerperformance.is_procedural)
           if (isProceduralFromPerf || pv.includes("程序性裁定") || pv.includes("procedural")) {
-            // 檢查是否是一些特殊的程序性"有罪"描述 (例如羈押延長)
+            // 特殊的程序性 "有罪" 描述 (例如羈押延長裁定)
             if (pv.includes("有罪且符合預期(刑度與求刑相當，但本案為程序性羈押延長)") ||
               pv.includes("有罪且符合預期(刑度與求刑相當，但此為程序性裁定，基於犯罪嫌疑重大延長限制)") ||
               pv.includes("有罪且符合預期(刑度與求刑相當,但本案為程序性裁定,無具體刑度)")) {
-              outcomeCode = 'CRIMINAL_RULING_UNFAVORABLE_COUNT'; // 雖然有"有罪"字樣，但本質是程序性且對被告不利的裁定
-              foundSubstantiveOutcome = true; // 標記為已處理
+              outcomeCode = 'CRIMINAL_RULING_UNFAVORABLE_COUNT'; // 歸為不利的裁定
             } else {
-              outcomeCode = 'CRIMINAL_PROCEDURAL_COUNT';
-              foundSubstantiveOutcome = true;
+              outcomeCode = 'CRIMINAL_PROCEDURAL_COUNT'; // 一般程序性
+            }
+            specificOutcomeFound = true;
+          }
+
+          // 如果不是明確的程序性，再判斷實體結果或裁定結果
+          if (!specificOutcomeFound) {
+            if (isRulingCase) { // 刑事裁定
+              if (pv.includes("准予交保") || pv.includes("停止羈押") || pv.includes("聲請具保停止羈押獲准")) {
+                outcomeCode = 'CRIMINAL_RULING_FAVORABLE_COUNT';
+              } else if (pv.includes("羈押") || pv.includes("駁回交保") || pv.includes("聲請具保駁回")) {
+                outcomeCode = 'CRIMINAL_RULING_UNFAVORABLE_COUNT';
+              } else {
+                outcomeCode = 'OTHER_UNKNOWN_COUNT'; // 未知的裁定結果
+              }
+              specificOutcomeFound = true;
+            } else { // 刑事判決
+              if (pv.includes("無罪")) {
+                outcomeCode = 'CRIMINAL_ACQUITTED_COUNT';
+                specificOutcomeFound = true;
+              } else if (pv.includes("有罪但顯著減輕")) {
+                outcomeCode = 'CRIMINAL_GUILTY_FAVORABLE_COUNT';
+                specificOutcomeFound = true;
+              } else if (pv.includes("有罪但略微減輕")) {
+                outcomeCode = 'CRIMINAL_GUILTY_FAVORABLE_COUNT';
+                specificOutcomeFound = true;
+              } else if (pv.includes("緩刑")) { // 假設 lawyerperformance.verdict 會直接寫 "緩刑"
+                outcomeCode = 'CRIMINAL_GUILTY_PROBATION_COUNT';
+                specificOutcomeFound = true;
+              } else if (pv.includes("得易科罰金")) { // 假設會寫 "得易科罰金"
+                outcomeCode = 'CRIMINAL_GUILTY_FAVORABLE_COUNT';
+                specificOutcomeFound = true; // 也算有利
+              } else if (pv.includes("罰金") && !(pv.includes("有期徒刑") || pv.includes("拘役"))) { // 單純罰金
+                outcomeCode = 'CRIMINAL_GUILTY_FAVORABLE_COUNT';
+                specificOutcomeFound = true; // 也算有利
+              } else if (pv.includes("有罪且加重")) {
+                outcomeCode = 'CRIMINAL_GUILTY_UNFAVORABLE_COUNT';
+                specificOutcomeFound = true;
+              } else if (pv.includes("有罪且符合預期") || pv.includes("有罪依法量刑") || pv.includes("有罪")) { // "有罪" 作為一個比較概括的不利情況
+                outcomeCode = 'CRIMINAL_GUILTY_UNFAVORABLE_COUNT';
+                specificOutcomeFound = true;
+              } else if (source.verdict_type) { // 如果 lawyerperformance.verdict 不夠明確，參考案件本身的 verdict_type
+                const vt = source.verdict_type.toLowerCase();
+                if (vt.includes("免訴")) {
+                  outcomeCode = 'CRIMINAL_PROCEDURAL_COUNT';
+                  specificOutcomeFound = true;
+                } else if (vt.includes("不受理")) {
+                  outcomeCode = 'CRIMINAL_PROCEDURAL_COUNT';
+                  specificOutcomeFound = true;
+                } else if (vt.includes("被告無罪")) {
+                  outcomeCode = 'CRIMINAL_ACQUITTED_COUNT';
+                  specificOutcomeFound = true;
+                } else if (vt.includes("被告有罪")) {
+                  outcomeCode = 'CRIMINAL_GUILTY_UNFAVORABLE_COUNT';
+                  specificOutcomeFound = true;
+                }
+              }
             }
           }
-          // 優先判斷明確的實體結果 (無論是否 isRulingCase，因為刑事裁定也可能有明確的有利/不利)
-          else if (pv.includes("無罪")) {
-            outcomeCode = 'CRIMINAL_ACQUITTED_COUNT';
-            foundSubstantiveOutcome = true;
-          }
-          // 有利情況 (顯著減輕 > 略微減輕 > 緩刑 > 得易科罰金 > 僅罰金)
-          else if (pv.includes("有罪但顯著減輕")) { // 包括 "刑度低於求刑50%以上或罪名減輕"
-            outcomeCode = 'CRIMINAL_GUILTY_FAVORABLE_COUNT';
-            foundSubstantiveOutcome = true;
-          } else if (pv.includes("有罪但略微減輕")) { // 包括 "刑度低於求刑但未達50%" 或 "刑度低於原審判決但未達求刑明確比較"
-            outcomeCode = 'CRIMINAL_GUILTY_FAVORABLE_COUNT';
-            foundSubstantiveOutcome = true;
-          }
-          // 不利情況
-          else if (pv.includes("有罪且加重")) { // 包括 "刑度高於求刑"
-            outcomeCode = 'CRIMINAL_GUILTY_UNFAVORABLE_COUNT';
-            foundSubstantiveOutcome = true;
-          } else if (pv.includes("有罪且符合預期") || pv.includes("有罪依法量刑")) { // 包括 "刑度與求刑相當" 或 "被告承認有罪，同意簡式審判程序"
-            // 注意： "有罪依法量刑(檢察官求刑不明但有判刑)" 也是不利
-            outcomeCode = 'CRIMINAL_GUILTY_UNFAVORABLE_COUNT';
-            foundSubstantiveOutcome = true;
-          }
-          // 針對 isRulingCase 的特定刑事裁定結果 (如果還沒被上面的程序性或實體性捕捉)
-          else if (isRulingCase) {
-            if (pv.includes("准予交保") || pv.includes("停止羈押")) {
-              outcomeCode = 'CRIMINAL_RULING_FAVORABLE_COUNT';
-              foundSubstantiveOutcome = true;
-            } else if (pv.includes("羈押") || pv.includes("駁回交保")) {
-              outcomeCode = 'CRIMINAL_RULING_UNFAVORABLE_COUNT';
-              foundSubstantiveOutcome = true;
-            }
+          // 兜底 N/A 或未明確記載
+          if (!specificOutcomeFound && (pv.includes("n/a") || pv.includes("未明確記載"))) {
+            outcomeCode = 'OTHER_UNKNOWN_COUNT';
+          } else if (!specificOutcomeFound) { // 如果遍歷所有規則後還是初始的 UNKNOWN，則設為 OTHER_UNKNOWN
+            outcomeCode = 'OTHER_UNKNOWN_COUNT';
+            console.warn(`[getDetailedResult CRIMINAL] Unmapped perf.verdict for ${lawyerName} (role: ${role}, ruling: ${isRulingCase}): ${pv}`);
           }
 
-          // 參考案件本身的 verdict_type 作為補充 (如果 lawyerperformance 未能明確分類)
-          if (!foundSubstantiveOutcome && outcomeCode.endsWith('_OTHER_UNKNOWN_COUNT')) {
-            const vt = (source.verdict_type || '').toLowerCase();
-            if (vt.includes("免訴")) {
-              outcomeCode = 'CRIMINAL_PROCEDURAL_COUNT';
-              foundSubstantiveOutcome = true;
-            } // 免訴通常是程序有利
-            else if (vt.includes("不受理")) {
-              outcomeCode = 'CRIMINAL_PROCEDURAL_COUNT';
-              foundSubstantiveOutcome = true;
-            } // 不受理也是程序
-            else if (vt.includes("被告無罪")) {
-              outcomeCode = 'CRIMINAL_ACQUITTED_COUNT';
-              foundSubstantiveOutcome = true;
-            } else if (vt.includes("被告有罪")) {
-              outcomeCode = 'CRIMINAL_GUILTY_UNFAVORABLE_COUNT';
-              foundSubstantiveOutcome = true;
-            } // 概括性的有罪算不利
-          }
-
-          // 最後處理 N/A 和未明確記載
-          if (pv.includes("n/a") || pv.includes("未明確記載")) {
-            outcomeCode = 'OTHER_UNKNOWN_COUNT'; // 通用的未知
-            foundSubstantiveOutcome = true; // 標記已處理，不再進入後續的程序性判斷
-          }
-
-          // 如果前面都沒有匹配到實質結果，並且律師表現標記為程序性，則歸為程序性
-          if (!foundSubstantiveOutcome && isProceduralFromPerf) {
+        } else { // 律師不是被告代理人，或者角色未知
+          outcomeCode = 'OTHER_UNKNOWN_COUNT'; // 刑事案件主要關注被告表現
+          // 可以根據 pv 中是否有 "原告:" 字樣做一些簡單的程序性判斷
+          if (pv && (pv.includes("原告: 程序性裁定") || pv.includes("告訴駁回"))) {
             outcomeCode = 'CRIMINAL_PROCEDURAL_COUNT';
           }
-          // 如果最終 outcomeCode 還是初始的 UNKNOWN，則歸為通用的 UNKNOWN
-          else if (outcomeCode === `${mainType.toUpperCase()}_OTHER_UNKNOWN_COUNT`) {
-            outcomeCode = 'OTHER_UNKNOWN_COUNT';
-          }
-
-        } else { // 如果律師不是被告代理人 (例如告訴代理人，雖然較少見於統計)
-          outcomeCode = 'OTHER_UNKNOWN_COUNT'; // 對於刑事案件，我們主要關注被告方律師的表現
-          // 或者，如果您的 lawyerperformance.verdict 中有針對原告方的描述，例如 "原告: 程序性裁定", "原告: 完全勝訴"
-          // 則需要加入對 role === '原告代理人' 的判斷邏輯
-          if (pv.includes("原告: 程序性裁定")) outcomeCode = 'CRIMINAL_PROCEDURAL_COUNT'; // 假設有這種情況
-          else if (pv.includes("原告: 完全勝訴")) outcomeCode = 'OTHER_UNKNOWN_COUNT'; // 刑事案件中原告"完全勝訴"的概念比較模糊，可能指附帶民事訴訟部分
         }
       } else if (mainType === 'administrative') {
         if (isRulingCase) {
