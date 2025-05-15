@@ -821,34 +821,44 @@ function createFinalOutcomeStats() { // 改名以區分
 
 // --- 輔助函數：計算詳細勝訴率 ---
 function calculateDetailedWinRates(processedCases, detailedWinRatesStats) {
+
+  console.log("處理前的統計資料:", JSON.stringify(detailedWinRatesStats));
+  console.log("detailedWinRatesStats 身份檢查:", detailedWinRatesStats === resultData.stats.detailedWinRates);
   console.log("開始處理案件勝訴率統計，案件數量:", processedCases.length);
+
   for (let i = 0; i < processedCases.length; i++) {
     console.log(`案件[${i}]: ID=${processedCases[i].id}, mainType=${processedCases[i].mainType}, sideFromPerf=${processedCases[i].sideFromPerf}, neutralOutcomeCode=${processedCases[i].neutralOutcomeCode}`);
   }
   processedCases.forEach(caseInfo => {
-    const {
-      mainType,
-      sideFromPerf,
-      neutralOutcomeCode
-    } = caseInfo;
+    const { mainType, sideFromPerf, neutralOutcomeCode } = caseInfo;
+
+    console.log(`處理案件: ${caseInfo.id}, 類型=${mainType}, 方=${sideFromPerf}, 代碼=${neutralOutcomeCode}`);
 
     if (!neutralOutcomeCode || !mainType || mainType === 'unknown' || !sideFromPerf || sideFromPerf === 'unknown') {
-      console.warn(`[calculateDetailedWinRates] Skipping case due to insufficient info: ID=${caseInfo.id}`);
+      console.warn(`[calculateDetailedWinRates] 跳過案件: ${caseInfo.id}`);
       return;
     }
 
     const statsBucketRoot = detailedWinRatesStats[mainType];
     if (!statsBucketRoot) {
-      /* ... */
+      console.warn(`主類型桶不存在: ${mainType}`);
       return;
     }
 
     let targetRoleBucket;
 
-    if (!targetRoleBucket) return;
+    if (sideFromPerf === 'plaintiff') targetRoleBucket = statsBucketRoot.plaintiff;
+    else if (sideFromPerf === 'defendant') targetRoleBucket = statsBucketRoot.defendant;
+    else return;
+
+    if (!targetRoleBucket) {
+      console.warn(`角色桶不存在: ${mainType}.${sideFromPerf}`);
+      return;
+    }
     console.log(`增加前: ${mainType} ${sideFromPerf} 總計=${targetRoleBucket.total}`);
     targetRoleBucket.total = (targetRoleBucket.total || 0) + 1;
     console.log(`增加後: ${mainType} ${sideFromPerf} 總計=${targetRoleBucket.total}`);
+
     let finalStatKeyToIncrement = 'OTHER_UNKNOWN_COUNT'; // 預設
 
     // --- 核心映射：將 (mainType, sideFromPerf, neutralOutcomeCode) 映射到 finalStatKeyToIncrement ---
@@ -920,6 +930,9 @@ function calculateDetailedWinRates(processedCases, detailedWinRatesStats) {
     if (mainType === 'civil' && plaintiffStats) console.log(`[calculateOverallCivil] Plaintiff Stats for Overall: ${JSON.stringify(plaintiffStats)}`);
     if (mainType === 'administrative' && plaintiffStats) console.log(`[calculateOverallAdmin] Plaintiff Stats for Overall: ${JSON.stringify(plaintiffStats)}`);
   });
+  console.log("處理後的統計資料:", JSON.stringify(detailedWinRatesStats));
+  // 確保函數最後返回更新後的統計資料
+  return detailedWinRatesStats;
 }
 
 
@@ -1275,7 +1288,7 @@ function analyzeLawyerData(esHits, lawyerName, esAggregations) {
     console.log(`  ID: ${c.id}, mainType: ${c.mainType}, sideFromPerf: ${c.sideFromPerf}, neutralOutcomeCode: ${c.neutralOutcomeCode}, description: ${c.result}`);
   });
 
-  calculateDetailedWinRates(resultData.cases, resultData.stats.detailedWinRates);
+  resultData.stats.detailedWinRates = calculateDetailedWinRates(resultData.cases, resultData.stats.detailedWinRates);
 
   // ... (後續的 commonCaseTypes, dynamicFilterOptions, lawRating 計算) ...
   const sortedCommonCaseTypes = Object.entries(allCaseTypesCounter).sort(([, a], [, b]) => b - a).slice(0, 3);
