@@ -823,7 +823,7 @@ function createCivilRoleStats() {
     LOSE_FULL_COUNT: 0,
     OTHER_SETTLEMENT_COUNT:0,
     PROCEDURAL_COUNT: 0,
-    OTHER_UNKNOWN_COUNT: 0
+    OTHER_UNKNOWN_COUNT: 0,
     WIN_FULL: 0, // 對應前端條形圖 "完全勝訴"
     WIN_PARTIAL: 0, // 對應前端條形圖 "部分勝訴"
     LOSE_FULL: 0, // 對應前端條形圖 "敗訴"
