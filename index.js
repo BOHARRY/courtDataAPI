@@ -797,10 +797,10 @@ function getDetailedResult(perfVerdictText, mainType, sourceForContext, lawyerPe
     outcomeCode = 'OTHER_UNKNOWN_COUNT';
   }
 
-  return {
-    neutralOutcomeCode: outcomeCode,
+  return { 
+    outcomeCode,
     description
-  }; // 返回 outcomeCode (之前打錯字)
+  };
 }
 
 function createFinalOutcomeStats() { // 改名以區分
