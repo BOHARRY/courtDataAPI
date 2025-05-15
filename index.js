@@ -1270,34 +1270,32 @@ function getDetailedResult(perfVerdictText, mainType, sourceForContext, lawyerPe
       const mainType = getMainType(source);
 
       let sideFromPerf = 'unknown';
-      let perfVerdictText = null; // 這是傳給 getDetailedResult 的
-      let lawyerPerfObject = null; // 用於獲取 is_procedural
+      let perfVerdictText = null;
+      let lawyerPerfObjectForDetailedResult = null; // <--- 新增變數
 
       const performances = source.lawyerperformance;
       if (performances && Array.isArray(performances)) {
         const perf = performances.find(p => p.lawyer === lawyerName);
         if (perf) {
-          lawyerPerfObject = perf; // 保存整個 perf 對象
+          lawyerPerfObjectForDetailedResult = perf; // <--- 賦值
           sideFromPerf = (perf.side || 'unknown').toLowerCase();
           perfVerdictText = perf.verdict;
         }
       }
 
-      // 將 sourceForContext 傳遞給 getDetailedResult，它包含了 is_ruling 等案件級別信息
-      // 以及 lawyerPerfObject 以便 getDetailedResult 內部可以訪問 is_procedural
+      // 將 lawyerPerfObjectForDetailedResult 傳遞給 getDetailedResult
       const {
         outcomeCode,
         description
-      } = getDetailedResult(perfVerdictText, mainType, source, lawyerPerfObject);
+      } = getDetailedResult(perfVerdictText, mainType, source, lawyerPerfObjectForDetailedResult);
 
+      const caseDateStr = (source.JDATE || "").replace(/\//g, '');
       if (caseDateStr && parseInt(caseDateStr, 10) >= threeYearsAgoNum) {
         resultData.stats.totalCasesLast3Years++;
       }
       if (source.case_type) {
         allCaseTypesCounter[source.case_type] = (allCaseTypesCounter[source.case_type] || 0) + 1;
       }
-      const caseDateStr = (source.JDATE || "").replace(/\//g, '');
-
 
       return {
         id: hit._id,
@@ -1308,7 +1306,7 @@ function getDetailedResult(perfVerdictText, mainType, sourceForContext, lawyerPe
         originalVerdict: source.verdict,
         originalVerdictType: source.verdict_type,
         date: caseDateStr,
-        // role: getLawyerRole(source, lawyerName), // <--- 移除或用 sideFromPerf 替代
+        // role: getLawyerRole(source, lawyerName), // 考慮是否仍需要這個基於頂層的 role
         sideFromPerf: sideFromPerf,
         neutralOutcomeCode: outcomeCode,
         originalSource: source
