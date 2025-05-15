@@ -670,6 +670,7 @@ function getSideFromPerformance(lawyerPerfObject) {
 
 function getDetailedResult(perfVerdictText, mainType, sourceForContext, lawyerPerfObject) {
   let neutralOutcomeCode = 'UNKNOWN_NEUTRAL'; // 通用未知中性結果
+  let outcomeCode = neutralOutcomeCode;
   let description = perfVerdictText || sourceForContext.verdict || sourceForContext.verdict_type || '結果資訊不足';
   const pv = (perfVerdictText || "").toLowerCase();
 
@@ -797,10 +798,10 @@ function getDetailedResult(perfVerdictText, mainType, sourceForContext, lawyerPe
     outcomeCode = 'OTHER_UNKNOWN_COUNT';
   }
 
-  return { 
-    outcomeCode,
+  return {
+    neutralOutcomeCode: outcomeCode,
     description
-  };
+  }; // 返回 outcomeCode (之前打錯字)
 }
 
 function createFinalOutcomeStats() { // 改名以區分
