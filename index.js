@@ -1237,7 +1237,7 @@ function analyzeLawyerData(esHits, lawyerName, esAggregations) {
     }
 
     const {
-      outcomeCode: neutralOutcomeCode,
+      neutralOutcomeCode,
       description
     } = getDetailedResult(perfVerdictText, mainType, source, lawyerPerfObject);
 
