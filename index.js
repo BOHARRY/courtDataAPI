@@ -818,12 +818,17 @@ function getLawyerRole(source, lawyerName) {
 function createCivilRoleStats() {
   return {
     total: 0,
+    WIN_FULL_COUNT: 0,       // 注意這裡的後綴 _COUNT
+    WIN_PARTIAL_COUNT: 0,
+    LOSE_FULL_COUNT: 0,
+    OTHER_SETTLEMENT_COUNT:0,
+    PROCEDURAL_COUNT: 0,
+    OTHER_UNKNOWN_COUNT: 0
     WIN_FULL: 0, // 對應前端條形圖 "完全勝訴"
     WIN_PARTIAL: 0, // 對應前端條形圖 "部分勝訴"
     LOSE_FULL: 0, // 對應前端條形圖 "敗訴"
     OTHER_SETTLEMENT: 0, // 對應前端條形圖 "其他/和解"
     PROCEDURAL: 0,
-    // 以下是更細的分類，可能不直接用於主條形圖，但可用於計算或 tooltip
     CIVIL_WIN_HIGH: 0,
     CIVIL_WIN_MEDIUM: 0,
     CIVIL_WIN_LOW: 0,
