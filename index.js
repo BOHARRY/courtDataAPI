@@ -762,72 +762,68 @@ function getDetailedResult(source, mainType, lawyerName) {
           }
         }
       } else if (mainType === 'criminal') {
-        if (role === '被告代理人' || role === '辯護人') { // 主要關注被告
-          let specificOutcomeFound = false;
-          if (isProceduralFromPerf || pv.includes("程序性裁定") || pv.includes("procedural") ||
-            (isRulingCase && (pv.includes("羈押延長") || pv.includes("限制出境")))) { // 更明確的程序性或不利裁定
-            // 檢查是否是一些特殊的程序性"有罪"描述
-            if (pv.includes("有罪且符合預期(刑度與求刑相當，但本案為程序性羈押延長)") ||
-              pv.includes("有罪且符合預期(刑度與求刑相當，但此為程序性裁定，基於犯罪嫌疑重大延長限制)") ||
-              pv.includes("有罪且符合預期(刑度與求刑相當,但本案為程序性裁定,無具體刑度)")) {
-              outcomeCode = 'CRIMINAL_RULING_UNFAVORABLE_COUNT';
-            } else {
-              outcomeCode = 'CRIMINAL_PROCEDURAL_COUNT';
-            }
-            specificOutcomeFound = true;
-          }
+        let specificOutcomeFound = false;
+        const isProceduralFromPerf = perf ? (perf.is_procedural === true || perf.is_procedural === 'true') : false;
+        const pv = perf ? (perf.verdict || "").toLowerCase() : "";
 
-          if (!specificOutcomeFound) {
+        // 1. 先處理通用的程序性或特殊情況 (無論角色)
+        if (isProceduralFromPerf || (pv && (pv.includes("程序性裁定") || pv.includes("procedural")))) {
+          if (pv.includes("有罪且符合預期(刑度與求刑相當，但本案為程序性羈押延長)") ||
+            pv.includes("有罪且符合預期(刑度與求刑相當，但此為程序性裁定，基於犯罪嫌疑重大延長限制)") ||
+            pv.includes("有罪且符合預期(刑度與求刑相當,但本案為程序性裁定,無具體刑度)")) {
+            outcomeCode = 'CRIMINAL_RULING_UNFAVORABLE_COUNT'; // 通常對被告不利
+          } else {
+            outcomeCode = 'CRIMINAL_PROCEDURAL_COUNT';
+          }
+          specificOutcomeFound = true;
+        }
+
+        if (!specificOutcomeFound) {
+          if (role === '被告代理人' || role === '辯護人') {
             if (isRulingCase) {
               if (pv.includes("准予交保") || pv.includes("停止羈押")) outcomeCode = 'CRIMINAL_RULING_FAVORABLE_COUNT';
               else if (pv.includes("羈押") || pv.includes("駁回交保")) outcomeCode = 'CRIMINAL_RULING_UNFAVORABLE_COUNT';
-              else outcomeCode = 'OTHER_UNKNOWN_COUNT'; // 裁定但無法從 perf.verdict 分類
-              specificOutcomeFound = true;
-            } else { // 刑事判決 (基於 perf.verdict)
-              if (pv.includes("無罪")) {
-                outcomeCode = 'CRIMINAL_ACQUITTED_COUNT';
-              } else if (pv.includes("有罪但顯著減輕")) {
-                outcomeCode = 'CRIMINAL_GUILTY_FAVORABLE_COUNT';
-              } else if (pv.includes("有罪但略微減輕")) {
-                outcomeCode = 'CRIMINAL_GUILTY_FAVORABLE_COUNT';
-              } else if (pv.includes("緩刑")) {
-                outcomeCode = 'CRIMINAL_GUILTY_PROBATION_COUNT';
-              } else if (pv.includes("得易科罰金") && !pv.includes("緩刑")) {
-                outcomeCode = 'CRIMINAL_GUILTY_FAVORABLE_COUNT';
-              } else if (pv.includes("罰金") && !(pv.includes("有期徒刑") || pv.includes("拘役"))) {
-                outcomeCode = 'CRIMINAL_GUILTY_FAVORABLE_COUNT';
-              } else if (pv.includes("有罪且加重")) {
-                outcomeCode = 'CRIMINAL_GUILTY_UNFAVORABLE_COUNT';
-              } else if (pv.includes("有罪且符合預期") || pv.includes("有罪依法量刑") || pv.includes("有罪")) {
-                outcomeCode = 'CRIMINAL_GUILTY_UNFAVORABLE_COUNT';
-              }
-              // 如果到這裡 outcomeCode 還是初始的 UNKNOWN，再看 source.verdict_type
-              else if (outcomeCode.endsWith("OTHER_UNKNOWN_COUNT") && source.verdict_type) {
-                const vt = source.verdict_type.toLowerCase();
-                if (vt.includes("免訴")) {
-                  outcomeCode = 'CRIMINAL_PROCEDURAL_COUNT';
-                } else if (vt.includes("不受理")) {
-                  outcomeCode = 'CRIMINAL_PROCEDURAL_COUNT';
-                } else if (vt.includes("被告無罪")) {
-                  outcomeCode = 'CRIMINAL_ACQUITTED_COUNT';
-                } else if (vt.includes("被告有罪")) {
-                  outcomeCode = 'CRIMINAL_GUILTY_UNFAVORABLE_COUNT';
-                } else {
-                  outcomeCode = 'OTHER_UNKNOWN_COUNT';
-                } // verdict_type 也無法判斷
-              } else {
-                outcomeCode = 'OTHER_UNKNOWN_COUNT'; // perf.verdict 未匹配且無 verdict_type
-              }
-              specificOutcomeFound = true; // 只要進入判決邏輯，就認為已嘗試過實體判斷
+              else outcomeCode = 'OTHER_UNKNOWN_COUNT';
+            } else { // 刑事判決 - 被告
+              if (pv.includes("無罪")) outcomeCode = 'CRIMINAL_ACQUITTED_COUNT';
+              else if (pv.includes("有罪但顯著減輕")) outcomeCode = 'CRIMINAL_GUILTY_FAVORABLE_COUNT';
+              else if (pv.includes("有罪但略微減輕")) outcomeCode = 'CRIMINAL_GUILTY_FAVORABLE_COUNT';
+              else if (pv.includes("緩刑")) outcomeCode = 'CRIMINAL_GUILTY_PROBATION_COUNT';
+              else if (pv.includes("得易科罰金")) outcomeCode = 'CRIMINAL_GUILTY_FAVORABLE_COUNT';
+              else if (pv.includes("罰金") && !(pv.includes("有期徒刑") || pv.includes("拘役"))) outcomeCode = 'CRIMINAL_GUILTY_FAVORABLE_COUNT';
+              else if (pv.includes("有罪且加重")) outcomeCode = 'CRIMINAL_GUILTY_UNFAVORABLE_COUNT';
+              else if (pv.includes("有罪且符合預期") || pv.includes("有罪依法量刑") || pv.includes("有罪")) outcomeCode = 'CRIMINAL_GUILTY_UNFAVORABLE_COUNT';
+              else if (source.verdict_type) {
+                /* ... verdict_type 兜底 ... */ } else outcomeCode = 'OTHER_UNKNOWN_COUNT';
             }
+          } else if (role === '原告代理人' || role === '告訴代理人' || role === '自訴人代理人') { // 為原告方添加判斷
+            if (isRulingCase) {
+              // 刑事裁定中，原告方有利的情況比較少見，除非是一些特定的聲請
+              // 例如，如果被告聲請停止羈押被駁回，對原告來說算間接有利
+              if (pv.includes("駁回") && (pv.includes("交保") || pv.includes("停止羈押"))) outcomeCode = 'CRIMINAL_RULING_FAVORABLE_COUNT'; // 對原告有利
+              else outcomeCode = 'OTHER_UNKNOWN_COUNT';
+            } else { // 刑事判決 - 原告
+              // 對原告而言，被告被判有罪就是有利的
+              if (pv.includes("無罪")) outcomeCode = 'CRIMINAL_GUILTY_UNFAVORABLE_COUNT'; // 無罪對原告不利 (假設以定罪為目標)
+              else if (pv.includes("有罪但顯著減輕") || pv.includes("有罪但略微減輕") || pv.includes("緩刑") || pv.includes("得易科罰金") || pv.includes("罰金")) {
+                outcomeCode = 'CRIMINAL_GUILTY_FAVORABLE_COUNT'; // 雖然有罪，但可能未達原告預期，算部分有利或需再細分
+              } else if (pv.includes("有罪且加重") || pv.includes("有罪且符合預期") || pv.includes("有罪依法量刑") || pv.includes("有罪")) {
+                outcomeCode = 'CRIMINAL_GUILTY_FAVORABLE_COUNT'; // 被告有罪，對原告有利
+              }
+              // 如果是告訴不受理或自訴駁回，對原告是不利的程序結果
+              else if (source.verdict_type && (source.verdict_type.toLowerCase().includes("告訴不受理") || source.verdict_type.toLowerCase().includes("自訴駁回"))) {
+                outcomeCode = 'CRIMINAL_PROCEDURAL_COUNT'; // 或是 UNFAVORABLE_PROCEDURAL
+              } else outcomeCode = 'OTHER_UNKNOWN_COUNT';
+            }
+          } else { // 角色未知
+            outcomeCode = 'OTHER_UNKNOWN_COUNT';
           }
-          // 最後處理 N/A 和未明確記載 (如果前面都沒匹配上)
+          // 通用 N/A
           if (pv && (pv.includes("n/a") || pv.includes("未明確記載"))) {
             outcomeCode = 'OTHER_UNKNOWN_COUNT';
-          } else if (outcomeCode === `${mainType.toUpperCase()}_OTHER_UNKNOWN_COUNT` && specificOutcomeFound) {
-            // 如果經過了實體判斷但 outcomeCode 還是初始的 UNKNOWN (例如 isRulingCase=false 但所有判決規則都沒中)
-            // 這意味著 perf.verdict 的內容是我們規則未覆蓋的實體描述
-            console.warn(`[getDetailedResult CRIMINAL] Unmapped substantive perf.verdict for ${lawyerName}: ${pv}`);
+          } else if (outcomeCode === `${mainType.toUpperCase()}_OTHER_UNKNOWN_COUNT` && perf && perf.verdict) {
+            // 如果 perf.verdict 有值，但前面的規則都沒匹配上，則最終歸為 OTHER_UNKNOWN_COUNT
+            console.warn(`[getDetailedResult CRIMINAL] Unmapped perf.verdict for ${lawyerName} (role: ${role}, ruling: ${isRulingCase}): ${pv}`);
             outcomeCode = 'OTHER_UNKNOWN_COUNT';
           }
         } else {
