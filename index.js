@@ -661,15 +661,16 @@ function getMainType(source) {
 // --- 輔助函數：獲取詳細判決結果 (基於 lawyerperformance) ---
 // index.js
 
+// index.js
+
+// --- 輔助函數：獲取詳細判決結果 (基於 lawyerperformance，並嘗試區分判決與裁定) ---
 function getDetailedResult(source, mainType, lawyerName) {
   // 預設 outcomeCode 和 description
-  // outcomeCode 預設為該主類型下的未知，這樣如果沒有匹配，也能知道是哪個主類型的未知
-  let outcomeCode = `${mainType.toUpperCase()}_OTHER_UNKNOWN_COUNT`;
-  // description 優先使用 lawyerperformance.verdict，若無則用案件本身的，最後才是通用提示
-  let description = '結果資訊不足'; // 最終的兜底
+  let outcomeCode = `${mainType.toUpperCase()}_OTHER_UNKNOWN_COUNT`; // 例如 CIVIL_OTHER_UNKNOWN_COUNT
+  let description = source.verdict_type || source.verdict || '結果資訊不足'; // 預設描述
 
   const performances = source.lawyerperformance;
-  const role = getLawyerRole(source, lawyerName); // 先獲取角色，多處會用到
+  const role = getLawyerRole(source, lawyerName); // 先獲取角色
 
   // 嘗試從 source 中判斷是否為裁定
   const isRulingCase =
@@ -687,148 +688,140 @@ function getDetailedResult(source, mainType, lawyerName) {
       description = perf.verdict; // 主要描述來自 lawyerperformance.verdict
       const pv = perf.verdict.toLowerCase();
       const isProceduralFromPerf = perf.is_procedural === true || perf.is_procedural === 'true';
+      let foundSubstantiveOutcome = false;
 
-      // 1. 統一處理程序性結果 (無論判決或裁定)
-      if (isProceduralFromPerf || pv.includes("程序性裁定") || pv.includes("procedural")) {
-        outcomeCode = 'PROCEDURAL_COUNT';
-      }
-      // 2. 統一處理和解與撤訴 (主要針對民事，行政也可能有)
-      else if (pv.includes("和解") || pv.includes("調解成立")) {
-        outcomeCode = 'OTHER_SETTLEMENT_COUNT';
-      } else if (mainType === 'civil' && pv.includes("撤訴")) { // 撤訴主要用於民事
-        outcomeCode = 'OTHER_SETTLEMENT_COUNT';
-      }
-      // 3. --- 實體結果判斷 ---
-      else {
-        if (mainType === 'civil') {
-          if (isRulingCase) { // 民事裁定
-            if (role === '原告代理人' || role === '聲請人代理人') {
-              if (pv.includes("准許") || pv.includes("准予") || pv.includes("應予准許") || pv.includes("抗告有理由")) outcomeCode = 'WIN_FULL_COUNT';
-              else if (pv.includes("駁回聲請") || pv.includes("聲請駁回") || pv.includes("抗告無理由")) outcomeCode = 'LOSE_FULL_COUNT';
-              else outcomeCode = 'OTHER_UNKNOWN_COUNT';
-            } else if (role === '被告代理人' || role === '相對人代理人') {
-              if (pv.includes("駁回聲請") || pv.includes("聲請駁回") || pv.includes("抗告無理由")) outcomeCode = 'WIN_FULL_COUNT';
-              else if (pv.includes("准許") || pv.includes("准予") || pv.includes("應予准許") || pv.includes("抗告有理由")) outcomeCode = 'LOSE_FULL_COUNT';
-              else outcomeCode = 'OTHER_UNKNOWN_COUNT';
-            } else {
-              outcomeCode = 'OTHER_UNKNOWN_COUNT';
-            }
-          } else { // 民事判決
-            if (role === '原告代理人') {
-              if (pv.includes("原告: 完全勝訴") && !pv.includes("被告:")) outcomeCode = 'WIN_FULL_COUNT';
-              else if (pv.includes("原告: 大部分勝訴")) outcomeCode = 'WIN_FULL_COUNT';
-              else if (pv.includes("原告: 部分勝訴") || pv.includes("原告: 小部分勝訴")) outcomeCode = 'WIN_PARTIAL_COUNT';
-              else if (pv.includes("原告: 完全敗訴") && !pv.includes("被告:")) outcomeCode = 'LOSE_FULL_COUNT';
-              else if (pv.includes("原告: 完全勝訴") && pv.includes("被告: 完全敗訴")) outcomeCode = 'WIN_FULL_COUNT';
-              else if (pv.includes("原告: 部分勝訴") && (pv.includes("被告: 部分減免") || pv.includes("被告: 小部分減免") || pv.includes("被告: 完全敗訴"))) outcomeCode = 'WIN_PARTIAL_COUNT';
-              else if (pv.includes("原告: 完全敗訴") && pv.includes("被告: 完全勝訴")) outcomeCode = 'LOSE_FULL_COUNT';
-              else if (pv.startsWith("完全勝訴") || pv.startsWith("大部分勝訴")) outcomeCode = 'WIN_FULL_COUNT';
-              else if (pv.startsWith("部分勝訴") || pv.startsWith("小部分勝訴")) outcomeCode = 'WIN_PARTIAL_COUNT';
-              else if (pv.startsWith("完全敗訴")) outcomeCode = 'LOSE_FULL_COUNT';
-              else outcomeCode = 'OTHER_UNKNOWN_COUNT';
-            } else if (role === '被告代理人') {
-              if (pv.includes("被告: 完全勝訴") && !pv.includes("原告:")) outcomeCode = 'WIN_FULL_COUNT';
-              else if (pv.includes("被告: 大部分減免")) outcomeCode = 'WIN_FULL_COUNT';
-              else if (pv.includes("被告: 部分減免") || pv.includes("被告: 小部分減免")) outcomeCode = 'WIN_PARTIAL_COUNT';
-              else if (pv.includes("被告: 完全敗訴") && !pv.includes("原告:")) outcomeCode = 'LOSE_FULL_COUNT';
-              else if (pv.includes("被告: 完全勝訴") && pv.includes("原告: 完全敗訴")) outcomeCode = 'WIN_FULL_COUNT';
-              else if ((pv.includes("被告: 部分減免") || pv.includes("被告: 小部分減免")) && pv.includes("原告: 部分勝訴")) outcomeCode = 'WIN_PARTIAL_COUNT';
-              else if (pv.includes("被告: 完全敗訴") && pv.includes("原告: 完全勝訴")) outcomeCode = 'LOSE_FULL_COUNT';
-              else if (pv.startsWith("完全勝訴") || pv.startsWith("大部分減免")) outcomeCode = 'WIN_FULL_COUNT';
-              else if (pv.startsWith("部分減免") || pv.startsWith("小部分減免")) outcomeCode = 'WIN_PARTIAL_COUNT';
-              else if (pv.startsWith("完全敗訴")) outcomeCode = 'LOSE_FULL_COUNT';
-              else outcomeCode = 'OTHER_UNKNOWN_COUNT';
-            } else { // 角色未知或雙方代理等
-              outcomeCode = 'OTHER_UNKNOWN_COUNT';
-            }
+      // 1. 首先嘗試匹配明確的實體結果 (無論是否程序性標記，實體結果優先)
+      if (mainType === 'civil') {
+        if (pv.includes("和解") || pv.includes("調解成立")) {
+          outcomeCode = 'OTHER_SETTLEMENT_COUNT'; foundSubstantiveOutcome = true;
+        } else if (pv.includes("撤訴")) {
+          outcomeCode = 'OTHER_SETTLEMENT_COUNT'; foundSubstantiveOutcome = true; // 撤訴也歸為此類
+        } else if (role === '原告代理人' || role === '聲請人代理人') {
+          // 完全有利
+          if ((pv.includes("原告: 完全勝訴") && !pv.includes("被告:")) || pv.includes("原告: 大部分勝訴") || (isRulingCase && (pv.includes("准許") || pv.includes("准予") || pv.includes("抗告有理由"))) || pv.startsWith("完全勝訴") || pv.startsWith("大部分勝訴")) {
+            outcomeCode = 'WIN_FULL_COUNT'; foundSubstantiveOutcome = true;
           }
-        } else if (mainType === 'criminal') {
-          // 刑事的 isProceduralFromPerf 和 isRulingCase 判斷也適用
-          if (isProceduralFromPerf || pv.includes("程序性裁定") || pv.includes("procedural")) {
-            outcomeCode = 'CRIMINAL_PROCEDURAL_COUNT';
-          } else if (isRulingCase) {
-            if (role === '被告代理人') { // 主要關注被告
-              if (pv.includes("准予交保") || pv.includes("停止羈押") || (pv.includes("聲請") && pv.includes("具保") && pv.includes("停止羈押") && pv.includes("准"))) outcomeCode = 'CRIMINAL_RULING_FAVORABLE_COUNT';
-              else if (pv.includes("羈押") || pv.includes("駁回交保") || (pv.includes("聲請") && pv.includes("具保") && pv.includes("駁回"))) outcomeCode = 'CRIMINAL_RULING_UNFAVORABLE_COUNT';
-              else outcomeCode = 'OTHER_UNKNOWN_COUNT';
-            } else {
-              outcomeCode = 'OTHER_UNKNOWN_COUNT';
-            }
-          } else { // 刑事判決
-            if (pv.includes("無罪")) outcomeCode = 'CRIMINAL_ACQUITTED_COUNT';
-            else if (pv.includes("有罪但顯著減輕")) outcomeCode = 'CRIMINAL_GUILTY_MITIGATE_HIGH_COUNT';
-            else if (pv.includes("有罪但略微減輕")) outcomeCode = 'CRIMINAL_GUILTY_MITIGATE_MEDIUM_COUNT';
-            else if (pv.includes("有罪且符合預期")) outcomeCode = 'CRIMINAL_GUILTY_EXPECTED_COUNT';
-            else if (pv.includes("有罪且加重")) outcomeCode = 'CRIMINAL_GUILTY_AGGRAVATED_COUNT';
-            else if (pv.includes("有罪依法量刑")) outcomeCode = 'CRIMINAL_GUILTY_SENTENCED_COUNT';
-            else if (pv.includes("緩刑")) outcomeCode = 'CRIMINAL_GUILTY_PROBATION_COUNT';
-            else if (pv.includes("得易科罰金")) outcomeCode = 'CRIMINAL_GUILTY_FINE_CONVERTIBLE_COUNT';
-            else if (pv.includes("罰金") && !(pv.includes("有期徒刑") || pv.includes("拘役"))) outcomeCode = 'CRIMINAL_GUILTY_FINE_ONLY_COUNT';
-            else if (source.verdict_type && source.verdict_type.toLowerCase().includes("免訴")) outcomeCode = 'CRIMINAL_DISMISSED_NO_PROSECUTION_COUNT';
-            else if (source.verdict_type && source.verdict_type.toLowerCase().includes("不受理")) outcomeCode = 'CRIMINAL_DISMISSED_NOT_ACCEPTED_COUNT';
-            else if (pv.includes("有罪")) outcomeCode = 'CRIMINAL_GUILTY_IMPRISONMENT_COUNT'; // 比較通用的有罪判刑
-            else outcomeCode = 'OTHER_UNKNOWN_COUNT';
+          // 部分有利
+          else if (pv.includes("原告: 部分勝訴") || pv.includes("原告: 小部分勝訴") || pv.startsWith("部分勝訴") || pv.startsWith("小部分勝訴")) {
+            outcomeCode = 'WIN_PARTIAL_COUNT'; foundSubstantiveOutcome = true;
           }
-        } else if (mainType === 'administrative') {
-          if (isProceduralFromPerf || pv.includes("程序性裁定") || pv.includes("procedural")) {
-            outcomeCode = 'ADMIN_PROCEDURAL_COUNT';
-          } else if (isRulingCase) {
-            if (role === '原告代理人' || role === '聲請人代理人') {
-              if (pv.includes("准予停止執行") || (pv.includes("聲請") && pv.includes("停止執行") && pv.includes("准"))) outcomeCode = 'ADMIN_RULING_FAVORABLE_COUNT';
-              else if (pv.includes("駁回停止執行") || (pv.includes("聲請") && pv.includes("停止執行") && pv.includes("駁回"))) outcomeCode = 'ADMIN_RULING_UNFAVORABLE_COUNT';
-              else outcomeCode = 'OTHER_UNKNOWN_COUNT';
-            } else {
-              outcomeCode = 'OTHER_UNKNOWN_COUNT';
-            }
-          } else { // 行政判決
-            if (pv.includes("撤銷原處分") && !(pv.includes("部分") || pv.includes("一部"))) outcomeCode = 'ADMIN_WIN_FULL_COUNT';
-            else if (pv.includes("部分撤銷原處分") || pv.includes("一部撤銷")) outcomeCode = 'ADMIN_WIN_PARTIAL_COUNT';
-            else if (pv.includes("駁回訴訟") || pv.includes("訴願駁回")) outcomeCode = 'ADMIN_LOSE_COUNT';
-            else if (pv.includes("義務訴訟勝訴")) outcomeCode = 'ADMIN_WIN_OBLIGATION_COUNT'; // 可視為 WIN_FULL
-            else outcomeCode = 'OTHER_UNKNOWN_COUNT';
+          // 完全不利
+          else if ((pv.includes("原告: 完全敗訴") && !pv.includes("被告:")) || (isRulingCase && (pv.includes("駁回聲請") || pv.includes("抗告無理由"))) || pv.startsWith("完全敗訴")) {
+            outcomeCode = 'LOSE_FULL_COUNT'; foundSubstantiveOutcome = true;
           }
+          // 混合情況的細化
+          else if (pv.includes("原告: 完全勝訴") && pv.includes("被告: 完全敗訴")) { outcomeCode = 'WIN_FULL_COUNT'; foundSubstantiveOutcome = true; }
+          else if (pv.includes("原告: 部分勝訴") && (pv.includes("被告: 部分減免") || pv.includes("被告: 小部分減免") || pv.includes("被告: 完全敗訴"))) { outcomeCode = 'WIN_PARTIAL_COUNT'; foundSubstantiveOutcome = true; }
+          else if (pv.includes("原告: 完全敗訴") && pv.includes("被告: 完全勝訴")) { outcomeCode = 'LOSE_FULL_COUNT'; foundSubstantiveOutcome = true; }
+          else if (pv.includes("原告: 完全勝訴") && pv.includes("被告: 部分減免")) { outcomeCode = 'WIN_PARTIAL_COUNT'; foundSubstantiveOutcome = true; } // 原告仍有部分未獲准
+          else if (pv.includes("原告: 部分勝訴") && pv.includes("被告: 完全敗訴")) { outcomeCode = 'WIN_PARTIAL_COUNT'; foundSubstantiveOutcome = true; }
+
+        } else if (role === '被告代理人' || role === '相對人代理人') {
+          // 完全有利 (對被告)
+          if ((pv.includes("被告: 完全勝訴") && !pv.includes("原告:")) || pv.includes("被告: 大部分減免") || (isRulingCase && (pv.includes("駁回聲請") || pv.includes("抗告無理由"))) || (pv.startsWith("完全勝訴") && !pv.includes("原告:")) || pv.startsWith("大部分減免")) {
+            outcomeCode = 'WIN_FULL_COUNT'; foundSubstantiveOutcome = true;
+          }
+          // 部分有利 (對被告)
+          else if (pv.includes("被告: 部分減免") || pv.includes("被告: 小部分減免") || pv.startsWith("部分減免") || pv.startsWith("小部分減免")) {
+            outcomeCode = 'WIN_PARTIAL_COUNT'; foundSubstantiveOutcome = true;
+          }
+          // 完全不利 (對被告)
+          else if ((pv.includes("被告: 完全敗訴") && !pv.includes("原告:")) || (isRulingCase && (pv.includes("准許") || pv.includes("准予") || pv.includes("抗告有理由"))) || (pv.startsWith("完全敗訴") && !pv.includes("原告:"))) {
+            outcomeCode = 'LOSE_FULL_COUNT'; foundSubstantiveOutcome = true;
+          }
+          // 混合情況的細化
+          else if (pv.includes("被告: 完全勝訴") && pv.includes("原告: 完全敗訴")) { outcomeCode = 'WIN_FULL_COUNT'; foundSubstantiveOutcome = true; }
+          else if ((pv.includes("被告: 部分減免") || pv.includes("被告: 小部分減免")) && pv.includes("原告: 部分勝訴")) { outcomeCode = 'WIN_PARTIAL_COUNT'; foundSubstantiveOutcome = true; }
+          else if (pv.includes("被告: 完全敗訴") && pv.includes("原告: 完全勝訴")) { outcomeCode = 'LOSE_FULL_COUNT'; foundSubstantiveOutcome = true; }
         }
-        // 對於所有 mainType，如果 perfVerdict 中包含 "n/a" 或 "未明確記載"，且前面沒有匹配到更具體的，則歸為 UNKNOWN
-        if (outcomeCode === `${mainType.toUpperCase()}_OTHER_UNKNOWN_COUNT` && (pv.includes("n/a") || pv.includes("未明確記載"))) {
-          outcomeCode = 'OTHER_UNKNOWN_COUNT'; // 通用的 UNKNOWN
+      } else if (mainType === 'criminal') {
+        if (isRulingCase) {
+            if (role === '被告代理人') {
+                if (pv.includes("准予交保") || pv.includes("停止羈押") || pv.includes("聲請具保停止羈押獲准")) { outcomeCode = 'CRIMINAL_RULING_FAVORABLE_COUNT'; foundSubstantiveOutcome = true; }
+                else if (pv.includes("羈押") || pv.includes("駁回交保") || pv.includes("聲請具保駁回")) { outcomeCode = 'CRIMINAL_RULING_UNFAVORABLE_COUNT'; foundSubstantiveOutcome = true; }
+            }
+        } else { // 刑事判決
+            if (pv.includes("無罪")) { outcomeCode = 'CRIMINAL_ACQUITTED_COUNT'; foundSubstantiveOutcome = true; }
+            else if (pv.includes("有罪但顯著減輕")) { outcomeCode = 'CRIMINAL_GUILTY_FAVORABLE_COUNT'; foundSubstantiveOutcome = true; } // 視為有利
+            else if (pv.includes("有罪但略微減輕")) { outcomeCode = 'CRIMINAL_GUILTY_FAVORABLE_COUNT'; foundSubstantiveOutcome = true; } // 視為有利
+            else if (pv.includes("緩刑")) { outcomeCode = 'CRIMINAL_GUILTY_PROBATION_COUNT'; foundSubstantiveOutcome = true; } // 緩刑視為一種有利
+            else if (pv.includes("得易科罰金")) { outcomeCode = 'CRIMINAL_GUILTY_FAVORABLE_COUNT'; foundSubstantiveOutcome = true; } // 得易科罰金視為有利
+            else if (pv.includes("罰金") && !(pv.includes("有期徒刑") || pv.includes("拘役"))) { outcomeCode = 'CRIMINAL_GUILTY_FAVORABLE_COUNT'; foundSubstantiveOutcome = true; } // 單純罰金視為有利
+            else if (pv.includes("有罪且符合預期") || pv.includes("有罪依法量刑") || pv.includes("有罪")) { outcomeCode = 'CRIMINAL_GUILTY_UNFAVORABLE_COUNT'; foundSubstantiveOutcome = true; } // 不利
+            else if (pv.includes("有罪且加重")) { outcomeCode = 'CRIMINAL_GUILTY_UNFAVORABLE_COUNT'; foundSubstantiveOutcome = true; } // 不利
+            else if (source.verdict_type && source.verdict_type.toLowerCase().includes("免訴")) { outcomeCode = 'CRIMINAL_PROCEDURAL_COUNT'; foundSubstantiveOutcome = true; } // 免訴視為程序性
+            else if (source.verdict_type && source.verdict_type.toLowerCase().includes("不受理")) { outcomeCode = 'CRIMINAL_PROCEDURAL_COUNT'; foundSubstantiveOutcome = true; } // 不受理視為程序性
         }
-      } // end 實體結果判斷
-    } else { // 如果 perf 或 perf.verdict 不存在，嘗試使用案件本身的 verdict/verdict_type
+      } else if (mainType === 'administrative') {
+        if (isRulingCase) {
+            if (role === '原告代理人' || role === '聲請人代理人') {
+                if (pv.includes("准予停止執行") || (pv.includes("聲請") && pv.includes("停止執行") && pv.includes("准"))) { outcomeCode = 'ADMIN_RULING_FAVORABLE_COUNT'; foundSubstantiveOutcome = true; }
+                else if (pv.includes("駁回停止執行") || (pv.includes("聲請") && pv.includes("停止執行") && pv.includes("駁回"))) { outcomeCode = 'ADMIN_RULING_UNFAVORABLE_COUNT'; foundSubstantiveOutcome = true; }
+            }
+        } else { // 行政判決
+            if (pv.includes("撤銷原處分") && !(pv.includes("部分") || pv.includes("一部"))) { outcomeCode = 'ADMIN_WIN_FULL_COUNT'; foundSubstantiveOutcome = true; }
+            else if (pv.includes("部分撤銷原處分") || pv.includes("一部撤銷")) { outcomeCode = 'ADMIN_WIN_PARTIAL_COUNT'; foundSubstantiveOutcome = true; }
+            else if (pv.includes("駁回訴訟") || pv.includes("訴願駁回")) { outcomeCode = 'ADMIN_LOSE_COUNT'; foundSubstantiveOutcome = true; }
+            else if (pv.includes("義務訴訟勝訴")) { outcomeCode = 'ADMIN_WIN_OBLIGATION_COUNT'; foundSubstantiveOutcome = true; }
+        }
+      }
+
+      // 如果沒有找到明確的實體勝敗，再檢查是否為程序性
+      if (!foundSubstantiveOutcome && (isProceduralFromPerf || pv.includes("程序性裁定") || pv.includes("procedural") || (isRulingCase && !outcomeCode.endsWith('_COUNT')) )) { // 如果是裁定但未被上面規則捕捉，也可能視為程序或未知
+        outcomeCode = `${mainType.toUpperCase()}_PROCEDURAL_COUNT`;
+      }
+      // 最後，如果 outcomeCode 仍然是初始的 XXX_OTHER_UNKNOWN_COUNT (表示前面所有規則都沒匹配上)
+      // 並且 pv 包含 "n/a" 或 "未明確記載"，則統一歸為 OTHER_UNKNOWN_COUNT
+      else if (outcomeCode.endsWith('_OTHER_UNKNOWN_COUNT') && (pv.includes("n/a") || pv.includes("未明確記載"))) {
+        outcomeCode = 'OTHER_UNKNOWN_COUNT';
+      }
+      // 如果 outcomeCode 還是 XXX_OTHER_UNKNOWN_COUNT，但 pv 看起來不是 N/A，那就是我們的規則沒覆蓋到
+      else if (outcomeCode.endsWith('_OTHER_UNKNOWN_COUNT')) {
+          console.warn(`[getDetailedResult] Unmapped civil perf.verdict for ${lawyerName} (role: ${role}, ruling: ${isRulingCase}): ${pv}. Defaulting to OTHER_UNKNOWN_COUNT.`);
+          outcomeCode = 'OTHER_UNKNOWN_COUNT';
+      }
+    } else { // perf 或 perf.verdict 不存在，嘗試使用案件本身的 verdict/verdict_type (簡化兜底)
       description = source.verdict || source.verdict_type || '結果資訊不足';
       const descLower = description.toLowerCase();
       if (mainType === 'civil') {
-        if (isRulingCase) {
-          if (descLower.includes("准許") || descLower.includes("准予")) outcomeCode = 'WIN_FULL_COUNT';
-          else if (descLower.includes("駁回")) outcomeCode = 'LOSE_FULL_COUNT';
-          else outcomeCode = 'OTHER_UNKNOWN_COUNT';
-        } else {
-          if (descLower.includes("和解") || descLower.includes("調解")) outcomeCode = 'OTHER_SETTLEMENT_COUNT';
+          if (descLower.includes("和解")||descLower.includes("調解")) outcomeCode = 'OTHER_SETTLEMENT_COUNT';
           else if (descLower.includes("全部勝訴")) outcomeCode = 'WIN_FULL_COUNT';
-          else if (descLower.includes("部分勝訴") || descLower.includes("一部勝訴")) outcomeCode = 'WIN_PARTIAL_COUNT';
+          else if (descLower.includes("部分勝訴")||descLower.includes("一部勝訴")) outcomeCode = 'WIN_PARTIAL_COUNT';
           else if (descLower.includes("敗訴") || descLower.includes("駁回")) outcomeCode = 'LOSE_FULL_COUNT';
+          else if (descLower.includes("程序") || descLower.includes("裁定")) outcomeCode = 'PROCEDURAL_COUNT';
           else outcomeCode = 'OTHER_UNKNOWN_COUNT';
-        }
-      } // 可以為 criminal 和 admin 添加類似的基於 source.verdict 的兜底邏輯
+      } else if (mainType === 'criminal') {
+          if (descLower.includes("無罪")) outcomeCode = 'CRIMINAL_ACQUITTED_COUNT';
+          else if (descLower.includes("緩刑")) outcomeCode = 'CRIMINAL_GUILTY_PROBATION_COUNT';
+          else if (descLower.includes("有罪")) outcomeCode = 'CRIMINAL_GUILTY_UNFAVORABLE_COUNT';
+          else if (descLower.includes("免訴")||descLower.includes("不受理")) outcomeCode = 'CRIMINAL_PROCEDURAL_COUNT';
+          else outcomeCode = 'OTHER_UNKNOWN_COUNT';
+      } else if (mainType === 'administrative') {
+          if (descLower.includes("勝訴") || descLower.includes("撤銷")) outcomeCode = 'ADMIN_WIN_FULL_COUNT';
+          else if (descLower.includes("敗訴") || descLower.includes("駁回")) outcomeCode = 'ADMIN_LOSE_COUNT';
+          else if (descLower.includes("程序") || descLower.includes("裁定")) outcomeCode = 'ADMIN_PROCEDURAL_COUNT';
+          else outcomeCode = 'OTHER_UNKNOWN_COUNT';
+      }
     }
-  } else { // 如果 lawyerperformance 整個不存在，則完全依賴案件本身的 verdict/verdict_type
-    description = source.verdict || source.verdict_type || '結果資訊不足';
-    const descLower = description.toLowerCase();
+  } else { // lawyerperformance 整個不存在
+      description = source.verdict || source.verdict_type || '結果資訊不足';
+      // ... (可以加入更粗略的基於 source.verdict/verdict_type 的兜底判斷)
+      outcomeCode = 'OTHER_UNKNOWN_COUNT'; // 因為沒有律師表現數據，歸為未知
   }
-
-  // 最後確保 description 不是空/預設的 "結果未明" (如果 outcomeCode 已經被賦予了更具體的值)
-  if (description === '結果未明' && !outcomeCode.endsWith('OTHER_UNKNOWN_COUNT') && outcomeCode !== `${mainType.toUpperCase()}_PROCEDURAL`) {
-    // 嘗試根據 outcomeCode 給一個通用描述，但通常 lawyerperformance.verdict 更好
-    // 這裡的邏輯需要謹慎，避免覆蓋掉已經從 lawyerperformance 獲取的有效 description
-    // 優先保持從 lawyerperformance 獲取的 description
+  
+  if (description === '結果未明' && !outcomeCode.endsWith('UNKNOWN_COUNT') && !outcomeCode.endsWith('PROCEDURAL_COUNT') ) {
+      // 如果我們有了一個明確的 outcomeCode，但 description 還是 "結果未明"，
+      // 嘗試從 outcomeCode 反推一個更通用的描述
+      if (outcomeCode.includes('WIN_FULL')) description = '有利結果（完全）';
+      else if (outcomeCode.includes('WIN_PARTIAL')) description = '有利結果（部分）';
+      else if (outcomeCode.includes('LOSE_FULL')) description = '不利結果';
+      // ... 等等
   }
   if (!description || description.trim() === '' || description === '結果未明') {
-    description = '結果資訊不足';
+      description = '結果資訊不足';
   }
 
-  return {
-    outcomeCode,
-    description
-  };
+  return { outcomeCode, description };
 }
 
 
