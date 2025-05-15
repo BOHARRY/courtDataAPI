@@ -662,7 +662,7 @@ function getMainType(source) {
 
 // --- 輔助函數：獲取詳細判決結果 (基於 lawyerperformance) ---
 
-function getDetailedResult(perfVerdictText, mainType, sourceForContext) {
+function getDetailedResult(perfVerdictText, mainType, sourceForContext, lawyerPerfObject) {
   // sourceForContext 包含 is_ruling, JCASE, JTITLE, verdict, verdict_type 等用於兜底或判斷裁定
   let outcomeCode = `${mainType.toUpperCase()}_OTHER_UNKNOWN_COUNT`;
   let description = perfVerdictText || sourceForContext.verdict || sourceForContext.verdict_type || '結果資訊不足';
@@ -676,7 +676,8 @@ function getDetailedResult(perfVerdictText, mainType, sourceForContext) {
     (sourceForContext.JTITLE || '').toLowerCase().includes("裁定");
 
   const isProceduralFromPerf = lawyerPerfObject ? (lawyerPerfObject.is_procedural === true || lawyerPerfObject.is_procedural === 'true') : false;
-
+  const performances = sourceForContext.lawyerperformance;
+  
   if (isProceduralByPerf || pv.includes("程序性裁定") || pv.includes("procedural")) {
     outcomeCode = 'PROCEDURAL';
   } else if (pv.includes("和解") || pv.includes("調解成立")) {
