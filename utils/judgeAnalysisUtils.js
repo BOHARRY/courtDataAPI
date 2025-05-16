@@ -1,8 +1,6 @@
 // utils/judgeAnalysisUtils.js
 
 import {
-    NEUTRAL_OUTCOME_CODES,
-    FINAL_STAT_KEYS,
     CIVIL_KEYWORDS_TITLE,
     CRIMINAL_KEYWORDS_TITLE,
     JUDGE_CENTRIC_OUTCOMES
@@ -12,7 +10,21 @@ import {
 // initializeCaseTypeAnalysisEntry, formatCounterToPercentageArray, calculateRate
 // 這些輔助函數定義在本文件的其他地方或已正確導入。
 // 為了完整性，我會將它們也包含在這個程式碼塊的末尾。
-
+/**
+ * 構建 Elasticsearch 查詢 DSL，用於獲取特定法官審理的所有案件。
+ * @param {string} judgeName - 法官姓名。
+ * @returns {object} Elasticsearch 查詢的 query 部分。
+ */
+export function buildEsQueryForJudgeCases(judgeName) { // <<--- 補上函數定義並導出
+    if (!judgeName || typeof judgeName !== 'string' || judgeName.trim() === '') {
+        throw new Error('Judge name must be a non-empty string.');
+    }
+    return {
+        term: {
+            "judges.raw": judgeName // 確保 ES mapping 中 judges 字段有 .raw (keyword 類型)
+        }
+    };
+}
 
 /**
  * 從 Elasticsearch 返回的案件命中結果中聚合分析數據，生成法官的基礎統計信息。
@@ -331,15 +343,15 @@ function analyzeJudgeCentricOutcome(source, mainType) {
     const isRuling = source.is_ruling === "是" || String(source.JCASE || '').toLowerCase().includes("裁");
 
     if (isRuling) { // 簡化裁定處理，可後續細化
-      // 檢查是否為駁回性質的裁定
-      if (verdict.includes('駁回聲請') || verdict.includes('聲請駁回') || verdict.includes('抗告駁回')) {
-          if (mainType === 'civil') return JUDGE_CENTRIC_OUTCOMES.CIVIL_PROCEDURAL_DISMISSAL;
-          if (mainType === 'criminal') return JUDGE_CENTRIC_OUTCOMES.CRIMINAL_PROCEDURAL;
-          if (mainType === 'administrative') return JUDGE_CENTRIC_OUTCOMES.ADMIN_PROCEDURAL_DISMISSAL;
-          return JUDGE_CENTRIC_OUTCOMES.PROCEDURAL_RULING;
-      }
-      // 其他多數裁定歸為程序性，除非能明確判斷其實質影響
-      return JUDGE_CENTRIC_OUTCOMES.PROCEDURAL_RULING;
+        // 檢查是否為駁回性質的裁定
+        if (verdict.includes('駁回聲請') || verdict.includes('聲請駁回') || verdict.includes('抗告駁回')) {
+            if (mainType === 'civil') return JUDGE_CENTRIC_OUTCOMES.CIVIL_PROCEDURAL_DISMISSAL;
+            if (mainType === 'criminal') return JUDGE_CENTRIC_OUTCOMES.CRIMINAL_PROCEDURAL;
+            if (mainType === 'administrative') return JUDGE_CENTRIC_OUTCOMES.ADMIN_PROCEDURAL_DISMISSAL;
+            return JUDGE_CENTRIC_OUTCOMES.PROCEDURAL_RULING;
+        }
+        // 其他多數裁定歸為程序性，除非能明確判斷其實質影響
+        return JUDGE_CENTRIC_OUTCOMES.PROCEDURAL_RULING;
     }
 
     switch (mainType) {
