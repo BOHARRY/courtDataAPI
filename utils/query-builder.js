@@ -172,15 +172,12 @@ export function buildEsQuery(filters = {}) { // 給予預設值以防 filters �
   if (onlyRecent3Years === 'true' || onlyRecent3Years === true) {
     const threeYearsAgo = new Date();
     threeYearsAgo.setFullYear(threeYearsAgo.getFullYear() - 3);
-    // 格式化為 YYYYMMDD 數字，或 Elasticsearch date 格式 "YYYY-MM-dd"
-    // 假設您的 JDATE_num 是 YYYYMMDD 格式的數字
-    const dateNum = parseInt(
-      `${threeYearsAgo.getFullYear()}${("0" + (threeYearsAgo.getMonth() + 1)).slice(-2)}${("0" + threeYearsAgo.getDate()).slice(-2)}`,
-      10
-    );
-    filter.push({ range: { 'JDATE_num': { gte: dateNum } } }); // 假設您有 JDATE_num 欄位
-    // 或者，如果 JDATE 是 date 類型:
-    // filter.push({ range: { 'JDATE': { gte: threeYearsAgo.toISOString().split('T')[0] } } });
+    // 構建 YYYYMMDD 格式的字串
+    const dateStr =
+      `${threeYearsAgo.getFullYear()}${("0" + (threeYearsAgo.getMonth() + 1)).slice(-2)}${("0" + threeYearsAgo.getDate()).slice(-2)}`;
+
+    // 對 keyword 類型的 YYYYMMDD 字串使用 range 查詢
+    filter.push({ range: { 'JDATE': { gte: dateStr } } });
   }
 
   const esQueryBody = { bool: {} };
@@ -189,7 +186,7 @@ export function buildEsQuery(filters = {}) { // 給予預設值以防 filters �
 
   // 如果 must 和 filter 都為空，可以返回 match_all，或者讓調用者處理
   if (must.length === 0 && filter.length === 0 && !query) { // 如果連 query 都沒有
-     return { match_all: {} }; // 如果沒有任何篩選，則匹配所有文件
+    return { match_all: {} }; // 如果沒有任何篩選，則匹配所有文件
   }
 
   return esQueryBody;
