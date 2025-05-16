@@ -84,36 +84,60 @@ export function getDetailedResult(perfVerdictText, mainType, sourceForContext = 
     neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.NOT_APPLICABLE_OR_UNKNOWN_NEUTRAL;
   } else if (perfVerdictText) { // 確保有 perfVerdictText 才進行細緻判斷
     if (mainType === 'civil') {
-
+      // 先檢查裁定結果
       if (isRulingCase) {
-        if (pv.includes("准許") || pv.includes("准予") || pv.includes("抗告有理由")) {
-          neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_RULING_GRANTED;
-          isSubstantiveRuling = true; // 標記為實質性裁定
+        if (pv.includes("完全勝訴") || pv.includes("勝訴") || pv.includes("有理由") || pv.includes("准予")) {
+          // 這是有實質結果的裁定，根據角色設置相應結果碼
+          isSubstantiveRuling = true;
+          if (sideFromPerf === 'plaintiff') {
+            neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_RULING_GRANTED;
+          } else if (sideFromPerf === 'defendant') {
+            neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_D_WIN_FULL;
+          }
         }
-        else if (pv.includes("駁回")) {
-          neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_RULING_DISMISSED;
-          isSubstantiveRuling = true; // 標記為實質性裁定
+        else if (pv.includes("完全敗訴") || pv.includes("敗訴") || pv.includes("無理由") || pv.includes("駁回")) {
+          isSubstantiveRuling = true;
+          if (sideFromPerf === 'plaintiff') {
+            neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_P_LOSE_FULL;
+          } else if (sideFromPerf === 'defendant') {
+            neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_D_LOSE_FULL;
+          }
+        }
+        // 只有在以上條件都不符合時，才標記為純程序性
+        else if (pv.includes("程序性裁定")) {
+          neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.PROCEDURAL_NEUTRAL;
+        }
+        // 如果已在裁定處理部分設置了結果代碼，不再執行後面的判斷
+        else if (neutralOutcomeCode === NEUTRAL_OUTCOME_CODES.UNKNOWN_NEUTRAL) {
+          // 裁定但未找到明確的結果文字，嘗試使用通用裁定代碼
+          if (pv.includes("准許") || pv.includes("准予") || pv.includes("抗告有理由")) {
+            isSubstantiveRuling = true;
+            neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_RULING_GRANTED;
+          } else if (pv.includes("駁回")) {
+            isSubstantiveRuling = true;
+            neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_RULING_DISMISSED;
+          }
         }
       }
-
-      // 民事案件結果判斷 (基於律師角度的 perfVerdictText)
-      if (pv.includes("原告: 完全勝訴")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_P_WIN_FULL;
-      else if (pv.includes("原告: 大部分勝訴")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_P_WIN_MAJOR;
-      else if (pv.includes("原告: 部分勝訴")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_P_WIN_PARTIAL;
-      else if (pv.includes("原告: 小部分勝訴")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_P_WIN_MINOR;
-      else if (pv.includes("原告: 完全敗訴")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_P_LOSE_FULL; // 原告角度的敗訴
-      else if (pv.includes("被告: 完全勝訴")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_D_WIN_FULL; // 被告角度的勝訴
-      else if (pv.includes("被告: 大部分減免")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_D_MITIGATE_MAJOR;
-      else if (pv.includes("被告: 部分減免")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_D_MITIGATE_PARTIAL;
-      else if (pv.includes("被告: 小部分減免")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_D_MITIGATE_MINOR;
-      else if (pv.includes("被告: 完全敗訴")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_D_LOSE_FULL;
-      else if (isRulingCase && (pv.includes("准許") || pv.includes("准予") || pv.includes("抗告有理由"))) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_RULING_GRANTED;
-      else if (isRulingCase && (pv.includes("駁回"))) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_RULING_DISMISSED;
-      // 通用勝敗 (如果律師立場不明確時的兜底)
-      else if (pv.startsWith("完全勝訴")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.GENERIC_WIN_FULL;
-      else if (pv.startsWith("部分勝訴")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.GENERIC_WIN_PARTIAL;
-      else if (pv.startsWith("完全敗訴")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.GENERIC_LOSE_FULL;
-      else neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_UNCATEGORIZED_NEUTRAL;
+      // 只有在未處理裁定或裁定處理未設置結果代碼時才執行這部分
+      else if (neutralOutcomeCode === NEUTRAL_OUTCOME_CODES.UNKNOWN_NEUTRAL) {
+        // 民事案件結果判斷 (基於律師角度的 perfVerdictText)
+        if (pv.includes("原告: 完全勝訴")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_P_WIN_FULL;
+        else if (pv.includes("原告: 大部分勝訴")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_P_WIN_MAJOR;
+        else if (pv.includes("原告: 部分勝訴")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_P_WIN_PARTIAL;
+        else if (pv.includes("原告: 小部分勝訴")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_P_WIN_MINOR;
+        else if (pv.includes("原告: 完全敗訴")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_P_LOSE_FULL;
+        else if (pv.includes("被告: 完全勝訴")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_D_WIN_FULL;
+        else if (pv.includes("被告: 大部分減免")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_D_MITIGATE_MAJOR;
+        else if (pv.includes("被告: 部分減免")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_D_MITIGATE_PARTIAL;
+        else if (pv.includes("被告: 小部分減免")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_D_MITIGATE_MINOR;
+        else if (pv.includes("被告: 完全敗訴")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_D_LOSE_FULL;
+        // 通用勝敗 (如果律師立場不明確時的兜底)
+        else if (pv.startsWith("完全勝訴")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.GENERIC_WIN_FULL;
+        else if (pv.startsWith("部分勝訴")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.GENERIC_WIN_PARTIAL;
+        else if (pv.startsWith("完全敗訴")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.GENERIC_LOSE_FULL;
+        else neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_UNCATEGORIZED_NEUTRAL;
+      }
     } else if (mainType === 'criminal') {
       // 刑事案件結果判斷 (通常律師是被告辯護人)
       if (pv.includes("無罪")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CRIMINAL_ACQUITTED;
