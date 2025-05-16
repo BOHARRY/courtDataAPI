@@ -99,6 +99,8 @@ export function aggregateJudgeCaseData(esHits, judgeName) {
         // 3. 判決結果分佈 (基於原始 verdict_type)
         if (source.verdict_type) {
             verdictCounter[source.verdict_type] = (verdictCounter[source.verdict_type] || 0) + 1;
+        } else {
+            verdictCounter['未知判決結果'] = (verdictCounter['未知判決結果'] || 0) + 1; // <<--- 兜底
         }
 
         // 4. 常用法條
