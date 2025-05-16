@@ -8,6 +8,7 @@ export const PORT = parseInt(process.env.PORT, 10) || 3000;
 export const ES_URL = process.env.ES_URL;
 export const ES_API_KEY = process.env.ES_API_KEY;
 export const FIREBASE_SERVICE_ACCOUNT_KEY_JSON = process.env.FIREBASE_SERVICE_ACCOUNT_KEY_JSON;
+export const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
 // 檢查必要的環境變數是否存在
 if (!ES_URL) {
@@ -20,5 +21,9 @@ if (!ES_API_KEY) {
 }
 if (!FIREBASE_SERVICE_ACCOUNT_KEY_JSON) {
   console.error("FATAL ERROR: FIREBASE_SERVICE_ACCOUNT_KEY_JSON environment variable is not set.");
+  process.exit(1);
+}
+if (!OPENAI_API_KEY) {
+  console.error("FATAL ERROR: OPENAI_API_KEY environment variable is not set.");
   process.exit(1);
 }

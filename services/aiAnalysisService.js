@@ -2,9 +2,10 @@
 import admin from 'firebase-admin';
 import OpenAI from 'openai'; // 假設您使用官方 openai 庫
 import { JUDGES_COLLECTION } from './judgeService.js'; // 從 judgeService 引入常數 (或直接定義)
+import { OPENAI_API_KEY } from '../config/environment.js'; // <<--- 引入
 
 const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
+  apiKey: OPENAI_API_KEY, // <<--- 使用導入的變數
 });
 
 const MODEL_NAME = process.env.OPENAI_MODEL_NAME || 'gpt-4o'; // 或 'gpt-3.5-turbo'
