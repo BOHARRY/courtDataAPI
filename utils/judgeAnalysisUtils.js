@@ -436,8 +436,8 @@ function formatCounterToPercentageArray(counter, totalCount, topN) {
     return Object.entries(counter)
         .sort(([, countA], [, countB]) => countB - countA)
         .slice(0, topN)
-        .map(([key, count]) => ({
-            key,
+        .map(([originalKey, count]) => ({
+            result: originalKey,
             count,
             percent: parseFloat(((count / totalCount) * 100).toFixed(1)) || 0,
         }));
