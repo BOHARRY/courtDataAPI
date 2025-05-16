@@ -60,11 +60,15 @@ export async function performSearch(searchFilters, page, pageSize) {
     // console.log('[Search Service] Elasticsearch query successful.');
     return formatEsResponse(esResult, pageSize);
   } catch (error) {
-    console.error('[Search Service] Error during Elasticsearch search:', error.meta || error);
+    if (error.meta && error.meta.body && error.meta.body.error) {
+      console.error('[Search Service] Elasticsearch Error Body:', JSON.stringify(error.meta.body.error, null, 2)); // <--- 更詳細的錯誤
+    } else {
+      console.error('[Search Service] Error during Elasticsearch search (meta or body missing):', error);
+    }
     // 拋出一個更通用的錯誤，或者根據 ES 錯誤類型進行轉換
     const serviceError = new Error('Failed to perform search due to a database error.');
     serviceError.statusCode = error.statusCode || 500; // 保留原始 ES 錯誤碼 (如果存在)
-    serviceError.originalError = error.message;
+    serviceError.esErrorDetails = error.meta ? (error.meta.body ? error.meta.body.error : error.meta) : error.message; // 附加更詳細的ES錯誤
     throw serviceError;
   }
 }
