@@ -4,6 +4,7 @@ import searchRoutes from './search.js';
 import judgmentRoutes from './judgment.js';
 import lawyerRoutes from './lawyer.js';
 import userRoutes from './user.js';
+import judgeRoutes from './judge.js';     // <<--- 新增引入
 // 未來如果有其他路由模組，也從這裡引入
 
 const router = express.Router();
@@ -13,6 +14,7 @@ router.use('/search', searchRoutes);       // 例如 /api/search/...
 router.use('/judgments', judgmentRoutes);  // 例如 /api/judgments/...
 router.use('/lawyers', lawyerRoutes);    // 例如 /api/lawyers/...
 router.use('/users', userRoutes);        // 例如 /api/users/...
+router.use('/judges', judgeRoutes); // <<--- 新增掛載
 
 // 可以有一個根路由 /api 的健康檢查或歡迎訊息
 router.get('/', (req, res) => {
