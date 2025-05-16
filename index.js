@@ -8,7 +8,7 @@ import admin from 'firebase-admin'; // <--- 引入 firebase-admin
 
 dotenv.config()
 
-// --- Firebase Admin SDK 初始化 ---
+// --- Firebase Admin SDK 初 始化 ---
 try {
   if (!process.env.FIREBASE_SERVICE_ACCOUNT_KEY_JSON) {
     throw new Error('FIREBASE_SERVICE_ACCOUNT_KEY_JSON environment variable is not set.');
