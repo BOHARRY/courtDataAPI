@@ -94,16 +94,6 @@ export function calculateDetailedWinRates(processedCases = [], initialDetailedWi
       finalStatKeyToIncrement = FINAL_STAT_KEYS.OTHER_UNKNOWN;
       console.log(`案件 ${id}: 歸類為未知 (${neutralOutcomeCode})`);
     }
-    else if (neutralOutcomeCode === NEUTRAL_OUTCOME_CODES.NOT_APPLICABLE_OR_UNKNOWN_NEUTRAL ||
-      neutralOutcomeCode.endsWith('_UNCATEGORIZED_NEUTRAL') ||
-      neutralOutcomeCode === NEUTRAL_OUTCOME_CODES.UNKNOWN_NEUTRAL ||
-      neutralOutcomeCode === NEUTRAL_OUTCOME_CODES.CIVIL_UNCATEGORIZED_NEUTRAL ||
-      neutralOutcomeCode === NEUTRAL_OUTCOME_CODES.CRIMINAL_UNCATEGORIZED_NEUTRAL ||
-      neutralOutcomeCode === NEUTRAL_OUTCOME_CODES.ADMIN_RULING_UNCATEGORIZED_NEUTRAL ||
-      neutralOutcomeCode === NEUTRAL_OUTCOME_CODES.ADMIN_JUDGMENT_UNCATEGORIZED_NEUTRAL) {
-      finalStatKeyToIncrement = FINAL_STAT_KEYS.OTHER_UNKNOWN;
-      console.log(`案件 ${id}: 歸類為未知 (${neutralOutcomeCode})`);
-    }
     else {
       // 處理實質性案件結果
       if (mainType === 'civil') {
