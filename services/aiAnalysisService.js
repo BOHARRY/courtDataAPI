@@ -22,7 +22,7 @@ export async function triggerAIAnalysis(judgeName, casesData, baseAnalyticsData)
     const judgeDocRef = admin.firestore().collection(JUDGES_COLLECTION || 'judges').doc(judgeName);
 
     // --- FOR FRONTEND TESTING - SIMULATE AI COMPLETION / FAILURE ---
-    const SIMULATE_AI_FOR_TESTING = true; // 開關：設為 true 以使用模擬，設為 false 以嘗試真實 AI 調用
+    const SIMULATE_AI_FOR_TESTING = false; // 開關：設為 true 以使用模擬，設為 false 以嘗試真實 AI 調用
 
     if (SIMULATE_AI_FOR_TESTING) {
         console.log(`[AIAnalysisService] SIMULATING AI behavior for ${judgeName}`);
