@@ -84,6 +84,18 @@ export function getDetailedResult(perfVerdictText, mainType, sourceForContext = 
     neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.NOT_APPLICABLE_OR_UNKNOWN_NEUTRAL;
   } else if (perfVerdictText) { // 確保有 perfVerdictText 才進行細緻判斷
     if (mainType === 'civil') {
+
+      if (isRulingCase) {
+        if (pv.includes("准許") || pv.includes("准予") || pv.includes("抗告有理由")) {
+          neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_RULING_GRANTED;
+          isSubstantiveRuling = true; // 標記為實質性裁定
+        }
+        else if (pv.includes("駁回")) {
+          neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_RULING_DISMISSED;
+          isSubstantiveRuling = true; // 標記為實質性裁定
+        }
+      }
+
       // 民事案件結果判斷 (基於律師角度的 perfVerdictText)
       if (pv.includes("原告: 完全勝訴")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_P_WIN_FULL;
       else if (pv.includes("原告: 大部分勝訴")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_P_WIN_MAJOR;
