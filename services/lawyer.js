@@ -101,9 +101,25 @@ function analyzeAndStructureLawyerData(esHits, lawyerName, esAggregations) {
 
   const now = new Date();
   const threeYearsAgoNum = parseInt(
-      `${now.getFullYear() - 3}${("0" + (now.getMonth() + 1)).slice(-2)}${("0" + now.getDate()).slice(-2)}`,
-      10
+    `${now.getFullYear() - 3}${("0" + (now.getMonth() + 1)).slice(-2)}${("0" + now.getDate()).slice(-2)}`,
+    10
   );
+  resultData.cases.forEach(caseItem => {
+    // 確保使用正確的日期欄位和格式
+    let caseDate;
+    if (caseItem.dateNum) {
+      caseDate = parseInt(caseItem.dateNum, 10);
+    } else if (caseItem.date) {
+      // 嘗試從不同格式轉換（包括 YYYY/MM/DD）
+      const dateStr = caseItem.date.replace(/\//g, '');
+      caseDate = parseInt(dateStr, 10);
+    }
+
+    if (caseDate && !isNaN(caseDate) && caseDate >= threeYearsAgoNum) {
+      resultData.stats.totalCasesLast3Years++;
+      console.log(`計入近三年案件: ${caseItem.id}, 日期: ${caseDate}, 閾值: ${threeYearsAgoNum}`);
+    }
+  });
   const allCaseTypesCounter = {}; // 用於統計案件類型數量
 
   resultData.cases = esHits.map(hit => {
