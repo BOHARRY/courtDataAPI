@@ -51,9 +51,9 @@ export async function performSearch(searchFilters, page, pageSize) {
           }
         }
       },
-      sort: [ // 排序配置保持不變
+      sort: [
         { '_score': 'desc' },
-        { 'JDATE_num': 'desc' } // 假設使用 JDATE_num 進行日期排序
+        { 'JDATE': 'desc' } // <--- 使用正確的 JDATE (keyword 類型) 欄位
       ]
     });
 
