@@ -86,9 +86,21 @@ export async function triggerAIAnalysis(judgeName, casesData, baseAnalyticsData)
         // --- 1. 生成法官特徵標籤 (Traits) ---
         // 準備提示詞，可能需要選取部分代表性案件的摘要或全文片段
         const sampleCasesForTraits = casesData.slice(0, Math.min(casesData.length, 10)); // 取前10件或更少
-        const traitSamplesText = sampleCasesForTraits.map((c, i) =>
-            `案件 ${i + 1} 摘要: ${c.summary_ai || (c.JFULL || '').substring(0, 300)}...`
-        ).join('\n\n');
+        const traitSamplesText = sampleCasesForTraits.map((c, i) => {
+            let lawyerPerformanceSummary = "該案件律師表現摘要:\n";
+            if (c.lawyerperformance && Array.isArray(c.lawyerperformance) && c.lawyerperformance.length > 0) {
+                c.lawyerperformance.forEach((perf, idx) => {
+                    lawyerPerformanceSummary += `  律師 ${idx + 1} (${perf.lawyer || '未知姓名'}, ${perf.side === 'plaintiff' ? '原告方' : perf.side === 'defendant' ? '被告方' : '未知立場'}): ${perf.comment || perf.verdict || '無特定評論'}\n`;
+                });
+            } else {
+                lawyerPerformanceSummary += "  (無律師表現記錄或記錄格式不符)\n";
+            }
+
+            return `
+            案件 ${i + 1} (案號/JID: ${c.JID || '未知'}):
+            案件摘要: ${c.summary_ai || (c.JFULL || '').substring(0, 250)}...
+            ${lawyerPerformanceSummary}--------------------`; // 分隔每個案件
+        }).join('\n\n');
 
         const traitsPrompt = `
   你是一位專業的台灣法律內容分析專家。請基於以下 ${sampleCasesForTraits.length} 份判決書的相關資訊，分析法官 ${judgeName} 在審理這些案件時可能展現出的主要判決特徵或審判風格。
@@ -99,6 +111,13 @@ export async function triggerAIAnalysis(judgeName, casesData, baseAnalyticsData)
 
   判決書樣本資訊:
   ${traitSamplesText}
+
+  思考步驟指引：
+    1. 通讀所有案件摘要，找出反覆出現的行為模式或判決特點。
+    2. 從不同維度思考，例如：法官對證據的要求、對程序問題的處理、對特定法律條文的偏好、判決書的語言風格、對弱勢方的態度等。
+    3. 嘗試為每個識別出的特點給予一個標籤。
+    4. 即使某些特徵的置信度只是“中”或“低”，如果它們是基於樣本可觀察到的，也請盡量列出，以達到至少3個標籤的目標。
+    5. 最後，從所有可能的標籤中，篩選出3到5個最能代表該法官的特徵。
 
   請嚴格僅返回一個 JSON 格式的陣列，直接包含這些標籤物件，不要有任何額外的解釋或 Markdown 格式。例如（即使只有三個標籤也要是陣列）：
   [
