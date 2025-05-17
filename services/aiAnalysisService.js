@@ -91,21 +91,22 @@ export async function triggerAIAnalysis(judgeName, casesData, baseAnalyticsData)
         ).join('\n\n');
 
         const traitsPrompt = `
-      你是一位專業的台灣法律內容分析專家。請基於以下 ${sampleCasesForTraits.length} 份判決書的相關資訊，分析法官 ${judgeName} 在審理這些案件時可能展現出的主要判決特徵或審判風格。
-      請提供 3 到 5 個最明顯的特徵標籤。每個標籤應包含：
-      1.  "text": 一個簡潔的特徵描述 (6-10個正體中文字)。
-      2.  "icon": 一個適合該特徵的 emoji 圖標 (單個 emoji 字符)。
-      3.  "confidence": 你對此特徵判斷的置信度，分為 "高", "中", "低" 三個等級。
+  你是一位專業的台灣法律內容分析專家。請基於以下 ${sampleCasesForTraits.length} 份判決書的相關資訊，分析法官 ${judgeName} 在審理這些案件時可能展現出的主要判決特徵或審判風格。
+**請務必提供至少 3 個，至多 5 個最明顯的特徵標籤。** 如果難以找出多個，請嘗試從不同角度（例如，對證據的態度、對程序的重視、判決書的寫作風格、對特定類型案件的處理方式等）進行分析，以湊足至少3個標籤。每個標籤應包含：
+  1.  "text": 一個簡潔的特徵描述 (6-10個正體中文字)。
+  2.  "icon": 一個適合該特徵的 emoji 圖標 (單個 emoji 字符)。
+  3.  "confidence": 你對此特徵判斷的置信度，分為 "高", "中", "低" 三個等級。
 
-      判決書樣本資訊:
-      ${traitSamplesText}
+  判決書樣本資訊:
+  ${traitSamplesText}
 
-      請嚴格僅返回一個 JSON 格式的陣列，直接包含這些標籤物件，不要有任何額外的解釋或 Markdown 格式。例如：
-      [
-        {"text": "重視程序正義", "icon": "⚖️", "confidence": "高"},
-        {"text": "契約解釋嚴謹", "icon": "📜", "confidence": "中"}
-      ]
-    `;
+  請嚴格僅返回一個 JSON 格式的陣列，直接包含這些標籤物件，不要有任何額外的解釋或 Markdown 格式。例如（即使只有三個標籤也要是陣列）：
+  [
+    {"text": "重視程序正義", "icon": "⚖️", "confidence": "高"},
+    {"text": "契約解釋嚴謹", "icon": "📜", "confidence": "中"},
+    {"text": "判決簡明扼要", "icon": "✍️", "confidence": "中"}
+  ]
+`;
         console.log(`[AIAnalysisService] Traits prompt for ${judgeName} (length: ${traitsPrompt.length}):\n`, traitsPrompt.substring(0, 500) + "...");
         const traitsResponse = await openai.chat.completions.create({
             model: MODEL_NAME,
