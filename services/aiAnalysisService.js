@@ -167,33 +167,72 @@ function normalizeCase(caseData) {
  * @returns {Array} - 律師表現數組
  */
 function extractLawyerPerformance(caseData) {
-    let performances = [];
+    // 首先，記錄正在處理的案例
+    console.log(`[AIAnalysisService] 提取律師表現 - 案例ID: ${caseData.JID || '未知'}`);
 
-    // 1. 檢查直接的lawyerperformance
-    if (caseData.lawyerperformance) {
-        if (Array.isArray(caseData.lawyerperformance)) {
-            performances = caseData.lawyerperformance;
-        } else if (typeof caseData.lawyerperformance === 'object') {
-            performances = [caseData.lawyerperformance];
+    let performances = [];
+    let performanceSource = null;
+    
+    // 1. 檢查所有可能路徑（按優先順序）
+    const possiblePaths = [
+        { source: '直接', data: caseData.lawyerperformance },
+        { source: '_source', data: caseData._source?.lawyerperformance },
+        { source: 'fields', data: caseData.fields?.lawyerperformance }
+    ];
+    
+    // 2. 嘗試每個路徑
+    for (const path of possiblePaths) {
+        if (path.data) {
+            performanceSource = path.source;
+            
+            // 處理數組或對象
+            if (Array.isArray(path.data)) {
+                performances = [...path.data];
+            } else if (typeof path.data === 'object') {
+                performances = [path.data];
+            }
+            
+            // 如果找到了，不再嘗試其他路徑
+            if (performances.length > 0) {
+                console.log(`[AIAnalysisService] 在${performanceSource}路徑找到${performances.length}個律師表現記錄`);
+                break;
+            }
         }
     }
-
-    // 2. 處理fields中的特殊結構
+    
+    // 3. 特殊處理：處理雙層數組結構（fields中常見）
+    if (performances.length === 1 && Array.isArray(performances[0]) && performances[0].length > 0) {
+        console.log(`[AIAnalysisService] 找到雙層數組結構，進行展平`);
+        performances = performances[0];
+    }
+    
+    // 4. 處理數組內的每個元素
     if (performances.length > 0) {
         performances = performances.map(perf => {
-            const result = {};
+            const normalized = {};
+            
+            // 處理每個屬性
             Object.keys(perf).forEach(key => {
-                // 處理可能是數組的欄位
+                // 處理數組類型的屬性（常見於fields結構）
                 if (Array.isArray(perf[key])) {
-                    result[key] = perf[key][0]; // 取第一個元素
+                    if (perf[key].length > 0) {
+                        normalized[key] = perf[key][0];
+                    } else {
+                        normalized[key] = null;
+                    }
                 } else {
-                    result[key] = perf[key];
+                    normalized[key] = perf[key];
                 }
             });
-            return result;
+            
+            return normalized;
         });
+        
+        console.log(`[AIAnalysisService] 成功標準化${performances.length}個律師表現記錄`);
+    } else {
+        console.log(`[AIAnalysisService] 未找到任何律師表現記錄`);
     }
-
+    
     return performances;
 }
 
@@ -280,6 +319,40 @@ function validateTendency(tendency) {
                                       AI 可能需要 JFULL, summary_ai, main_reasons_ai 等欄位。
  */
 export async function triggerAIAnalysis(judgeName, casesData, baseAnalyticsData) {
+
+    if (casesData.length > 0) {
+        const firstCase = casesData[0];
+        console.log(`[AIAnalysisService] ========= 診斷開始 =========`);
+        console.log(`[AIAnalysisService] 第一個案例資料結構診斷:`);
+        console.log(`- 案例ID: ${firstCase.JID || '未知'}`);
+        console.log(`- 頂層鍵: ${Object.keys(firstCase).join(', ')}`);
+        console.log(`- 是否有_source: ${!!firstCase._source}`);
+        console.log(`- 是否有fields: ${!!firstCase.fields}`);
+
+        // 檢查律師表現的各種可能位置
+        const paths = [
+            { name: '直接路徑', data: firstCase.lawyerperformance },
+            { name: '_source路徑', data: firstCase._source?.lawyerperformance },
+            { name: 'fields路徑', data: firstCase.fields?.lawyerperformance }
+        ];
+
+        paths.forEach(path => {
+            if (path.data) {
+                console.log(`- 發現律師表現於${path.name}:`);
+                try {
+                    const sample = JSON.stringify(path.data).substring(0, 150) + '...';
+                    console.log(`  ${sample}`);
+                } catch (e) {
+                    console.log(`  (無法序列化)`);
+                }
+            } else {
+                console.log(`- ${path.name}下未找到律師表現數據`);
+            }
+        });
+
+        console.log(`[AIAnalysisService] ========= 診斷結束 =========`);
+    }
+
     console.log(`[AIAnalysisService] Starting AI analysis for judge: ${judgeName} with ${casesData.length} cases.`);
     const judgeDocRef = admin.firestore().collection(JUDGES_COLLECTION || 'judges').doc(judgeName);
 
@@ -369,7 +442,7 @@ export async function triggerAIAnalysis(judgeName, casesData, baseAnalyticsData)
             }
 
             // 如果案例數量不足，就按順序取
-            
+
             return normalizedCases.slice(0, maxSamples);
 
         })();
