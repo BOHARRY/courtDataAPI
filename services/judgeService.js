@@ -68,7 +68,8 @@ export async function getJudgeAnalytics(judgeName) {
             _source: [ /* 需要的欄位，例如 JID, JDATE, case_type, verdict, legal_basis, JFULL (部分用於AI)等 */
                 "JID", "JYEAR", "JCASE", "JNO", "JDATE", "JDATE_num", "JTITLE", "court",
                 "case_type", "verdict", "verdict_type", "summary_ai", "judges", "main_reasons_ai",
-                "legal_basis", "outcome_reasoning_strength", "SCORE", "JFULL" // JFULL 給 AI 用
+                "legal_basis", "outcome_reasoning_strength", "SCORE", "JFULL",
+                "lawyerperformance" // JFULL 給 AI 用
             ],
             // 可以加入聚合，如果某些統計可以直接從 ES 聚合得到
         });
@@ -187,7 +188,8 @@ export async function triggerReanalysis(judgeName) {
         _source: [
             "JID", "JYEAR", "JCASE", "JNO", "JDATE", "JDATE_num", "JTITLE", "court",
             "case_type", "verdict", "verdict_type", "summary_ai", "judges", "main_reasons_ai",
-            "legal_basis", "outcome_reasoning_strength", "SCORE", "JFULL"
+            "legal_basis", "outcome_reasoning_strength", "SCORE", "JFULL",
+            "lawyerperformance"
         ],
     });
 
