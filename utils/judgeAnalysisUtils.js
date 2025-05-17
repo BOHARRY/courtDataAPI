@@ -146,8 +146,18 @@ export function aggregateJudgeCaseData(esHits, judgeName) {
     });
 
     // --- 格式化並計算百分比 ---
-    analytics.caseStats.caseTypes = formatCounterToPercentageArray(caseTypeCounter, analytics.caseStats.totalCases, 5);
-    analytics.verdictDistribution = formatCounterToPercentageArray(verdictCounter, analytics.caseStats.totalCases, 5);
+    const rawCaseTypesDistribution = formatCounterToPercentageArray(caseTypeCounter, analytics.caseStats.totalCases, 5);
+    analytics.caseStats.caseTypes = rawCaseTypesDistribution.map(item => ({
+        type: item.key, // <<--- 將 formatCounterToPercentageArray 返回的 'key' 映射到 'type'
+        count: item.count,
+        percent: item.percent
+    }));
+    const rawVerdictDistribution = formatCounterToPercentageArray(verdictCounter, analytics.caseStats.totalCases, 5);
+    analytics.verdictDistribution = rawVerdictDistribution.map(item => ({
+        result: item.key, // <<--- 將 formatCounterToPercentageArray 返回的 'key' 映射到 'result'
+        count: item.count,
+        percent: item.percent
+    }));
     analytics.legalStats.legalBasis = Object.entries(legalBasisCounter)
         .sort(([, countA], [, countB]) => countB - countA)
         .slice(0, 10)
@@ -439,7 +449,7 @@ function formatCounterToPercentageArray(counter, totalCount, topN) {
         .sort(([, countA], [, countB]) => countB - countA)
         .slice(0, topN)
         .map(([originalKey, count]) => ({
-            result: originalKey,
+            key: originalKey,
             count,
             percent: parseFloat(((count / totalCount) * 100).toFixed(1)) || 0,
         }));
