@@ -295,20 +295,33 @@ export async function triggerAIAnalysis(judgeName, casesData, baseAnalyticsData)
                 let lawyerPerformanceSummary = "該案件律師表現摘要:\n";
                 if (c.lawyerperformance && Array.isArray(c.lawyerperformance) && c.lawyerperformance.length > 0) {
                     c.lawyerperformance.forEach((perf, idx) => {
-                        lawyerPerformanceSummary += `  律師 ${idx + 1} (${perf.lawyer || '未知姓名'}, ${perf.side === 'plaintiff' ? '原告方' : perf.side === 'defendant' ? '被告方' : '未知立場'}): ${perf.comment || perf.verdict || '無特定評論'}\n`;
+                        // 處理欄位可能是單值或數組的情況
+                        const lawyer = Array.isArray(perf.lawyer) ? perf.lawyer[0] : perf.lawyer || '未知姓名';
+                        const side = Array.isArray(perf.side) ? perf.side[0] : perf.side;
+                        const sideText = side === 'plaintiff' ? '原告方' : side === 'defendant' ? '被告方' : '未知立場';
+                        const comment = Array.isArray(perf.comment) ? perf.comment[0] : perf.comment;
+                        const verdict = Array.isArray(perf.verdict) ? perf.verdict[0] : perf.verdict;
+
+                        lawyerPerformanceSummary += `  律師 ${idx + 1} (${lawyer}, ${sideText}): ${comment || verdict || '無特定評論'}\n`;
                     });
                 } else {
-                    lawyerPerformanceSummary += "  (無律師表現記錄或記錄格式不符)\n";
+                    // 再增加一層檢查，處理fields結構下的資料
+                    if (c._source && c._source.lawyerperformance && Array.isArray(c._source.lawyerperformance) && c._source.lawyerperformance.length > 0) {
+                        c._source.lawyerperformance.forEach((perf, idx) => {
+                            lawyerPerformanceSummary += `  律師 ${idx + 1} (${perf.lawyer || '未知姓名'}, ${perf.side === 'plaintiff' ? '原告方' : perf.side === 'defendant' ? '被告方' : '未知立場'}): ${perf.comment || perf.verdict || '無特定評論'}\n`;
+                        });
+                    } else {
+                        lawyerPerformanceSummary += "  (無律師表現記錄或記錄格式不符)\n";
+                    }
                 }
 
                 return `
-        案件 ${i + 1} (案號/JID: ${c.JID || '未知'}):
-        案件摘要: ${c.summary_ai || (c.JFULL || '').substring(0, 500)}...
+        案件 ${i + 1} :案件摘要: ${c.summary_ai}...
         ${lawyerPerformanceSummary}--------------------`; // 分隔每個案件
             } catch (error) {
                 console.error(`[AIAnalysisService] 處理案件 ${i + 1} 摘要時出錯:`, error);
                 return `
-        案件 ${i + 1} (案號/JID: ${c.JID || '未知'}):
+        案件 ${i + 1} :
         案件摘要: (處理此案件摘要時出錯)
         --------------------`;
             }
@@ -327,7 +340,6 @@ export async function triggerAIAnalysis(judgeName, casesData, baseAnalyticsData)
         }
         const traitsPrompt = `
 你是一位專業的台灣法律內容分析專家。請基於以下 ${sampleCasesForTraits.length} 份判決書的資訊，分析法官 ${judgeName} 在審理這些案件時可能展現出的主要判決特徵或審判風格。
-
 你必須提出「至少3個，最多5個」不同的特徵標籤，**即使部分特徵置信度較低，也應嘗試推論。**
 
 請用 JSON 陣列輸出，每個標籤格式如下：
