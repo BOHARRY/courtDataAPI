@@ -8,7 +8,7 @@ const openai = new OpenAI({
     apiKey: OPENAI_API_KEY, // <<--- 使用導入的變數
 });
 
-const MODEL_NAME = process.env.OPENAI_MODEL_NAME || 'gpt-4o'; // 或 'gpt-3.5-turbo'
+const MODEL_NAME = process.env.OPENAI_MODEL_NAME || 'gpt-4.1'; // 或 'gpt-3.5-turbo'
 
 /**
  * 安全更新法官文檔，處理文檔不存在的情況
@@ -440,9 +440,7 @@ export async function triggerAIAnalysis(judgeName, casesData, baseAnalyticsData)
                 samples.push(...casesData.slice(casesData.length - 5, casesData.length));
                 return samples;
             }
-
             // 如果案例數量不足，就按順序取
-
             return normalizedCases.slice(0, maxSamples);
 
         })();
@@ -484,7 +482,6 @@ export async function triggerAIAnalysis(judgeName, casesData, baseAnalyticsData)
 
         // 加入日誌確認案例數量和摘要長度
         console.log(`[AIAnalysisService] 已處理 ${sampleCasesForTraits.length} 個案件樣本，總摘要長度: ${traitSamplesText.length}`);
-        console.log(`[AIAnalysisService] 摘要 ${traitSamplesText.substring}`);
 
         const traitsPrompt = `
 你是一位專業的台灣法律內容分析專家。請基於以下 ${sampleCasesForTraits.length} 份判決書的資訊，分析法官 ${judgeName} 在審理這些案件時可能展現出的主要判決特徵或審判風格。
