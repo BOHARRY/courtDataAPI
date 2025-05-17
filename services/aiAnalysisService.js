@@ -103,34 +103,39 @@ export async function triggerAIAnalysis(judgeName, casesData, baseAnalyticsData)
         }).join('\n\n');
 
         const traitsPrompt = `
-  你是一位專業的台灣法律內容分析專家。請基於以下 ${sampleCasesForTraits.length} 份判決書的相關資訊，分析法官 ${judgeName} 在審理這些案件時可能展現出的主要判決特徵或審判風格。
-**請務必提供至少 3 個，至多 5 個最明顯的特徵標籤。** 如果難以找出多個，請嘗試從不同角度（例如，對證據的態度、對程序的重視、判決書的寫作風格、對特定類型案件的處理方式等）進行分析，以湊足至少3個標籤。每個標籤應包含：
-  1.  "text": 一個簡潔的特徵描述 (6-10個正體中文字)。
-  2.  "icon": 一個適合該特徵的 emoji 圖標 (單個 emoji 字符)。
-  3.  "confidence": 你對此特徵判斷的置信度，分為 "高", "中", "低" 三個等級。
+你是一位專業的台灣法律內容分析專家。請基於以下 ${sampleCasesForTraits.length} 份判決書的資訊，分析法官 ${judgeName} 在審理這些案件時可能展現出的主要判決特徵或審判風格。
 
-  判決書樣本資訊:
-  ${traitSamplesText}
+你必須提出「至少3個，最多5個」不同的特徵標籤，**即使部分特徵置信度較低，也應嘗試推論。**
 
-  思考步驟指引：
-    1. 通讀所有案件摘要，找出反覆出現的行為模式或判決特點。
-    2. 從不同維度思考，例如：法官對證據的要求、對程序問題的處理、對特定法律條文的偏好、判決書的語言風格、對弱勢方的態度等。
-    3. 嘗試為每個識別出的特點給予一個標籤。
-    4. 即使某些特徵的置信度只是“中”或“低”，如果它們是基於樣本可觀察到的，也請盡量列出，以達到至少3個標籤的目標。
-    5. 最後，從所有可能的標籤中，篩選出3到5個最能代表該法官的特徵。
+請用 JSON 陣列輸出，每個標籤格式如下：
+- "text": 一個簡潔的特徵描述 (6-10個正體中文字)
+- "icon": 一個對應該特徵的 emoji（單個 emoji）
+- "confidence": "高"、"中"、"低" 三種之一
 
-  請嚴格僅返回一個 JSON 格式的陣列，直接包含這些標籤物件，不要有任何額外的解釋或 Markdown 格式。例如（即使只有三個標籤也要是陣列）：
-  [
-    {"text": "重視程序正義", "icon": "⚖️", "confidence": "高"},
-    {"text": "契約解釋嚴謹", "icon": "📜", "confidence": "中"},
-    {"text": "判決簡明扼要", "icon": "✍️", "confidence": "中"}
-  ]
+請避免省略特徵，即使有些特徵只出現在部分案例中，只要能觀察到就列出。你可以從這些面向嘗試推導標籤：
+- 對證據的要求（是否嚴格？偏重證人還是書證？）
+- 對程序的重視程度
+- 是否對弱勢方較有同理心
+- 判決書的用詞風格（簡潔或詳盡？）
+- 是否在特定法條有偏好引用？
+- 對量刑的趨勢（從輕、從重等）
+
+判決書樣本摘要如下：
+${traitSamplesText}
+
+請直接輸出一個 JSON 陣列，例如：
+[
+  {"text": "重視程序正義", "icon": "⚖️", "confidence": "高"},
+  {"text": "判決用詞簡潔", "icon": "✍️", "confidence": "中"},
+  {"text": "對證據要求嚴格", "icon": "🔍", "confidence": "中"}
+]
 `;
+
         console.log(`[AIAnalysisService] Traits prompt for ${judgeName} (length: ${traitsPrompt.length}):\n`, traitsPrompt.substring(0, 500) + "...");
         const traitsResponse = await openai.chat.completions.create({
             model: MODEL_NAME,
             messages: [{ role: 'user', content: traitsPrompt }],
-            temperature: 0.3, // 較低的 temperature 使輸出更具決定性
+            temperature: 0.5, // 較低的 temperature 使輸出更具決定性
             response_format: { type: "json_object" }, // 要求 JSON 輸出 (如果模型支持)
         });
 
