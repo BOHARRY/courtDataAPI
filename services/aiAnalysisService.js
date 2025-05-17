@@ -118,6 +118,86 @@ function validateTraits(traits) {
 }
 
 /**
+ * 標準化案例數據，處理各種可能的數據結構
+ * @param {Object} caseData - 案例原始數據
+ * @returns {Object} - 標準化後的案例數據
+ */
+function normalizeCase(caseData) {
+    // 創建一個新物件，避免修改原始數據
+    const normalized = { ...caseData };
+
+    // 1. 處理_source層，將其合併到頂層
+    if (normalized._source) {
+        Object.keys(normalized._source).forEach(key => {
+            if (!normalized[key]) { // 避免覆蓋已有的屬性
+                normalized[key] = normalized._source[key];
+            }
+        });
+    }
+
+    // 2. 處理fields層
+    if (normalized.fields) {
+        Object.keys(normalized.fields).forEach(key => {
+            // 如果頂層和_source都沒有該屬性，則從fields取
+            if (!normalized[key] && normalized.fields[key]) {
+                // 處理fields中的數組
+                if (Array.isArray(normalized.fields[key]) && normalized.fields[key].length > 0) {
+                    normalized[key] = normalized.fields[key];
+                }
+            }
+        });
+    }
+
+    // 3. 特別處理lawyerperformance
+    if (!normalized.lawyerperformance) {
+        // 嘗試從各種可能路徑獲取
+        if (normalized.fields && normalized.fields.lawyerperformance) {
+            normalized.lawyerperformance = normalized.fields.lawyerperformance;
+        } else if (normalized._source && normalized._source.lawyerperformance) {
+            normalized.lawyerperformance = normalized._source.lawyerperformance;
+        }
+    }
+
+    return normalized;
+}
+
+/**
+ * 從案例數據中安全提取律師表現
+ * @param {Object} caseData - 案例標準化後的數據
+ * @returns {Array} - 律師表現數組
+ */
+function extractLawyerPerformance(caseData) {
+    let performances = [];
+
+    // 1. 檢查直接的lawyerperformance
+    if (caseData.lawyerperformance) {
+        if (Array.isArray(caseData.lawyerperformance)) {
+            performances = caseData.lawyerperformance;
+        } else if (typeof caseData.lawyerperformance === 'object') {
+            performances = [caseData.lawyerperformance];
+        }
+    }
+
+    // 2. 處理fields中的特殊結構
+    if (performances.length > 0) {
+        performances = performances.map(perf => {
+            const result = {};
+            Object.keys(perf).forEach(key => {
+                // 處理可能是數組的欄位
+                if (Array.isArray(perf[key])) {
+                    result[key] = perf[key][0]; // 取第一個元素
+                } else {
+                    result[key] = perf[key];
+                }
+            });
+            return result;
+        });
+    }
+
+    return performances;
+}
+
+/**
  * 驗證裁判傾向格式並確保數據合法性
  * @param {Object} tendency - 待驗證的裁判傾向物件
  * @returns {Object|null} - 格式正確的裁判傾向物件或null
@@ -269,9 +349,10 @@ export async function triggerAIAnalysis(judgeName, casesData, baseAnalyticsData)
         // --- 1. 生成法官特徵標籤 (Traits) ---
         // 準備提示詞，可能需要選取部分代表性案件的摘要或全文片段
         // 修改樣本選取策略，增加樣本量和多樣性
+        const normalizedCases = casesData.map(normalizeCase);
         const sampleCasesForTraits = (() => {
             // 增加取樣數量
-            const maxSamples = Math.min(casesData.length, 15); // 增加到15個
+            const maxSamples = Math.min(casesData.length, 10); // 增加到15個
 
             // 如果案例數量足夠，嘗試多樣化選擇
             if (casesData.length > 20) {
@@ -288,36 +369,37 @@ export async function triggerAIAnalysis(judgeName, casesData, baseAnalyticsData)
             }
 
             // 如果案例數量不足，就按順序取
-            return casesData.slice(0, maxSamples);
+            
+            return normalizedCases.slice(0, maxSamples);
+
         })();
         const traitSamplesText = sampleCasesForTraits.map((c, i) => {
             try {
-                let lawyerPerformanceSummary = "該案件律師表現摘要:\n";
-                if (c.lawyerperformance && Array.isArray(c.lawyerperformance) && c.lawyerperformance.length > 0) {
-                    c.lawyerperformance.forEach((perf, idx) => {
-                        // 處理欄位可能是單值或數組的情況
-                        const lawyer = Array.isArray(perf.lawyer) ? perf.lawyer[0] : perf.lawyer || '未知姓名';
-                        const side = Array.isArray(perf.side) ? perf.side[0] : perf.side;
-                        const sideText = side === 'plaintiff' ? '原告方' : side === 'defendant' ? '被告方' : '未知立場';
-                        const comment = Array.isArray(perf.comment) ? perf.comment[0] : perf.comment;
-                        const verdict = Array.isArray(perf.verdict) ? perf.verdict[0] : perf.verdict;
+                let lawyerPerformanceSummary = "該案件律師表現摘要:";
+                const performances = extractLawyerPerformance(c);
 
-                        lawyerPerformanceSummary += `  律師 ${idx + 1} (${lawyer}, ${sideText}): ${comment || verdict || '無特定評論'}\n`;
+                if (performances.length > 0) {
+                    performances.forEach((perf, idx) => {
+                        const lawyer = perf.lawyer || '未知姓名';
+                        const side = perf.side;
+                        const sideText = side === 'plaintiff' ? '原告方' : side === 'defendant' ? '被告方' : '未知立場';
+                        const comment = perf.comment || perf.verdict || '無特定評論';
+
+                        lawyerPerformanceSummary += `  律師 ${idx + 1} (${lawyer}, ${sideText}): ${comment}\n`;
                     });
                 } else {
-                    // 再增加一層檢查，處理fields結構下的資料
-                    if (c._source && c._source.lawyerperformance && Array.isArray(c._source.lawyerperformance) && c._source.lawyerperformance.length > 0) {
-                        c._source.lawyerperformance.forEach((perf, idx) => {
-                            lawyerPerformanceSummary += `  律師 ${idx + 1} (${perf.lawyer || '未知姓名'}, ${perf.side === 'plaintiff' ? '原告方' : perf.side === 'defendant' ? '被告方' : '未知立場'}): ${perf.comment || perf.verdict || '無特定評論'}\n`;
-                        });
-                    } else {
-                        lawyerPerformanceSummary += "  (無律師表現記錄或記錄格式不符)\n";
-                    }
+                    lawyerPerformanceSummary += "  (無律師表現記錄或記錄格式不符)\n";
                 }
 
+                // 安全提取摘要
+                const summary = c.summary_ai ||
+                    (Array.isArray(c.summary_ai) ? c.summary_ai.join(' ') : null) ||
+                    '(無摘要)';
+
                 return `
-        案件 ${i + 1} :案件摘要: ${c.summary_ai}...
-        ${lawyerPerformanceSummary}--------------------`; // 分隔每個案件
+        案件 ${i + 1} :
+        案件摘要: ${summary}
+        ${lawyerPerformanceSummary}--------------------`;
             } catch (error) {
                 console.error(`[AIAnalysisService] 處理案件 ${i + 1} 摘要時出錯:`, error);
                 return `
@@ -325,7 +407,7 @@ export async function triggerAIAnalysis(judgeName, casesData, baseAnalyticsData)
         案件摘要: (處理此案件摘要時出錯)
         --------------------`;
             }
-        }).join('\n\n');
+        }).join('\n');
 
         // 加入日誌確認案例數量和摘要長度
         console.log(`[AIAnalysisService] 已處理 ${sampleCasesForTraits.length} 個案件樣本，總摘要長度: ${traitSamplesText.length}`);
