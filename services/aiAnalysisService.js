@@ -83,6 +83,7 @@ export async function triggerAIAnalysis(judgeName, casesData, baseAnalyticsData)
     }
 
     try {
+        console.log(`[AIAnalysisService] Preparing traits prompt for ${judgeName}...`);
         // --- 1. 生成法官特徵標籤 (Traits) ---
         // 準備提示詞，可能需要選取部分代表性案件的摘要或全文片段
         const sampleCasesForTraits = casesData.slice(0, Math.min(casesData.length, 10)); // 取前10件或更少
@@ -102,6 +103,7 @@ export async function triggerAIAnalysis(judgeName, casesData, baseAnalyticsData)
             ${lawyerPerformanceSummary}--------------------`; // 分隔每個案件
         }).join('\n\n');
 
+        console.log(`[AIAnalysisService] Traits prompt constructed for ${judgeName}. Length: ${traitsPrompt.length}. Calling OpenAI for traits...`);
         const traitsPrompt = `
 你是一位專業的台灣法律內容分析專家。請基於以下 ${sampleCasesForTraits.length} 份判決書的資訊，分析法官 ${judgeName} 在審理這些案件時可能展現出的主要判決特徵或審判風格。
 
@@ -130,7 +132,7 @@ ${traitSamplesText}
   {"text": "對證據要求嚴格", "icon": "🔍", "confidence": "中"}
 ]
 `;
-
+        console.log(`[AIAnalysisService] OpenAI response received for traits for ${judgeName}.`); // <<--- 確認是否執行到這裡
         console.log(`[AIAnalysisService] Traits prompt for ${judgeName} (length: ${traitsPrompt.length}):\n`, traitsPrompt.substring(0, 500) + "...");
         const traitsResponse = await openai.chat.completions.create({
             model: MODEL_NAME,
@@ -140,6 +142,8 @@ ${traitSamplesText}
         });
 
         let traits = [];
+        console.log(`[AIAnalysisService] Parsed traits for ${judgeName}:`, traits);
+        console.log(`[AIAnalysisService] Preparing tendency prompt for ${judgeName}...`);
         // 嘗試解析 AI 返回的 JSON 結果
         if (traitsResponse.choices && traitsResponse.choices[0] && traitsResponse.choices[0].message.content) {
             try {
@@ -227,6 +231,8 @@ ${traitSamplesText}
 請確保 "value" 文字描述與 "score" 評分相對應（例如：score 1-2 對應偏低/保守/不顯著，score 3 對應中等/中立，score 4-5 對應偏高/顯著/寬鬆）。
 最終輸出必須是純粹的、單一的、符合上述結構的 JSON 物件，不包含任何額外的文字、註解或 Markdown 標記。
 `;
+        console.log(`[AIAnalysisService] Tendency prompt constructed for ${judgeName}. Length: ${tendencyPrompt.length}. Calling OpenAI for tendency...`);
+        // 這裡可以選擇使用不同的模型或參數
         console.log(`[AIAnalysisService] Tendency prompt for ${judgeName} (length: ${tendencyPrompt.length}):\n`, tendencyPrompt.substring(0, 500) + "...");
 
         const tendencyResponse = await openai.chat.completions.create({
@@ -235,6 +241,8 @@ ${traitSamplesText}
             temperature: 0.5,
             response_format: { type: "json_object" },
         });
+
+        console.log(`[AIAnalysisService] OpenAI response received for tendency for ${judgeName}.`); // <<--- 確認是否執行到這
 
         let tendency = null;
         if (tendencyResponse.choices && tendencyResponse.choices[0] && tendencyResponse.choices[0].message.content) {
@@ -272,6 +280,7 @@ ${traitSamplesText}
                 processingError: error.message || 'Unknown AI analysis error',
                 lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
             });
+            console.log(`[AIAnalysisService] Updated Firestore with FAILED status for ${judgeName}.`);
         } catch (fsError) {
             console.error(`[AIAnalysisService] Failed to update Firestore with error status for ${judgeName}:`, fsError);
         }
