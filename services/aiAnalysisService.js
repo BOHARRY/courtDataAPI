@@ -484,41 +484,23 @@ export async function triggerAIAnalysis(judgeName, casesData, baseAnalyticsData)
 
         // 加入日誌確認案例數量和摘要長度
         console.log(`[AIAnalysisService] 已處理 ${sampleCasesForTraits.length} 個案件樣本，總摘要長度: ${traitSamplesText.length}`);
-        console.log(`[AIAnalysisService] 摘要前500字符: ${traitSamplesText.substring(0, 500)}...`);
-        console.log(`[AIAnalysisService] 摘要最後500字符: ...${traitSamplesText.substring(traitSamplesText.length - 500)}`);
-        if (sampleCasesForTraits.length < 3) {
-            console.warn(`[AIAnalysisService] 案例數據不足 (只有 ${sampleCasesForTraits.length} 個案例)，可能難以提取多樣化特徵`);
-        }
+        console.log(`[AIAnalysisService] 摘要 ${traitSamplesText.substring}`);
 
-        if (traitSamplesText.length < 1000) {
-            console.warn(`[AIAnalysisService] 案例摘要文本太短 (只有 ${traitSamplesText.length} 字符)，可能不足以支持多樣化特徵提取`);
-        }
         const traitsPrompt = `
 你是一位專業的台灣法律內容分析專家。請基於以下 ${sampleCasesForTraits.length} 份判決書的資訊，分析法官 ${judgeName} 在審理這些案件時可能展現出的主要判決特徵或審判風格。
-你必須提出「至少3個，最多5個」不同的特徵標籤，**即使部分特徵置信度較低，也應嘗試推論。**
+你必須提出「至少3個，最多5個」不同判決特徵、風格標籤，**即使部分特徵置信度較低，也應嘗試推論。**
 
-請用 JSON 陣列輸出，每個標籤格式如下：
-- "text": 一個簡潔的特徵描述 (6-10個正體中文字)
-- "icon": 一個對應該特徵的 emoji（單個 emoji）
-- "confidence": "高"、"中"、"低" 三種之一
-
-請避免省略特徵，即使有些特徵只出現在部分案例中，只要能觀察到就列出。你可以從這些面向嘗試推導標籤：
-- 對證據的要求（是否嚴格？偏重證人還是書證？）
-- 對程序的重視程度
-- 是否對弱勢方較有同理心
-- 判決書的用詞風格（簡潔或詳盡？）
-- 是否在特定法條有偏好引用？
-- 對量刑的趨勢（從輕、從重等）
-
-判決書樣本摘要如下：
-${traitSamplesText}
-
-請直接輸出一個 JSON 陣列，例如：
+務必輸出一個 JSON 陣列，例如：
 [
-  {"text": "重視程序正義", "icon": "⚖️", "confidence": "高"},
-  {"text": "判決用詞簡潔", "icon": "✍️", "confidence": "中"},
-  {"text": "對證據要求嚴格", "icon": "🔍", "confidence": "中"}
+  {"text": "重視程序正義", "icon": "⚖️", "confidence": "高"},{"text": "判決用詞簡潔", "icon": "✍️", "confidence": "中"},{"text": "對證據要求嚴格", "icon": "🔍", "confidence": "中"}
 ]
+
+"text": 一個簡潔的特徵描述 (6-10個正體中文字)
+"icon": 一個對應該特徵的 emoji（單個 emoji）
+"confidence": "高"、"中"、"低" 三種之一
+
+本次需要請你判斷的判決書內容摘要如下：
+${traitSamplesText}
 `;
         console.log(`[AIAnalysisService] OpenAI response received for traits for ${judgeName}.`); // <<--- 確認是否執行到這裡
         console.log(`[AIAnalysisService] Traits prompt for ${judgeName} (length: ${traitsPrompt.length}):\n`, traitsPrompt.substring(0, 500) + "...");
@@ -533,37 +515,6 @@ ${traitSamplesText}
         if (traitsResponse.choices && traitsResponse.choices[0] && traitsResponse.choices[0].message.content) {
             traits = parseAIResponseToTraits(traitsResponse.choices[0].message.content, judgeName);
 
-            // 檢查是否獲得了足夠的特徵 (至少3個)
-            if (traits.length < 3) {
-                console.warn(`[AIAnalysisService] 特徵數量不足 (${traits.length} < 3)，嘗試再次調用AI: ${judgeName}`);
-
-                // 修改提示詞強調必須返回3個特徵
-                const retryPrompt = `${traitsPrompt}\n\n非常重要：你必須提供至少3個不同的特徵，即使部分特徵是推測性的。根據現有案例資料，創造性地推導出不同的特徵，並標記適當的確信度。即使確信度低，也請返回至少3個不同特徵。`;
-
-                try {
-                    // 重新調用AI (可能需要增加溫度)
-                    const retryResponse = await openai.chat.completions.create({
-                        model: MODEL_NAME,
-                        messages: [{ role: 'user', content: retryPrompt }],
-                        temperature: 0.8, // 稍微提高溫度以增加多樣性
-                        response_format: { type: "json_object" },
-                    });
-
-                    // 重新解析結果
-                    if (retryResponse.choices && retryResponse.choices[0] && retryResponse.choices[0].message.content) {
-                        const retryTraits = parseAIResponseToTraits(retryResponse.choices[0].message.content, judgeName);
-
-                        // 如果重試結果更好，則使用重試結果
-                        if (retryTraits.length > traits.length) {
-                            console.log(`[AIAnalysisService] 重試成功，特徵數量提升: ${traits.length} -> ${retryTraits.length}`);
-                            traits = retryTraits;
-                        }
-                    }
-                } catch (retryError) {
-                    console.error(`[AIAnalysisService] 重試獲取特徵失敗: ${judgeName}`, retryError);
-                    // 繼續使用原始特徵，即使不足3個
-                }
-            }
         }
         console.log(`[AIAnalysisService] 最終生成的特徵 (${traits.length}個) for ${judgeName}:`, traits);
 
