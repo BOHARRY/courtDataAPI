@@ -268,23 +268,63 @@ export async function triggerAIAnalysis(judgeName, casesData, baseAnalyticsData)
         console.log(`[AIAnalysisService] Preparing traits prompt for ${judgeName}...`);
         // --- 1. 生成法官特徵標籤 (Traits) ---
         // 準備提示詞，可能需要選取部分代表性案件的摘要或全文片段
-        const sampleCasesForTraits = casesData.slice(0, Math.min(casesData.length, 10)); // 取前10件或更少
-        const traitSamplesText = sampleCasesForTraits.map((c, i) => {
-            let lawyerPerformanceSummary = "該案件律師表現摘要:\n";
-            if (c.lawyerperformance && Array.isArray(c.lawyerperformance) && c.lawyerperformance.length > 0) {
-                c.lawyerperformance.forEach((perf, idx) => {
-                    lawyerPerformanceSummary += `  律師 ${idx + 1} (${perf.lawyer || '未知姓名'}, ${perf.side === 'plaintiff' ? '原告方' : perf.side === 'defendant' ? '被告方' : '未知立場'}): ${perf.comment || perf.verdict || '無特定評論'}\n`;
-                });
-            } else {
-                lawyerPerformanceSummary += "  (無律師表現記錄或記錄格式不符)\n";
+        // 修改樣本選取策略，增加樣本量和多樣性
+        const sampleCasesForTraits = (() => {
+            // 增加取樣數量
+            const maxSamples = Math.min(casesData.length, 15); // 增加到15個
+
+            // 如果案例數量足夠，嘗試多樣化選擇
+            if (casesData.length > 20) {
+                // 從不同時期選擇案例，確保多樣性
+                const samples = [];
+                // 取最新的5個
+                samples.push(...casesData.slice(0, 5));
+                // 取中間部分的5個
+                const middleIndex = Math.floor(casesData.length / 2);
+                samples.push(...casesData.slice(middleIndex, middleIndex + 5));
+                // 取較早的5個
+                samples.push(...casesData.slice(casesData.length - 5, casesData.length));
+                return samples;
             }
 
-            return `
-            案件 ${i + 1} (案號/JID: ${c.JID || '未知'}):
-            案件摘要: ${c.summary_ai || (c.JFULL || '').substring(0, 250)}...
-            ${lawyerPerformanceSummary}--------------------`; // 分隔每個案件
+            // 如果案例數量不足，就按順序取
+            return casesData.slice(0, maxSamples);
+        })();
+        const traitSamplesText = sampleCasesForTraits.map((c, i) => {
+            try {
+                let lawyerPerformanceSummary = "該案件律師表現摘要:\n";
+                if (c.lawyerperformance && Array.isArray(c.lawyerperformance) && c.lawyerperformance.length > 0) {
+                    c.lawyerperformance.forEach((perf, idx) => {
+                        lawyerPerformanceSummary += `  律師 ${idx + 1} (${perf.lawyer || '未知姓名'}, ${perf.side === 'plaintiff' ? '原告方' : perf.side === 'defendant' ? '被告方' : '未知立場'}): ${perf.comment || perf.verdict || '無特定評論'}\n`;
+                    });
+                } else {
+                    lawyerPerformanceSummary += "  (無律師表現記錄或記錄格式不符)\n";
+                }
+
+                return `
+        案件 ${i + 1} (案號/JID: ${c.JID || '未知'}):
+        案件摘要: ${c.summary_ai || (c.JFULL || '').substring(0, 500)}...
+        ${lawyerPerformanceSummary}--------------------`; // 分隔每個案件
+            } catch (error) {
+                console.error(`[AIAnalysisService] 處理案件 ${i + 1} 摘要時出錯:`, error);
+                return `
+        案件 ${i + 1} (案號/JID: ${c.JID || '未知'}):
+        案件摘要: (處理此案件摘要時出錯)
+        --------------------`;
+            }
         }).join('\n\n');
 
+        // 加入日誌確認案例數量和摘要長度
+        console.log(`[AIAnalysisService] 已處理 ${sampleCasesForTraits.length} 個案件樣本，總摘要長度: ${traitSamplesText.length}`);
+        console.log(`[AIAnalysisService] 摘要前500字符: ${traitSamplesText.substring(0, 500)}...`);
+        console.log(`[AIAnalysisService] 摘要最後500字符: ...${traitSamplesText.substring(traitSamplesText.length - 500)}`);
+        if (sampleCasesForTraits.length < 3) {
+            console.warn(`[AIAnalysisService] 案例數據不足 (只有 ${sampleCasesForTraits.length} 個案例)，可能難以提取多樣化特徵`);
+        }
+
+        if (traitSamplesText.length < 1000) {
+            console.warn(`[AIAnalysisService] 案例摘要文本太短 (只有 ${traitSamplesText.length} 字符)，可能不足以支持多樣化特徵提取`);
+        }
         const traitsPrompt = `
 你是一位專業的台灣法律內容分析專家。請基於以下 ${sampleCasesForTraits.length} 份判決書的資訊，分析法官 ${judgeName} 在審理這些案件時可能展現出的主要判決特徵或審判風格。
 
