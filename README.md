@@ -1,692 +1,476 @@
-# Boooook 後端API架構文件
-
-## 1. 系統概覽
-
-Boooook是一個司法資訊檢索與分析平台，後端採用模組化Node.js架構，核心功能包括判決書檢索、律師表現分析、點數機制以及使用者資料管理。
-
-**技術棧:**
-- **核心框架**: Node.js + Express
-- **資料儲存**: Firebase Firestore (使用者資料、點數、搜尋歷史)
-- **搜尋引擎**: Elasticsearch (判決書索引)
-- **認證系統**: Firebase Authentication (使用者認證與授權)
-
-**專案結構:**
-```
-.
-├── config/               # 設定檔目錄
-│ ├── firebase.js         # Firebase 初始化與設定
-│ ├── elasticsearch.js    # Elasticsearch 客戶端設定
-│ ├── environment.js      # 環境變數管理
-│ └── express.js          # Express應用程式設定
-│
-├── middleware/           # Express中介軟體
-│ ├── auth.js             # 身分驗證中介軟體
-│ └── credit.js           # 點數檢查中介軟體
-│
-├── services/             # 商業邏輯服務層
-│ ├── search.js           # 判決書搜尋服務
-│ ├── lawyer.js           # 律師相關服務
-│ ├── credit.js           # 點數管理服務
-│ ├── judgment.js         # 判決書詳情服務
-│ └── user.js             # 使用者相關服務
-│
-├── utils/                # 通用工具函式
-│ ├── query-builder.js    # ES查詢建構工具
-│ ├── response-formatter.js # 回應格式化工具
-│ ├── case-analyzer.js    # 案件分析工具
-│ ├── win-rate-calculator.js # 勝訴率計算工具
-│ └── constants.js        # 常數定義
-│
-├── routes/               # API路由定義
-│ ├── index.js            # 主路由檔案
-│ ├── search.js           # 搜尋相關路由
-│ ├── judgment.js         # 判決書詳情路由
-│ ├── lawyer.js           # 律師相關路由
-│ └── user.js             # 使用者相關路由
-│
-├── controllers/          # 請求處理控制器
-│ ├── search-controller.js # 搜尋控制器
-│ ├── judgment-controller.js # 判決書控制器
-│ ├── lawyer-controller.js # 律師控制器
-│ └── user-controller.js   # 使用者控制器
-│
-├── index.js              # 應用程式進入點
-└── .env                  # 環境變數
-```
-
-## 2. 核心功能與工作流程
-
-### 2.1 使用者認證與點數機制
-
-1. **身分驗證流程**:
-   - 前端透過Firebase Authentication取得ID Token
-   - 後端使用`verifyToken`中介軟體驗證Token
-   - 驗證成功後將使用者資訊附加到`req.user`物件
-
-2. **點數機制**:
-   - 各API操作定義不同點數成本(常數定義，如`SEARCH_COST=1`, `LAWYER_ANALYSIS_COST=2`)
-   - 使用Firestore Transaction確保點數操作原子性
-   - 步驟:
-     1. 檢查使用者點數餘額
-     2. 不足時回傳402狀態碼
-     3. 足夠時扣除點數並進行後續操作
-
-### 2.2 判決書搜尋
-
-1. **搜尋流程**:
-   - 路由: `GET /api/search`
-   - 控制器: `searchJudgmentsController`
-   - 點數成本: `SEARCH_COST=1`
-   - 步驟:
-     1. 驗證使用者並於Transaction中扣除點數
-     2. 呼叫`searchService.performSearch`建構並執行ES查詢
-     3. 回傳格式化的搜尋結果
-
-2. **篩選器機制**:
-   - 路由: `GET /api/search/filters`
-   - 控制器: `getFiltersController`
-   - 無點數成本(公開介面)
-   - 透過ES聚合取得可用篩選選項(案件類型、法院、結果等)
-
-### 2.3 律師分析
-
-1. **律師搜尋流程**:
-   - 路由: `GET /api/lawyers/:name`
-   - 控制器: `searchLawyerByNameController`
-   - 點數成本: `LAWYER_SEARCH_COST=1`
-   - 步驟:
-     1. 驗證使用者並於Transaction中扣除點數
-     2. 呼叫`lawyerService.searchLawyerData`查詢並分析律師案件
-     3. 非同步紀錄搜尋歷史
-     4. 回傳律師資料與分析結果
-
-2. **案件分布分析**:
-   - 路由: `GET /api/lawyers/:name/cases-distribution`
-   - 控制器: `getLawyerCasesDistributionController`
-   - 點數成本: `LAWYER_CASES_DISTRIBUTION_COST=1`
-   - 回傳案件類型分布資料
-
-3. **律師優劣勢分析**:
-   - 路由: `GET /api/lawyers/:name/analysis`
-   - 控制器: `getLawyerAnalysisController`
-   - 點數成本: `LAWYER_ANALYSIS_COST=2`
-   - 回傳律師優勢、注意事項與免責聲明
-
-### 2.4 使用者歷史紀錄
-
-- 路由: `GET /api/users/lawyer-search-history`
-- 控制器: `getLawyerSearchHistoryController`
-- 無點數成本(已登入使用者可存取自己的資料)
-- 從Firestore子集合取得使用者的律師搜尋歷史
-
-## 3. 點數系統設計
-
-點數系統由`services/credit.js`統一管理，核心函式為`checkAndDeductUserCreditsInTransaction`。
-
-```javascript
-// 在Transaction中檢查並扣除點數
-async function checkAndDeductUserCreditsInTransaction(
-  transaction,  // Firestore Transaction實例
-  userDocRef,   // 使用者文件參考
-  userId,       // 使用者ID
-  cost,         // 操作成本
-  logDetails    // 紀錄細節
-) {
-  // 1. 取得使用者文件
-  const userDoc = await transaction.get(userDocRef);
-  if (!userDoc.exists) throw new Error('User data not found.');
-  
-  // 2. 檢查點數餘額
-  const userData = userDoc.data();
-  const currentCredits = userData.credits || 0;
-  if (currentCredits < cost) {
-    return { sufficient: false, currentCredits };
-  }
-  
-  // 3. 扣除點數
-  transaction.update(userDocRef, {
-    credits: admin.firestore.FieldValue.increment(-cost),
-    lastActivityAt: admin.firestore.FieldValue.serverTimestamp()
-  });
-  
-  // 4. 回傳結果
-  return { sufficient: true, currentCredits, newCredits: currentCredits - cost };
-}
-```
-
-### 新增點數規則範例
-
-若要新增法官搜尋功能並扣除3點點數，步驟如下:
-
-1. **定義點數成本常數**:
-   ```javascript
-   // controllers/judge-controller.js
-   const JUDGE_SEARCH_COST = 3;
-   ```
-2. **建立控制器函式**:
-   ```javascript
-   // controllers/judge-controller.js
-   export async function searchJudgeByNameController(req, res, next) {
-     const userId = req.user.uid;
-     const judgeName = req.params.name;
-     const userDocRef = admin.firestore().collection('users').doc(userId);
-     
-     try {
-       let judgeData = null;
-       
-       await admin.firestore().runTransaction(async (transaction) => {
-         // 1. 檢查並扣除點數
-         const { sufficient, currentCredits } = await creditService.checkAndDeductUserCreditsInTransaction(
-           transaction,
-           userDocRef,
-           userId,
-           JUDGE_SEARCH_COST,
-           { action: 'judge_search', details: { judgeName } }
-         );
-         
-         if (!sufficient) {
-           const error = new Error('Insufficient credits');
-           error.statusCode = 402;
-           error.details = { required: JUDGE_SEARCH_COST, current: currentCredits };
-           throw error;
-         }
-         
-         // 2. 執行搜尋 (呼叫searchService或新建judgeService)
-         judgeData = await searchService.performJudgeSearch(judgeName);
-       });
-       
-       // 3. 處理結果
-       if (judgeData) {
-         res.status(200).json(judgeData);
-       } else {
-         const err = new Error('Internal server error after judge search.');
-         err.statusCode = 500;
-         next(err);
-       }
-     } catch (error) {
-       // 4. 錯誤處理
-       if (error.message === 'Insufficient credits' && error.statusCode === 402) {
-         return res.status(402).json({
-           error: '您的點數不足，請購買點數或升級方案。',
-           required: error.details?.required || JUDGE_SEARCH_COST,
-           current: error.details?.current || 0
-         });
-       }
-       next(error);
-     }
-   }
-   ```
-3. **新增路由**:
-   ```javascript
-   // routes/judge.js
-   import express from 'express';
-   import { searchJudgeByNameController } from '../controllers/judge-controller.js';
-   import { verifyToken } from '../middleware/auth.js';
-   
-   const router = express.Router();
-   
-   router.get('/:name', verifyToken, searchJudgeByNameController);
-   
-   export default router;
-   ```
-4. **註冊路由**:
-   ```javascript
-   // routes/index.js
-   import judgeRoutes from './judge.js';
-   
-   // 在router物件上新增
-   router.use('/judges', judgeRoutes);
-   ```
-5. **實作搜尋服務**:
-   ```javascript
-   // services/search.js 或 新建 services/judge.js
-   export async function performJudgeSearch(judgeName) {
-     try {
-       const esResult = await esClient.search({
-         index: ES_INDEX_NAME,
-         size: 100,
-         query: {
-           bool: {
-             must: [{
-               bool: {
-                 should: [
-                   { match_phrase: { "judges": judgeName } },
-                   { match_phrase: { "judges.raw": judgeName } }
-                 ],
-                 minimum_should_match: 1
-               }
-             }]
-           }
-         },
-         _source: [
-           "JID", "court", "JTITLE", "JDATE", "case_type", "verdict", 
-           "judges", "JCASE"
-         ]
-       });
-       
-       // 處理結果並回傳
-       return {
-         name: judgeName,
-         totalCases: esResult.hits.total.value,
-         cases: esResult.hits.hits.map(hit => ({
-           id: hit._id,
-           title: hit._source.JTITLE,
-           court: hit._source.court,
-           date: hit._source.JDATE,
-           caseType: hit._source.case_type,
-           verdict: hit._source.verdict
-         }))
-       };
-     } catch (error) {
-       console.error(`Error searching for judge ${judgeName}:`, error);
-       throw new Error(`Failed to search data for judge ${judgeName}.`);
-     }
-   }
-   ```
-
-## 4. 核心資料結構
-
-### 4.1 案件分析與結果代碼
-
-專案使用標準化的結果代碼系統來分析判決結果。主要結構於`utils/constants.js`中定義:
-
-```javascript
-export const NEUTRAL_OUTCOME_CODES = {
-  PROCEDURAL_NEUTRAL: 'PROCEDURAL_NEUTRAL',           // 程序性裁定
-  SETTLEMENT_NEUTRAL: 'SETTLEMENT_NEUTRAL',           // 和解/調解
-  WITHDRAWAL_NEUTRAL: 'WITHDRAWAL_NEUTRAL',           // 撤回訴訟
-  NOT_APPLICABLE_OR_UNKNOWN_NEUTRAL: 'NOT_APPLICABLE_OR_UNKNOWN_NEUTRAL',
-  UNKNOWN_NEUTRAL: 'UNKNOWN_NEUTRAL',
-  
-  // 民事原告結果
-  CIVIL_P_WIN_FULL: 'CIVIL_P_WIN_FULL',               // 原告完全勝訴
-  CIVIL_P_WIN_MAJOR: 'CIVIL_P_WIN_MAJOR',             // 原告大部分勝訴
-  CIVIL_P_WIN_PARTIAL: 'CIVIL_P_WIN_PARTIAL',         // 原告部分勝訴
-  CIVIL_P_WIN_MINOR: 'CIVIL_P_WIN_MINOR',             // 原告小部分勝訴
-  CIVIL_P_LOSE_FULL: 'CIVIL_P_LOSE_FULL',             // 原告完全敗訴
-  
-  // 民事被告結果
-  CIVIL_D_WIN_FULL: 'CIVIL_D_WIN_FULL',               // 被告完全勝訴
-  CIVIL_D_MITIGATE_MAJOR: 'CIVIL_D_MITIGATE_MAJOR',   // 被告大部分減免
-  CIVIL_D_MITIGATE_PARTIAL: 'CIVIL_D_MITIGATE_PARTIAL', // 被告部分減免
-  CIVIL_D_MITIGATE_MINOR: 'CIVIL_D_MITIGATE_MINOR',   // 被告小部分減免
-  CIVIL_D_LOSE_FULL: 'CIVIL_D_LOSE_FULL',             // 被告完全敗訴
-  
-  // 刑事案件結果
-  CRIMINAL_ACQUITTED: 'CRIMINAL_ACQUITTED',           // 無罪
-  CRIMINAL_GUILTY_SIG_REDUCED: 'CRIMINAL_GUILTY_SIG_REDUCED', // 有罪但顯著減輕
-  CRIMINAL_GUILTY_PROBATION: 'CRIMINAL_GUILTY_PROBATION',    // 緩刑
-  // 更多刑事結果...
-  
-  // 行政案件結果
-  ADMIN_WIN_REVOKE_FULL: 'ADMIN_WIN_REVOKE_FULL',     // 撤銷原處分
-  ADMIN_WIN_REVOKE_PARTIAL: 'ADMIN_WIN_REVOKE_PARTIAL', // 部分撤銷原處分
-  ADMIN_LOSE_DISMISSED: 'ADMIN_LOSE_DISMISSED',       // 駁回訴訟
-  // 更多行政結果...
-};
-
-// 統計鍵名
-export const FINAL_STAT_KEYS = {
-  TOTAL: 'total',
-  FAVORABLE_FULL: 'FAVORABLE_FULL_COUNT',
-  FAVORABLE_PARTIAL: 'FAVORABLE_PARTIAL_COUNT',
-  UNFAVORABLE_FULL: 'UNFAVORABLE_FULL_COUNT',
-  NEUTRAL_SETTLEMENT: 'NEUTRAL_SETTLEMENT_COUNT',
-  PROCEDURAL: 'PROCEDURAL_COUNT',
-  OTHER_UNKNOWN: 'OTHER_UNKNOWN_COUNT',
-};
-```
-
-然後透過`utils/case-analyzer.js`中的`getDetailedResult`函式將判決文本對應為標準化的結果代碼:
-
-```javascript
-export function getDetailedResult(perfVerdictText, mainType, sourceForContext = {}, lawyerPerfObject = null) {
-  let neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.UNKNOWN_NEUTRAL;
-  let description = perfVerdictText || sourceForContext.verdict || sourceForContext.verdict_type || '結果資訊不足';
-  const pv = (perfVerdictText || "").toLowerCase();
-
-  // 判斷是否為裁定案件
-  const isRulingCase = sourceForContext.is_ruling === "是" || 
-                       (sourceForContext.JCASE || '').toLowerCase().includes("裁") ||
-                       (sourceForContext.JTITLE || '').toLowerCase().includes("裁定");
-                       
-  // 判斷是否為程序性
-  if (pv.includes("程序性裁定") || pv.includes("procedural")) {
-    neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.PROCEDURAL_NEUTRAL;
-  } 
-  // 判斷是否為和解
-  else if (pv.includes("和解") || pv.includes("調解成立")) {
-    neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.SETTLEMENT_NEUTRAL;
-  }
-  // 根據案件類型與文本進行詳細判斷
-  else if (perfVerdictText) {
-    if (mainType === 'civil') {
-      // 民事案件判斷邏輯
-      if (pv.includes("原告: 完全勝訴")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_P_WIN_FULL;
-      else if (pv.includes("原告: 大部分勝訴")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_P_WIN_MAJOR;
-      // 更多民事判斷...
-    } 
-    else if (mainType === 'criminal') {
-      // 刑事案件判斷邏輯
-      if (pv.includes("無罪")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CRIMINAL_ACQUITTED;
-      else if (pv.includes("有罪但顯著減輕")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CRIMINAL_GUILTY_SIG_REDUCED;
-      // 更多刑事判斷...
-    }
-    else if (mainType === 'administrative') {
-      // 行政案件判斷邏輯
-      if (pv.includes("撤銷原處分") && !(pv.includes("部分") || pv.includes("一部"))) {
-        neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.ADMIN_WIN_REVOKE_FULL;
-      }
-      // 更多行政判斷...
-    }
-  }
-  
-  // 回傳標準化結果
-  return { neutralOutcomeCode, description };
-}
-```
-
-### 4.2 勝訴率計算
-
-透過`utils/win-rate-calculator.js`中的`calculateDetailedWinRates`函式計算律師於不同案件類型、不同立場下的勝訴率:
-
-```javascript
-export function calculateDetailedWinRates(processedCases = [], initialDetailedWinRatesStats) {
-  const detailedWinRatesStats = JSON.parse(JSON.stringify(initialDetailedWinRatesStats));
-
-  // 遍歷案件並統計
-  processedCases.forEach(caseInfo => {
-    const { mainType, sideFromPerf, neutralOutcomeCode } = caseInfo;
-    
-    // 驗證必要欄位是否存在
-    if (!neutralOutcomeCode || !mainType || mainType === 'unknown' || !sideFromPerf || sideFromPerf === 'unknown') {
-      // 處理無效案件
-      return;
-    }
-
-    // 取得目標統計桶
-    let targetRoleBucket;
-    if (['plaintiff', 'appellant', 'claimant'].includes(sideFromPerf)) {
-      targetRoleBucket = detailedWinRatesStats[mainType].plaintiff;
-    } else if (['defendant', 'appellee', 'respondent'].includes(sideFromPerf)) {
-      targetRoleBucket = detailedWinRatesStats[mainType].defendant;
-    } else {
-      // 處理未知角色
-      return;
-    }
-
-    // 案件總數加1
-    targetRoleBucket[FINAL_STAT_KEYS.TOTAL]++;
-    
-    // 根據不同結果代碼更新對應統計
-    let finalStatKeyToIncrement = FINAL_STAT_KEYS.OTHER_UNKNOWN;
-    
-    // 處理程序性/中性結果
-    if ([NEUTRAL_OUTCOME_CODES.PROCEDURAL_NEUTRAL, 
-         NEUTRAL_OUTCOME_CODES.CRIMINAL_CHARGE_DISMISSED_NO_PROSECUTION].includes(neutralOutcomeCode)) {
-      finalStatKeyToIncrement = FINAL_STAT_KEYS.PROCEDURAL;
-    } 
-    else if ([NEUTRAL_OUTCOME_CODES.SETTLEMENT_NEUTRAL, 
-              NEUTRAL_OUTCOME_CODES.WITHDRAWAL_NEUTRAL].includes(neutralOutcomeCode)) {
-      finalStatKeyToIncrement = FINAL_STAT_KEYS.NEUTRAL_SETTLEMENT;
-    }
-    // 處理不同案件類型的具體結果
-    else if (mainType === 'civil') {
-      if (sideFromPerf === 'plaintiff') {
-        // 原告角度判斷
-        if ([NEUTRAL_OUTCOME_CODES.CIVIL_P_WIN_FULL, 
-             NEUTRAL_OUTCOME_CODES.CIVIL_P_WIN_MAJOR].includes(neutralOutcomeCode)) {
-          finalStatKeyToIncrement = FINAL_STAT_KEYS.FAVORABLE_FULL;
-        }
-        // 更多判斷...
-      } 
-      else if (sideFromPerf === 'defendant') {
-        // 被告角度判斷
-        // ...
-      }
-    }
-    // 更多案件類型處理...
-    
-    // 更新計數
-    targetRoleBucket[finalStatKeyToIncrement]++;
-  });
-
-  // 計算整體勝訴率
-  ['civil', 'criminal', 'administrative'].forEach(mainType => {
-    const stats = detailedWinRatesStats[mainType];
-    if (!stats) return;
-    
-    let totalFavorable = 0;
-    let totalConsideredForRate = 0;
-    
-    ['plaintiff', 'defendant'].forEach(role => {
-      const roleStats = stats[role];
-      if (roleStats) {
-        // 計算有利結果總數
-        totalFavorable += (roleStats[FINAL_STAT_KEYS.FAVORABLE_FULL] || 0) + 
-                           (roleStats[FINAL_STAT_KEYS.FAVORABLE_PARTIAL] || 0);
-        
-        // 計算納入統計的總案件數
-        totalConsideredForRate += (roleStats[FINAL_STAT_KEYS.FAVORABLE_FULL] || 0) +
-                                 (roleStats[FINAL_STAT_KEYS.FAVORABLE_PARTIAL] || 0) +
-                                 (roleStats[FINAL_STAT_KEYS.UNFAVORABLE_FULL] || 0);
-      }
-    });
-    
-    // 計算百分比
-    stats.overall = totalConsideredForRate > 0 ? 
-      Math.round((totalFavorable / totalConsideredForRate) * 100) : 0;
-  });
-  
-  return detailedWinRatesStats;
-}
-```
-
-## 5. 安全與效能考量
-
-### 5.1 安全最佳實踐
-
-1. **身分認證與授權**:
-   - 使用Firebase Auth驗證ID Token
-   - 所有需授權的API端點使用`verifyToken`中介軟體
-   - 保護使用者資料，確保使用者僅能存取自己的資料
-
-2. **輸入驗證**:
-   - 對所有使用者輸入進行驗證
-   - 使用參數預設值與型別檢查增強健壯性
-   - 在控制器層進行初步驗證，服務層進行深度驗證
-
-3. **錯誤處理**:
-   - 統一錯誤處理機制
-   - 避免於生產環境暴露敏感錯誤資訊
-   - 使用標準錯誤代碼與訊息格式
-
-### 5.2 效能優化
-
-1. **Elasticsearch查詢優化**:
-   - 使用filter context減少計算負擔
-   - 適當使用欄位加權(field boosting)提升相關性
-   - 限制回傳欄位(_source過濾)減少資料傳輸
-
-2. **Firebase優化**:
-   - 使用Transaction確保資料一致性
-   - 使用批次操作減少請求數
-   - 優化資料結構與索引
-
-3. **快取策略**:
-   - 考慮實作Redis快取常用篩選器資料
-   - 實作用戶端快取策略(ETag, Cache-Control)
-   - 對靜態分析結果進行快取
-
-## 6. 擴充指南
-
-### 6.1 新增API端點
-
-1. **建立控制器函式**:
-   ```javascript
-   // controllers/new-feature-controller.js
-   export async function newFeatureController(req, res, next) {
-     try {
-       // 實作邏輯...
-       res.status(200).json(result);
-     } catch (error) {
-       next(error);
-     }
-   }
-   ```
-2. **新增服務函式**:
-   ```javascript
-   // services/relevant-service.js
-   export async function performNewFeature(params) {
-     try {
-       // 實作商業邏輯...
-       return result;
-     } catch (error) {
-       throw new Error('Failed to perform new feature');
-     }
-   }
-   ```
-3. **建立路由**:
-   ```javascript
-   // routes/new-feature.js
-   import express from 'express';
-   import { newFeatureController } from '../controllers/new-feature-controller.js';
-   import { verifyToken } from '../middleware/auth.js';
-   
-   const router = express.Router();
-   router.get('/', verifyToken, newFeatureController);
-   export default router;
-   ```
-4. **註冊路由**:
-   ```javascript
-   // routes/index.js
-   import newFeatureRoutes from './new-feature.js';
-   router.use('/new-feature', newFeatureRoutes);
-   ```
-
-### 6.2 修改點數規則
-
-若要修改現有功能的點數成本:
-
-1. **更新點數常數**:
-   ```javascript
-   // controllers/relevant-controller.js
-   // 修改常數值
-   const FEATURE_COST = 5; // 原本是2
-   ```
-2. **說明文件更新**:
-   更新API文件，告知使用者點數規則變更
-
-若要新增點數相關功能，如點數儲值、獎勵等，需擴充`services/credit.js`:
-
-```javascript
-// services/credit.js
-export async function addUserCredits(userId, amount, reason) {
-  const userDocRef = admin.firestore().collection('users').doc(userId);
-  
-  try {
-    await userDocRef.update({
-      credits: admin.firestore.FieldValue.increment(amount),
-      lastCreditAddedAt: admin.firestore.FieldValue.serverTimestamp(),
-      [`creditHistory.${Date.now()}`]: {
-        amount,
-        type: 'add',
-        reason,
-        timestamp: admin.firestore.FieldValue.serverTimestamp()
-      }
-    });
-    
-    return { success: true, amount };
-  } catch (error) {
-    console.error(`Error adding credits to user ${userId}:`, error);
-    throw new Error('Failed to add credits');
-  }
-}
-```
-
-## 7. 故障排除與紀錄
-
-### 7.1 常見問題
-
-1. **身分驗證失敗**:
-   - 檢查Firebase設定
-   - 驗證Token格式與有效期
-   - 查看紀錄中的具體錯誤代碼
-
-2. **點數交易問題**:
-   - 檢查Transaction執行是否完整
-   - 驗證使用者文件是否存在
-   - 查看點數餘額紀錄
-
-3. **Elasticsearch查詢問題**:
-   - 驗證ES連線狀態
-   - 檢查查詢語法是否正確
-   - 查看原始回應以取得錯誤細節
-
-### 7.2 紀錄策略
-
-專案採用分層紀錄策略:
-
-1. **請求紀錄**: 紀錄HTTP請求基本資訊
-   ```javascript
-   console.log(`[Request] ${new Date().toISOString()} ${req.method} ${req.originalUrl}`);
-   ```
-2. **服務層紀錄**: 紀錄商業操作
-   ```javascript
-   console.log(`[Search Service] Performing search with filters: ${JSON.stringify(searchFilters)}`);
-   ```
-3. **錯誤紀錄**: 紀錄詳細錯誤資訊
-   ```javascript
-   console.error(`[Credit Service] Error for user ${userId}:`, error);
-   ```
-4. **交易紀錄**: 紀錄關鍵商業交易
-   ```javascript
-   console.log(`[Transaction] Deducting ${cost} credit(s) from user ${userId}. New balance: ${newCredits}`);
-   ```
-
-## 8. 開發工作流程
-
-### 8.1 本地開發
-
-1. **環境設定**:
-   ```bash
-   # 複製儲存庫
-   git clone <repository-url>
-   cd boooook-backend
-
-   # 安裝相依套件
-   npm install
-
-   # 建立.env檔案
-   cp .env.example .env
-   # 編輯.env新增必要的環境變數
-   ```
-2. **啟動開發伺服器**:
-   ```bash
-   npm run dev
-   ```
-3. **測試API**:
-   使用Postman或類似工具測試API端點
-
-### 8.2 部署
-
-1. **準備工作**:
-   - 確認所有環境變數已設定
-   - 執行測試確保功能正常
-
-2. **建置**:
-   ```bash
-   npm run build
-   ```
-3. **部署選項**:
-   - **Docker容器**:
-     ```bash
-     docker build -t boooook-backend .
-     docker run -p 3000:3000 boooook-backend
-     ```
-   - **雲端服務**:
-     - 支援Google Cloud Run、AWS Lambda、Azure Functions等
+# Boooook 後端 API 文件
+
+## 目錄
+1. [專案簡介](#專案簡介)
+2. [專案結構與目錄說明](#專案結構與目錄說明)
+3. [安裝、環境變數與啟動](#安裝環境變數與啟動)
+4. [系統架構與核心流程](#系統架構與核心流程)
+5. [API 路由總覽](#api-路由總覽)
+6. [資料結構總覽](#資料結構總覽)
+7. [功能模組說明](#功能模組說明)
+8. [Middleware（中介軟體）](#middleware中介軟體)
+9. [錯誤處理與日誌策略](#錯誤處理與日誌策略)
+10. [維護與擴充建議](#維護與擴充建議)
+11. [FAQ/常見問題](#faq常見問題)
+12. [版本/更新紀錄](#版本更新紀錄)
 
 ---
 
-本文檔提供Boooook後端API的完整概覽。開發人員應結合程式碼與註解理解完整實作細節。針對特定功能修改，請參考對應模組並遵循現有模式。
+## 專案簡介
+
+Boooook 是一個司法資訊檢索與分析平台，後端採用 Node.js + Express，支援判決書檢索、律師/法官分析、AI 特徵分析、點數機制與使用者管理。
+
+**技術棧：**
+- Node.js + Express
+- Firebase Firestore（資料儲存、認證、點數）
+- Elasticsearch（判決書索引）
+- OpenAI API（AI 分析）
+- 前後端分離設計
+
+---
+
+## 專案結構與目錄說明
+
+```
+.
+├── config/                   # 設定檔
+│   ├── firebase.js           # Firebase 初始化
+│   ├── elasticsearch.js      # Elasticsearch 設定
+│   ├── environment.js        # 環境變數管理
+│   └── express.js            # Express 設定
+├── middleware/               # 中介軟體
+│   ├── auth.js               # 身分驗證
+│   └── credit.js             # 點數檢查
+├── services/                 # 商業邏輯
+│   ├── search.js             # 判決書搜尋
+│   ├── lawyer.js             # 律師分析
+│   ├── credit.js             # 點數管理
+│   ├── judgment.js           # 判決書詳情
+│   ├── user.js               # 使用者管理
+│   ├── aiAnalysisService.js  # 法官AI特徵分析
+│   └── judgeService.js       # 法官分析與聚合
+├── utils/                    # 工具函式
+│   ├── query-builder.js      # ES查詢建構
+│   ├── response-formatter.js # 回應格式化
+│   ├── case-analyzer.js      # 案件分析
+│   ├── win-rate-calculator.js # 勝訴率計算
+│   ├── constants.js          # 常數定義
+│   └── judgeAnalysisUtils.js # 法官案件聚合
+├── routes/                   # API 路由
+│   ├── index.js              # 主路由
+│   ├── search.js             # 搜尋
+│   ├── judgment.js           # 判決書詳情
+│   ├── lawyer.js             # 律師
+│   ├── user.js               # 使用者
+│   └── judge.js              # 法官
+├── controllers/              # 控制器
+│   ├── search-controller.js
+│   ├── judgment-controller.js
+│   ├── lawyer-controller.js
+│   ├── user-controller.js
+│   └── judgeController.js
+├── index.js                  # 進入點
+└── .env                      # 環境變數
+```
+
+---
+
+## 安裝、環境變數與啟動
+
+### 安裝
+```bash
+npm install
+```
+
+### 設定環境變數
+建立 `.env`，範例如下：
+```
+FIREBASE_PROJECT_ID=xxx
+FIREBASE_CLIENT_EMAIL=xxx
+FIREBASE_PRIVATE_KEY=xxx
+ELASTICSEARCH_NODE=http://localhost:9200
+OPENAI_API_KEY=sk-xxx
+OPENAI_MODEL_NAME=gpt-4.1
+```
+
+### 啟動
+```bash
+npm start
+# 或
+node index.js
+```
+
+---
+
+## 系統架構與核心流程
+
+- **認證**：前端取得 Firebase ID Token，後端用 middleware/auth.js 驗證。
+- **點數機制**：middleware/credit.js 檢查與扣除點數，所有需消耗點數 API 皆需掛載。
+- **資料查詢**：主要查詢來源為 Elasticsearch（判決書），用戶/點數/歷史紀錄等存於 Firestore。
+- **AI 分析**：法官分析時，先聚合統計（utils/judgeAnalysisUtils.js），再異步觸發 AI（services/aiAnalysisService.js），結果寫回 Firestore。
+- **錯誤處理**：所有錯誤統一傳遞至 Express 錯誤處理中介軟體。
+
+---
+
+## API 路由總覽
+
+| 路由                                | 方法 | 說明                       | 控制器/服務                      | 需驗證 | 點數成本 |
+|-------------------------------------|------|----------------------------|-----------------------------------|--------|----------|
+| /api/search                        | GET  | 判決書搜尋                 | search-controller.js/searchService| 是     | 1        |
+| /api/search/filters                | GET  | 搜尋篩選器                 | search-controller.js/searchService| 否     | 0        |
+| /api/judgments/:id                 | GET  | 判決書詳情                 | judgment-controller.js/judgment.js| 是     | 1        |
+| /api/lawyers/:name                 | GET  | 律師分析                   | lawyer-controller.js/lawyer.js    | 是     | 1~2      |
+| /api/lawyers/:name/cases-distribution | GET | 律師案件分布               | lawyer-controller.js/lawyer.js    | 是     | 1        |
+| /api/lawyers/:name/analysis        | GET  | 律師優劣勢分析             | lawyer-controller.js/lawyer.js    | 是     | 2        |
+| /api/users/lawyer-search-history   | GET  | 律師搜尋歷史               | user-controller.js/user.js        | 是     | 0        |
+| /api/judges/:name/analytics        | GET  | 法官分析（含AI）           | judgeController.js/judgeService   | 是     | 3        |
+| /api/judges/:name/ai-status        | GET  | 法官AI分析狀態             | judgeController.js/judgeService   | 是     | 0        |
+| /api/judges/:name/reanalyze        | POST | 重新觸發法官AI分析         | judgeController.js/judgeService   | 是     | 0        |
+
+---
+
+## 資料結構總覽
+
+### Firestore judges 文件結構
+
+| 欄位                | 型別      | 說明                                   |
+|---------------------|-----------|----------------------------------------|
+| name                | string    | 法官姓名                               |
+| caseStats           | object    | 案件統計（見下方說明）                 |
+| verdictDistribution | array     | 判決結果分布（見下方說明）             |
+| legalStats          | object    | 法條與理由強度統計（見下方說明）       |
+| caseTypeAnalysis    | object    | 主案件類型分析（見下方說明）           |
+| representativeCases | array     | 代表案件清單（見下方說明）             |
+| traits              | array     | AI 分析特徵標籤（見下方說明）          |
+| tendency            | object    | AI 裁判傾向分析（見下方說明）          |
+| processingStatus    | string    | 狀態：complete/partial/failed/no_cases_found |
+| aiProcessedAt       | timestamp | AI 分析完成時間                        |
+| lastUpdated         | timestamp | 文件最後更新時間                       |
+| processingError     | string    | AI 分析失敗時的錯誤訊息                |
+
+### Elasticsearch 案件欄位設計
+
+| 欄位                    | 型別      | 說明                       |
+|-------------------------|-----------|----------------------------|
+| JID                     | string    | 案件唯一識別碼             |
+| JYEAR                   | string    | 年度                       |
+| JCASE                   | string    | 案件字別                   |
+| JNO                     | string    | 案件號碼                   |
+| JDATE                   | string    | 裁判日期（YYYYMMDD）       |
+| JTITLE                  | string    | 案件標題                   |
+| court                   | string    | 法院名稱                   |
+| case_type               | string    | 案件類型                   |
+| verdict                 | string    | 判決主文                   |
+| verdict_type            | string    | 判決結果類型               |
+| summary_ai              | string/array | AI 產生之案件摘要         |
+| main_reasons_ai         | string/array | AI 產生之理由摘要         |
+| legal_basis             | array     | 法條依據                   |
+| outcome_reasoning_strength | string | 理由強度（高/中/低）      |
+| SCORE                   | number    | 案件分數（排序用）         |
+| lawyerperformance       | array     | 律師表現資料（見下方）     |
+| judges                  | array     | 法官名單                   |
+
+### API 回傳格式與狀態欄位
+
+- `status`：API 處理狀態，complete=全部完成，partial=AI 尚未完成，failed=失敗
+- `processingStatus`：Firestore 文件內部狀態，與 status 對應
+- `processingError`：AI 分析失敗時的錯誤訊息
+- `aiProcessedAt`、`lastUpdated`：時間戳記
+
+### 聚合統計物件結構
+
+#### caseStats
+```json
+{
+  "totalCases": 100,
+  "recentCases": 20,
+  "caseTypes": [
+    { "type": "民事", "count": 60, "percent": 60 }
+  ]
+}
+```
+#### verdictDistribution
+```json
+[
+  { "result": "原告勝訴", "count": 40, "percent": 40 }
+]
+```
+#### legalStats
+```json
+{
+  "legalBasis": [{ "code": "民法184", "count": 30 }],
+  "reasoningStrength": { "high": 50, "medium": 30, "low": 20 }
+}
+```
+#### caseTypeAnalysis
+```json
+{
+  "civil": {
+    "count": 60,
+    "plaintiffClaimFullySupportedRate": 0.5,
+    "plaintiffClaimPartiallySupportedRate": 0.2,
+    "plaintiffClaimDismissedRate": 0.1,
+    "settlementRate": 0.1,
+    "withdrawalRate": 0.05,
+    "proceduralDismissalRate": 0.05,
+    "averageClaimAmount": 100000,
+    "averageGrantedAmount": 80000,
+    "overallGrantedToClaimRatio": 80
+  }
+}
+```
+#### representativeCases
+```json
+[
+  {
+    "id": "xxx",
+    "title": "台北地院 112年度民訴字第123號",
+    "cause": "民事",
+    "result": "原告勝訴",
+    "year": "112",
+    "date": "20230101"
+  }
+]
+```
+
+### AI 分析欄位結構
+
+#### traits
+```json
+[
+  { "text": "重視程序正義", "icon": "⚖️", "confidence": "高" },
+  { "text": "判決用詞簡潔", "icon": "✍️", "confidence": "中" }
+]
+```
+- text：特徵描述（6-10字）
+- icon：單一 emoji
+- confidence：高/中/低
+
+#### tendency
+```json
+{
+  "dimensions": [
+    { "name": "舉證要求", "score": 4, "value": "偏高", "icon": "⚖️", "explanation": "多數案件要求完整證據鏈" }
+  ],
+  "chartData": {
+    "labels": ["舉證要求", "程序瑕疵敏感度", ...],
+    "data": [4, 3, ...]
+  }
+}
+```
+- dimensions：六大維度，每個含 name, score(1-5), value, icon, explanation
+- chartData：labels 與 data 對應維度
+
+#### 律師表現資料結構（lawyerperformance）
+```json
+[
+  {
+    "lawyer": "王小明",
+    "side": "plaintiff",
+    "claim_amount": 100000,
+    "granted_amount": 80000,
+    "percentage_awarded": 80,
+    "comment": "主張明確，部分獲准"
+  }
+]
+```
+
+---
+
+## 功能模組說明
+
+### 1. 使用者認證與點數機制
+- Firebase Auth 驗證，middleware/auth.js 驗證 ID Token。
+- middleware/credit.js 檢查與扣除點數，所有需消耗點數 API 皆需掛載。
+- 點數操作於 Firestore Transaction 內保證原子性。
+
+### 2. 判決書搜尋
+- 路由：`GET /api/search`
+- 控制器：search-controller.js
+- 服務：services/search.js
+- 支援多條件查詢、分頁、篩選器（/api/search/filters）
+
+### 3. 律師分析
+- 路由：`GET /api/lawyers/:name`
+- 控制器：lawyer-controller.js
+- 服務：services/lawyer.js
+- 提供案件分布、優劣勢、勝訴率等分析
+
+### 4. 法官分析與 AI 特徵
+- 路由：`GET /api/judges/:name/analytics`
+- 控制器：judgeController.js
+- 服務：services/judgeService.js、aiAnalysisService.js
+- 先聚合統計（utils/judgeAnalysisUtils.js），再異步觸發 AI 分析，結果寫回 Firestore
+- 支援輪詢 AI 狀態、重新分析
+
+### 5. 使用者歷史紀錄
+- 路由：`GET /api/users/lawyer-search-history`
+- 控制器：user-controller.js
+- 服務：services/user.js
+- 查詢律師搜尋歷史
+
+---
+
+## Middleware（中介軟體）
+
+- `middleware/auth.js`：驗證 Firebase ID Token，將驗證後的使用者資訊附加於 `req.user`，所有需授權 API 均需掛載。
+- `middleware/credit.js`：檢查並扣除使用者點數，依 API 設定不同點數成本，於 Firestore Transaction 內保證原子性。
+
+---
+
+## 錯誤處理與日誌策略
+
+- 所有控制器皆有 try/catch，錯誤統一傳遞至 Express 錯誤處理中介軟體。
+- 常見錯誤（如點數不足、認證失敗、AI 失敗）皆有明確 statusCode 與訊息。
+- 重要操作（如 AI 分析、資料更新）皆有 console.log/console.error 記錄，建議正式環境串接雲端日誌服務。
+
+---
+
+## 維護與擴充建議
+
+- 所有商業邏輯集中於 services/，便於單元測試與擴充。
+- 聚合分析、AI 分析等複雜邏輯建議獨立於 utils/ 或 services/，避免 controller 過重。
+- 新增 API 時，請同步於 README.md 路由總覽與資料結構章節補充說明。
+- 建議撰寫單元測試（可用 Jest/Mocha），並於 PR 時自動化檢查。
+
+---
+
+## FAQ/常見問題
+
+- Q: 如何新增一個新的 API？
+  - A: 於 routes/ 新增路由，controllers/ 新增控制器，services/ 實作商業邏輯，並於 README.md 路由總覽補充。
+- Q: 如何擴充 AI 分析？
+  - A: 於 services/aiAnalysisService.js 擴充分析邏輯，並同步更新資料結構說明。
+- Q: 如何本地測試？
+  - A: 參考「安裝、啟動」章節，建議搭配前端專案一同啟動。
+
+---
+
+## 版本/更新紀錄
+
+- 2025/05：重構文件，補充 AI/法官分析、資料結構、API 路由、維護建議等章節。
+- 2024/xx：初版文件。
+
+---
+
+### Elasticsearch Mapping 詳細說明
+
+本專案 search-boooook 索引的 mapping 結構如下，涵蓋欄位型別、複合欄位、analyzer、tokenizer、synonym filter 等設計：
+
+```json
+{
+  "search-boooook": {
+    "mappings": {
+      "properties": {
+        ...（此處省略，請見下方重點欄位與設計說明）
+      }
+    },
+    "settings": {
+      "index": {
+        "analysis": {
+          "filter": {
+            "legal_synonym": {
+              "type": "synonym",
+              "synonyms": [ ... ]
+            }
+          },
+          "analyzer": {
+            "legal_search_analyzer": {
+              "filter": ["lowercase", "legal_synonym", "cjk_bigram"],
+              "type": "custom",
+              "tokenizer": "standard"
+            },
+            "edge_ngram_analyzer": {
+              "filter": ["lowercase"],
+              "type": "custom",
+              "tokenizer": "edge_ngram_tokenizer"
+            },
+            "ngram_analyzer": {
+              "filter": ["lowercase"],
+              "type": "custom",
+              "tokenizer": "ngram_tokenizer"
+            },
+            "chinese_combined_analyzer": {
+              "filter": ["lowercase", "cjk_width", "cjk_bigram", "asciifolding"],
+              "type": "custom",
+              "tokenizer": "standard"
+            }
+          },
+          "tokenizer": {
+            "edge_ngram_tokenizer": {
+              "token_chars": ["letter", "digit", "punctuation", "symbol"],
+              "min_gram": "1",
+              "type": "edge_ngram",
+              "max_gram": "5"
+            },
+            "ngram_tokenizer": {
+              "token_chars": ["letter", "digit"],
+              "min_gram": "2",
+              "type": "ngram",
+              "max_gram": "3"
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+#### 主要欄位型別設計
+
+- `keyword`：精確比對（如 JID, JCASE, JDATE, JNO, case_type, legal_basis, verdict_type, is_ruling, ...）
+- `text`：全文檢索（如 JFULL, JTITLE, court, defendant, plaintiff, reason_text, main_text, summary_ai, ...）
+- `nested`：巢狀結構（如 lawyerperformance，內含 claim_amount, lawyer, side, comment, ...）
+- `integer`/`float`/`boolean`：數值與布林（如 JYEAR, SCORE, detention_days, claim_amount, ...）
+
+#### 重要複合欄位與 analyzer
+
+- `JFULL`, `JTITLE`, `summary_ai` 等欄位設有多重 analyzer（cjk、edge_ngram、ngram），支援中文分詞、模糊查詢、前綴查詢。
+- `judges`, `lawyers`, `lawyersdef` 欄位同時有 text（支援模糊/分詞）與 raw（keyword，支援精確比對），便於法官/律師名單查詢。
+- `lawyerperformance` 為 nested 結構，便於複雜聚合與條件查詢。
+
+#### 重要分析器設計
+
+- `legal_synonym` filter：大量法律、犯罪、民事、行政、金融、社會等領域同義詞，提升查詢涵蓋率。
+- `chinese_combined_analyzer`：結合 cjk_bigram、cjk_width、asciifolding，優化中文與混合文本檢索。
+- `edge_ngram_analyzer`/`ngram_analyzer`：支援前綴、模糊、部分字詞查詢，提升使用者體驗。
+
+#### 查詢應用建議
+
+- 精確查詢（如 JID、JCASE、verdict_type）請用 keyword/raw 欄位。
+- 模糊/全文查詢（如 JFULL, JTITLE, summary_ai）請用 text 欄位，並可指定 analyzer。
+- 法官、律師查詢建議用 `judges.raw`、`lawyers.raw` 精確比對，或用 text 欄位支援模糊搜尋。
+- 巢狀查詢（如 lawyerperformance）請用 nested query。
+
+#### mapping 片段（重點欄位）
+
+```json
+"JFULL": {
+  "type": "text",
+  "fields": {
+    "cjk": { "type": "text", "analyzer": "chinese_combined_analyzer" },
+    "edge_ngram": { "type": "text", "analyzer": "edge_ngram_analyzer", "search_analyzer": "standard" },
+    "ngram": { "type": "text", "analyzer": "ngram_analyzer", "search_analyzer": "standard" }
+  }
+},
+"judges": {
+  "type": "text",
+  "fields": { "raw": { "type": "keyword" } },
+  "analyzer": "edge_ngram_analyzer",
+  "search_analyzer": "standard"
+},
+"lawyerperformance": {
+  "type": "nested",
+  "properties": {
+    "lawyer": { "type": "text", "analyzer": "edge_ngram_analyzer" },
+    "side": { "type": "keyword" },
+    "claim_amount": { "type": "float", "ignore_malformed": true },
+    "granted_amount": { "type": "float", "ignore_malformed": true },
+    "comment": { "type": "text", "analyzer": "chinese_combined_analyzer" }
+    // ... 其餘欄位略
+  }
+}
+```
+
+---
