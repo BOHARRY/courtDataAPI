@@ -368,31 +368,122 @@ function analyzeJudgeCentricOutcome(source, mainType) {
 
     switch (mainType) {
         case 'civil':
-            if (verdictType.includes('和解') || verdict.includes('和解') || verdictType.includes('調解') || jfull.includes('達成和解') || jfull.includes('兩造調解成立')) return JUDGE_CENTRIC_OUTCOMES.CIVIL_SETTLEMENT;
-            if (verdictType.includes('撤回') || verdict.includes('原告撤回') || jfull.includes('原告撤回其訴')) return JUDGE_CENTRIC_OUTCOMES.CIVIL_PLAINTIFF_WITHDRAWAL;
+            // 1. 檢查和解/調解情況
+            if (verdictType.includes('和解') || verdict.includes('和解') ||
+                verdictType.includes('調解') || jfull.includes('達成和解') ||
+                jfull.includes('兩造調解成立') || jfull.includes('調解成立') ||
+                jfull.includes('和解成立'))
+                return JUDGE_CENTRIC_OUTCOMES.CIVIL_SETTLEMENT;
 
-            if (verdictType.includes('原告勝訴') || verdict.includes('應給付') || verdict.includes('應履行') || verdict.includes('確認建築權存在') /* 示例 */) {
-                // 檢查是否有 "其餘之訴駁回" 或 "部分駁回" 等字樣來判斷是否為部分勝訴
-                const isPartialWinKeywords = ['一部勝訴', '部分勝訴', '一部駁回', '部分駁回', '其餘之訴駁回', '其餘請求駁回'];
-                if (isPartialWinKeywords.some(kw => verdict.includes(kw) || verdictType.includes(kw) || jfull.includes(kw))) {
+            // 2. 檢查原告撤回情況
+            if (verdictType.includes('撤回') || verdict.includes('原告撤回') ||
+                jfull.includes('原告撤回其訴') || jfull.includes('撤回起訴') ||
+                jfull.includes('撤回本件訴訟'))
+                return JUDGE_CENTRIC_OUTCOMES.CIVIL_PLAINTIFF_WITHDRAWAL;
+
+            // 3. 檢查被告反訴成立情況
+            if (verdict.includes('反訴') && (verdict.includes('被告勝訴') || verdict.includes('反訴有理由') ||
+                verdict.includes('反訴成立') || jfull.includes('反訴成立') ||
+                jfull.includes('反訴有理由') || jfull.includes('被告反訴有理由')))
+                return JUDGE_CENTRIC_OUTCOMES.CIVIL_DEFENDANT_COUNTERCLAIM_WIN;
+
+            // 4. 檢查程序駁回情況
+            if (verdict.includes('程序駁回') || verdictType.includes('程序駁回') ||
+                jfull.includes('程序上不合法') || jfull.includes('訴顯無理由') ||
+                jfull.includes('未繳納裁判費') || jfull.includes('起訴不備要件') ||
+                jfull.includes('欠缺當事人適格') || jfull.includes('欠缺訴訟權能') ||
+                jfull.includes('未依法繳納') || jfull.includes('程序不合法'))
+                return JUDGE_CENTRIC_OUTCOMES.CIVIL_PROCEDURAL_DISMISSAL;
+
+            // 5. 檢查原告勝訴情況（完全或部分）
+            const plaintiffWinKeywords = [
+                '原告勝訴', '被告應給付', '被告應返還', '被告應支付',
+                '被告應賠償', '被告應履行', '被告應將', '確認...存在',
+                '被告應連帶給付', '確定...權利', '確認...關係',
+                '應給付原告', '給付原告', '應賠償原告'
+            ];
+
+            // 部分勝訴關鍵詞
+            const partialWinKeywords = [
+                '一部勝訴', '部分勝訴', '一部駁回', '部分駁回',
+                '其餘之訴駁回', '其餘請求駁回', '原告其餘之訴駁回',
+                '逾此範圍', '駁回其餘', '其餘部分駁回', '其他部分駁回',
+                '原告其餘請求駁回', '駁回原告其餘請求', '原告其他請求駁回'
+            ];
+
+            const plaintiffWinMatch = plaintiffWinKeywords.some(kw =>
+                verdict.includes(kw) || verdictType.includes(kw) ||
+                (kw.includes('...') && new RegExp(kw.replace(/\.\.\./g, '.*')).test(verdict + verdictType))
+            );
+
+            if (plaintiffWinMatch || verdict.includes('應給付') || verdict.includes('應履行')) {
+                // 檢查是否有部分勝訴的跡象
+                if (partialWinKeywords.some(kw => verdict.includes(kw) || verdictType.includes(kw) || jfull.includes(kw))) {
                     return JUDGE_CENTRIC_OUTCOMES.CIVIL_PLAINTIFF_WIN_PARTIAL;
                 }
-                // 如果有金額，且判准金額小於請求金額，也傾向是部分勝訴 (如果請求金額存在且大於0)
-                if (source.lawyerperformance && source.lawyerperformance[0]) {
-                    const perf = source.lawyerperformance[0];
-                    if (typeof perf.claim_amount === 'number' && perf.claim_amount > 0 && typeof perf.granted_amount === 'number' && perf.granted_amount < perf.claim_amount) {
+
+                // 檢查聲明與判決金額比對
+                if (source.lawyerperformance && Array.isArray(source.lawyerperformance) && source.lawyerperformance.length > 0) {
+                    // 檢查所有律師表現記錄
+                    for (const perf of source.lawyerperformance) {
+                        // 只檢查原告方律師
+                        if (perf.side === 'plaintiff' || perf.side === 'plaintiff') {
+                            // 檢查請求金額和獲准金額
+                            const claimAmount = typeof perf.claim_amount === 'number' ? perf.claim_amount :
+                                (Array.isArray(perf.claim_amount) && perf.claim_amount.length > 0 ? perf.claim_amount[0] : 0);
+
+                            const grantedAmount = typeof perf.granted_amount === 'number' ? perf.granted_amount :
+                                (Array.isArray(perf.granted_amount) && perf.granted_amount.length > 0 ? perf.granted_amount[0] : 0);
+
+                            // 如果有有效金額且判准少於請求，則為部分勝訴
+                            if (claimAmount > 0 && grantedAmount > 0 && grantedAmount < claimAmount) {
+                                return JUDGE_CENTRIC_OUTCOMES.CIVIL_PLAINTIFF_WIN_PARTIAL;
+                            }
+
+                            // 檢查百分比值
+                            const percentage = typeof perf.percentage_awarded === 'number' ? perf.percentage_awarded :
+                                (Array.isArray(perf.percentage_awarded) && perf.percentage_awarded.length > 0 ? perf.percentage_awarded[0] : 100);
+
+                            if (percentage < 95) { // 允許5%的誤差
+                                return JUDGE_CENTRIC_OUTCOMES.CIVIL_PLAINTIFF_WIN_PARTIAL;
+                            }
+                        }
+                    }
+                }
+
+                // 檢查判決主文中是否有分段式判決，這通常表示部分勝訴
+                if (verdict.split('；').length > 1 || verdict.split('。').length > 1) {
+                    const verdictParts = verdict.split(/[；。]/);
+                    let hasGrant = false;
+                    let hasDismiss = false;
+
+                    for (const part of verdictParts) {
+                        if (part.includes('應給付') || part.includes('應賠償') || part.includes('應返還')) {
+                            hasGrant = true;
+                        }
+                        if (part.includes('駁回') || part.includes('否准') || part.includes('不准許')) {
+                            hasDismiss = true;
+                        }
+                    }
+
+                    if (hasGrant && hasDismiss) {
                         return JUDGE_CENTRIC_OUTCOMES.CIVIL_PLAINTIFF_WIN_PARTIAL;
                     }
                 }
+
+                // 預設完全勝訴
                 return JUDGE_CENTRIC_OUTCOMES.CIVIL_PLAINTIFF_WIN_FULL;
             }
-            if (verdictType.includes('被告勝訴') || verdict.includes('駁回原告之訴') || verdict.includes('原告之訴駁回')) {
-                if (jfull.includes('程序上不合法') || jfull.includes('訴顯無理由') || jfull.includes('未繳納裁判費') || jfull.includes('起訴不備要件')) {
-                    return JUDGE_CENTRIC_OUTCOMES.CIVIL_PROCEDURAL_DISMISSAL;
-                }
+
+            // 6. 檢查原告敗訴情況
+            if (verdictType.includes('被告勝訴') || verdictType.includes('原告敗訴') ||
+                verdict.includes('駁回原告之訴') || verdict.includes('原告之訴駁回') ||
+                verdict.includes('駁回原告請求') || verdict.includes('原告請求駁回') ||
+                verdict.includes('原告請求全部駁回')) {
                 return JUDGE_CENTRIC_OUTCOMES.CIVIL_PLAINTIFF_CLAIM_DISMISSED;
             }
-            if (verdict.includes('程序駁回') || verdictType.includes('程序駁回')) return JUDGE_CENTRIC_OUTCOMES.CIVIL_PROCEDURAL_DISMISSAL;
+
+            // 7. 默認分類
             return JUDGE_CENTRIC_OUTCOMES.CIVIL_OTHER;
 
         case 'criminal':
