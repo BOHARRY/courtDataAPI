@@ -538,8 +538,15 @@ ${traitSamplesText}
 【整體統計】
 - 判決理由強度分佈: 高 ${overallReasoningStrength?.high || 0}件, 中 ${overallReasoningStrength?.medium || 0}件, 低 ${overallReasoningStrength?.low || 0}件
 
-基於以上提供的統計數據，並結合你對台灣司法實務的廣泛理解，請在以下六個維度上對法官 ${judgeName} 的可能傾向進行評分。評分範圍為1至5分，5分表示該傾向非常顯著，1分表示非常不顯著。
+請根據上述統計數據，並結合你對台灣司法實務的廣泛理解，在以下六個維度對法官 ${judgeName} 的可能傾向進行評分。評分範圍為1至5分，5分表示該傾向非常顯著，1分表示非常不顯著。
 同時，為每個維度提供一個簡短精確的解釋 (15-25個正體中文字，說明評分依據) 和一個相關的 emoji 圖標。
+
+**特別注意：**
+1. 每項評分「解釋」必須明確根據上方統計數據（如：特定比率、分佈），不可僅憑主觀推論。
+2. 如遇統計數據彼此間有明顯矛盾（例如舉證要求高但原告支持率也高），請於解釋內明確指出此矛盾，並給予保守或中立評分，避免強行推論。
+3. 若該維度數據不足或比率為0，請於解釋中標註「數據不足，暫以3分中立」或類似語句，切勿捏造解釋。
+4. 請確保 "value" 文字描述與 "score" 評分相對應（例如：score 1-2 對應偏低/保守/不顯著，score 3 對應中等/中立，score 4-5 對應偏高/顯著/寬鬆）。
+5. 必須**嚴格僅返回一個 JSON 格式的物件**，不得有任何多餘說明、文字、Markdown 或其他格式。
 
 六個評估維度:
 1.  **舉證要求** (法官對當事人證據提出標準的要求程度)
@@ -549,8 +556,7 @@ ${traitSamplesText}
 5.  **認定標準穩定性** (法官在類似案件中判決標準與理由的一致性程度)
 6.  **原告傾向性** (在民事或行政訴訟中，當事實或法律適用存在模糊空間時，相較於被告/行政機關，是否略微傾向原告方)
 
-輸出要求：
-請**嚴格僅返回一個 JSON 格式的物件**。此 JSON 物件的結構必須如下：
+輸出格式範例：
 {
   "dimensions": [
     { "name": "舉證要求", "score": /* 數字1-5 */, "value": "文字描述 (例如: 偏高/中等)", "icon": "⚖️", "explanation": "簡短解釋..." },
@@ -567,9 +573,9 @@ ${traitSamplesText}
   "note": "此裁判傾向分析基於提供的統計數據推估，並可能包含主觀詮釋，僅供參考，不構成任何法律建議。"
 }
 
-請確保 "value" 文字描述與 "score" 評分相對應（例如：score 1-2 對應偏低/保守/不顯著，score 3 對應中等/中立，score 4-5 對應偏高/顯著/寬鬆）。
-最終輸出必須是純粹的、單一的、符合上述結構的 JSON 物件，不包含任何額外的文字、註解或 Markdown 標記。
+最終輸出必須是純粹的、單一的、完全符合上述結構的 JSON 物件。
 `;
+
         console.log(`[AIAnalysisService] Tendency prompt constructed for ${judgeName}. Length: ${tendencyPrompt.length}. Calling OpenAI for tendency...`);
         // 這裡可以選擇使用不同的模型或參數
         console.log(`[AIAnalysisService] Tendency prompt for ${judgeName} (length: ${tendencyPrompt.length}):\n`, tendencyPrompt.substring(0, 500) + "...");

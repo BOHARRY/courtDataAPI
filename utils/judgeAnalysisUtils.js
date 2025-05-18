@@ -280,7 +280,7 @@ export function aggregateJudgeCaseData(esHits, judgeName) {
             };
         });
 
-    console.log(`[aggregateJudgeCaseData] Successfully aggregated data for ${judgeName}.`);
+    console.log("[aggregateJudgeCaseData] Final civil analysis entry:", JSON.stringify(analytics.caseTypeAnalysis.civil, null, 2));
     return analytics;
 }
 
