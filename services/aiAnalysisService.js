@@ -425,20 +425,17 @@ export async function triggerAIAnalysis(judgeName, casesData, baseAnalyticsData)
         const normalizedCases = casesData.map(normalizeCase);
         const sampleCasesForTraits = (() => {
             // 增加取樣數量
-            const maxSamples = Math.min(casesData.length, 10); // 增加到15個
+            const maxSamples = Math.min(casesData.length, 30); // 增加到15個
 
             // 如果案例數量足夠，嘗試多樣化選擇
             if (casesData.length > 20) {
                 // 從不同時期選擇案例，確保多樣性
                 const samples = [];
                 // 取最新的5個
-                samples.push(...casesData.slice(0, 5));
+                samples.push(...casesData.slice(0, 15));
                 // 取中間部分的5個
                 const middleIndex = Math.floor(casesData.length / 2);
-                samples.push(...casesData.slice(middleIndex, middleIndex + 5));
-                // 取較早的5個
-                samples.push(...casesData.slice(casesData.length - 5, casesData.length));
-                return samples;
+                samples.push(...casesData.slice(middleIndex, middleIndex + 15));
             }
             // 如果案例數量不足，就按順序取
             return normalizedCases.slice(0, maxSamples);
