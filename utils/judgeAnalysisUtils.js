@@ -277,6 +277,10 @@ export function aggregateJudgeCaseData(esHits, judgeName) {
                 result: s.verdict_type || s.verdict,
                 year: s.JYEAR,
                 date: s.JDATE, // 前端將會接收 "YYYYMMDD"
+                summary_ai: s.summary_ai || '', // 提供預設空字串
+                main_reasons_ai: Array.isArray(s.main_reasons_ai) ? s.main_reasons_ai : [], // 確保是陣列
+                lawyerperformance: Array.isArray(s.lawyerperformance) ? s.lawyerperformance : [], // 確保是陣列
+                case_type: s.case_type || '', // 提供一個明確的 case_type 欄位
             };
         });
 
