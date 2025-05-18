@@ -597,60 +597,76 @@ function analyzeJudgeCentricOutcome(source, mainType) {
             // 8. 默認其他民事結果
             return JUDGE_CENTRIC_OUTCOMES.CIVIL_OTHER;
 
-        // ... 其他案件類型處理 ...
+        // 刑事案件...
         case 'criminal':
-            // 1. 使用律師表現分析 - 優先使用這個更準確的數據源
+            // 1. 使用律師表現分析 - 最詳細和精確的資料來源
             if (source.lawyerperformance && Array.isArray(source.lawyerperformance) && source.lawyerperformance.length > 0) {
                 for (const perf of source.lawyerperformance) {
                     const side = Array.isArray(perf.side) ? perf.side[0] : perf.side;
                     const verdictText = Array.isArray(perf.verdict) ? perf.verdict[0] : String(perf.verdict || '');
 
-                    if (side === 'prosecutor' || side === 'defendant') {
-                        // 檢察官/被告代理律師的結果判斷
-                        if (verdictText.toLowerCase().includes('無罪')) {
-                            return JUDGE_CENTRIC_OUTCOMES.CRIMINAL_DEFENDANT_ACQUITTED;
-                        }
-                        if (verdictText.toLowerCase().includes('免訴')) {
-                            return JUDGE_CENTRIC_OUTCOMES.CRIMINAL_DEFENDANT_IMMUNITY;
-                        }
-                        if (verdictText.toLowerCase().includes('不受理')) {
-                            return JUDGE_CENTRIC_OUTCOMES.CRIMINAL_DEFENDANT_NOT_ACCEPTED;
-                        }
-                        if (verdictText.toLowerCase().includes('公訴駁回') || verdictText.toLowerCase().includes('自訴駁回')) {
-                            return JUDGE_CENTRIC_OUTCOMES.CRIMINAL_PROSECUTION_DISMISSED;
+                    // 不區分大小寫的比較
+                    const verdictLower = verdictText.toLowerCase();
+
+                    // 處理無罪和程序性結果
+                    if (verdictLower.includes('無罪')) {
+                        return JUDGE_CENTRIC_OUTCOMES.CRIMINAL_DEFENDANT_ACQUITTED;
+                    }
+                    if (verdictLower.includes('免訴')) {
+                        return JUDGE_CENTRIC_OUTCOMES.CRIMINAL_DEFENDANT_IMMUNITY;
+                    }
+                    if (verdictLower.includes('不受理') || verdictLower.includes('案件不受理')) {
+                        return JUDGE_CENTRIC_OUTCOMES.CRIMINAL_DEFENDANT_NOT_ACCEPTED;
+                    }
+                    if (verdictLower.includes('公訴駁回') || verdictLower.includes('自訴駁回')) {
+                        return JUDGE_CENTRIC_OUTCOMES.CRIMINAL_PROSECUTION_DISMISSED;
+                    }
+                    if (verdictLower.includes('程序性裁定') || verdictLower.includes('procedural')) {
+                        return JUDGE_CENTRIC_OUTCOMES.CRIMINAL_PROCEDURAL;
+                    }
+
+                    // 處理有罪但與量刑相關的結果
+                    if (verdictLower.includes('有罪')) {
+                        // 緩刑判決
+                        if (verdictLower.includes('緩刑')) {
+                            return JUDGE_CENTRIC_OUTCOMES.CRIMINAL_DEFENDANT_GUILTY_PROBATION;
                         }
 
-                        // 被告有罪類型判斷
-                        if (verdictText.toLowerCase().includes('有罪') || verdictText.toLowerCase().includes('判決有罪')) {
-                            if (verdictText.toLowerCase().includes('緩刑')) {
-                                return JUDGE_CENTRIC_OUTCOMES.CRIMINAL_DEFENDANT_GUILTY_PROBATION;
-                            }
-                            if (verdictText.toLowerCase().includes('罰金') && !verdictText.toLowerCase().includes('徒刑')) {
-                                return JUDGE_CENTRIC_OUTCOMES.CRIMINAL_DEFENDANT_GUILTY_FINE;
-                            }
-                            if (verdictText.toLowerCase().includes('徒刑') || verdictText.toLowerCase().includes('拘役')) {
-                                return JUDGE_CENTRIC_OUTCOMES.CRIMINAL_DEFENDANT_GUILTY_IMPRISONMENT;
-                            }
-                            if (verdictText.toLowerCase().includes('減刑') || verdictText.toLowerCase().includes('減輕')) {
-                                return JUDGE_CENTRIC_OUTCOMES.CRIMINAL_DEFENDANT_GUILTY_MITIGATED;
-                            }
-                            return JUDGE_CENTRIC_OUTCOMES.CRIMINAL_DEFENDANT_GUILTY_OTHER;
+                        // 減輕刑罰判決 - 包括顯著和略微減輕
+                        if (verdictLower.includes('減輕') ||
+                            verdictLower.includes('刑度低於求刑') ||
+                            verdictLower.includes('罪名減輕') ||
+                            verdictLower.includes('從輕量刑')) {
+                            return JUDGE_CENTRIC_OUTCOMES.CRIMINAL_DEFENDANT_GUILTY_MITIGATED;
                         }
 
-                        // 程序性結果
-                        if (verdictText.toLowerCase().includes('程序')) {
-                            return JUDGE_CENTRIC_OUTCOMES.CRIMINAL_PROCEDURAL;
+                        // 罰金判決
+                        if (verdictLower.includes('罰金') && !verdictLower.includes('徒刑') && !verdictLower.includes('拘役')) {
+                            return JUDGE_CENTRIC_OUTCOMES.CRIMINAL_DEFENDANT_GUILTY_FINE;
                         }
+
+                        // 徒刑判決 - 包括符合預期和依法量刑
+                        if (verdictLower.includes('徒刑') ||
+                            verdictLower.includes('拘役') ||
+                            verdictLower.includes('判刑') ||
+                            verdictLower.includes('符合預期') ||
+                            verdictLower.includes('刑度與求刑相當') ||
+                            verdictLower.includes('依法量刑')) {
+                            return JUDGE_CENTRIC_OUTCOMES.CRIMINAL_DEFENDANT_GUILTY_IMPRISONMENT;
+                        }
+
+                        // 其他有罪情況
+                        return JUDGE_CENTRIC_OUTCOMES.CRIMINAL_DEFENDANT_GUILTY_OTHER;
                     }
                 }
             }
 
-            // 2. 無罪、免訴、不受理和公訴駁回判斷
+            // 2. 無罪、免訴、不受理和公訴駁回判斷 - 使用更完整的關鍵詞列表
             const acquittalIndicators = [
                 '無罪', '不構成犯罪', '未能證明被告犯罪', '未達有罪確信', '不能證明',
                 '證據不足', '犯罪嫌疑不足', '未達有罪確信', '未能證明', '非犯罪行為',
                 '未違反法律', '無犯罪事實', '應諭知無罪', '諭知被告無罪',
-                '不能證明被告有何犯行', '不應科刑'
+                '不能證明被告有何犯行', '不應科刑', '無罪判決'
             ];
 
             const immunityIndicators = [
@@ -663,16 +679,17 @@ function analyzeJudgeCentricOutcome(source, mainType) {
                 '不受理', '管轄錯誤', '起訴程序不合法', '非受理法院', '應由其他法院審理',
                 '未具備合法要件', '程序違法', '欠缺訴訟條件', '檢察官不具備告訴權',
                 '未經合法告訴', '告訴乃論', '未經被害人告訴', '非告訴權人', '告訴逾期',
-                '未獲告訴人同意', '偵查未完備'
+                '未獲告訴人同意', '偵查未完備', '案件不受理', '聲請不受理'
             ];
 
             const prosecutionDismissalIndicators = [
                 '公訴駁回', '自訴駁回', '檢察官起訴駁回', '檢察官起訴違法', '起訴違法',
                 '起訴書未記載犯罪事實', '起訴書未法定要件', '起訴顯然違背法律規定',
                 '不合法定程式', '自訴程序不合法', '非有自訴權人', '非直接被害人',
-                '非偵查終結', '起訴違法'
+                '非偵查終結', '起訴違法', '檢察官指控未被受理'
             ];
 
+            // 檢查並返回相應結果
             if (checkAnyMatch(acquittalIndicators, [verdict, verdictType, summary]) &&
                 !checkAnyMatch(['部分無罪', '部分有罪', '犯有'], [verdict, verdictType, summary])) {
                 return JUDGE_CENTRIC_OUTCOMES.CRIMINAL_DEFENDANT_ACQUITTED;
@@ -690,34 +707,37 @@ function analyzeJudgeCentricOutcome(source, mainType) {
                 return JUDGE_CENTRIC_OUTCOMES.CRIMINAL_PROSECUTION_DISMISSED;
             }
 
-            // 3. 判斷有罪的各種情況
+            // 3. 判斷有罪的各種情況 - 增強判斷邏輯
             // 檢查有罪的指標
             const guiltyIndicators = [
                 '有罪', '犯有', '犯罪', '判處', '應執行', '處有期徒刑', '處拘役',
-                '處罰金', '科罰金', '處刑', '宣告刑', '定應執行刑', '量處', '犯'
+                '處罰金', '科罰金', '處刑', '宣告刑', '定應執行刑', '量處', '犯',
+                '依法量刑', '有期徒刑', '拘役', '罰金', '科刑', '判刑'
             ];
 
             const hasGuilty = checkAnyMatch(guiltyIndicators, [verdict, verdictType, summary]) ||
-                summary.includes('法院判決被告有罪');
+                summary.includes('法院判決被告有罪') ||
+                (source.verdict_type && source.verdict_type.includes('有罪'));
 
             if (hasGuilty) {
                 // 判斷是否為緩刑
                 const probationIndicators = [
                     '緩刑', '宣告緩刑', '緩期執行', '宣告二年緩刑', '宣告三年緩刑',
                     '宣告四年緩刑', '宣告五年緩刑', '宣告一年緩刑', '宣告六個月緩刑',
-                    '併宣告緩刑', '緩期'
+                    '併宣告緩刑', '緩期', '准予緩刑', '給予緩刑', '經爭取緩刑'
                 ];
 
                 if (checkAnyMatch(probationIndicators, [verdict, verdictType, summary])) {
                     return JUDGE_CENTRIC_OUTCOMES.CRIMINAL_DEFENDANT_GUILTY_PROBATION;
                 }
 
-                // 判斷是否為減刑
+                // 判斷是否為減刑 - 包括顯著和略微減輕
                 const mitigationIndicators = [
                     '減輕其刑', '酌減其刑', '減輕', '自首減刑', '自白減刑', '自新減刑',
-                    '累犯加重', '自首', '坦承犯行', '自白', '坦白', '累犯再加重',
-                    '減輕幅度', '減刑', '自白減輕', '自首減輕', '良好表現減輕',
-                    '減刑幅度', '減輕其刑', '減輕刑度'
+                    '自首', '坦承犯行', '自白', '坦白', '減輕幅度', '減刑',
+                    '自白減輕', '自首減輕', '良好表現減輕', '減刑幅度', '減輕其刑',
+                    '減輕刑度', '顯著減輕', '略微減輕', '刑度低於求刑', '罪名減輕',
+                    '從輕量刑', '從寬量刑', '經自首減刑', '經自首減輕'
                 ];
 
                 if (checkAnyMatch(mitigationIndicators, [verdict, verdictType, summary])) {
@@ -727,19 +747,30 @@ function analyzeJudgeCentricOutcome(source, mainType) {
                 // 判斷是否為徒刑
                 const imprisonmentIndicators = [
                     '有期徒刑', '處有期徒刑', '拘役', '處拘役', '併科拘役', '入獄',
-                    '執行徒刑', '應執行有期徒刑', '需服刑', '服刑'
+                    '執行徒刑', '應執行有期徒刑', '需服刑', '服刑', '判處徒刑',
+                    '判刑', '刑度與求刑相當', '符合預期', '依法量刑', '判處有期徒刑',
+                    '宣告徒刑', '執行刑', '應執行刑', '有罪判決'
                 ];
 
                 // 判斷是否為罰金
                 const fineIndicators = [
                     '罰金', '科罰金', '處罰金', '罰鍰', '併科罰金', '處以罰金',
-                    '罰款', '易科罰金', '科以罰金', '科處罰金', '科處'
+                    '罰款', '科以罰金', '科處罰金', '科處', '處以新臺幣'
+                ];
+
+                // 排除易科罰金的情況
+                const easyFineIndicators = [
+                    '易科罰金', '易服勞役', '易服社會勞動', '易科'
                 ];
 
                 // 同時檢查是否有徒刑和罰金
                 const hasImprisonment = checkAnyMatch(imprisonmentIndicators, [verdict, verdictType, summary]);
                 const hasFine = checkAnyMatch(fineIndicators, [verdict, verdictType, summary]) &&
-                    !checkAnyMatch(['易科罰金'], [verdict, verdictType, summary]); // 排除易科罰金
+                    !checkAnyMatch(imprisonmentIndicators, [verdict, verdictType, summary]) && // 確保沒有徒刑
+                    !verdictType.includes('徒刑');  // 再次確認判決類型不包含徒刑
+
+                // 排除易科罰金的情況
+                const hasEasyFine = checkAnyMatch(easyFineIndicators, [verdict, verdictType, summary]);
 
                 // 優先判斷徒刑
                 if (hasImprisonment) {
@@ -747,7 +778,7 @@ function analyzeJudgeCentricOutcome(source, mainType) {
                 }
 
                 // 純罰金
-                if (hasFine) {
+                if (hasFine && !hasEasyFine) {
                     return JUDGE_CENTRIC_OUTCOMES.CRIMINAL_DEFENDANT_GUILTY_FINE;
                 }
 
@@ -755,7 +786,7 @@ function analyzeJudgeCentricOutcome(source, mainType) {
                 return JUDGE_CENTRIC_OUTCOMES.CRIMINAL_DEFENDANT_GUILTY_OTHER;
             }
 
-            // 4. 程序性刑事結果
+            // 4. 程序性刑事結果 - 擴充關鍵詞列表
             const proceduralIndicators = [
                 '程序裁定', '程序判決', '管轄權', '程序不合法', '合併審理', '分離審理',
                 '移送管轄', '移送', '程序要件', '程序上', '併案審理', '證據調查',
@@ -763,10 +794,12 @@ function analyzeJudgeCentricOutcome(source, mainType) {
                 '指定辯護人', '審判長', '法官迴避', '鑑定人指定', '鑑定', '傳喚證人',
                 '通緝', '拘提', '羈押', '具保', '責付', '限制住居', '搜索',
                 '扣押', '勘驗', '調查證據', '簡式審判', '簡易判決', '協商程序',
-                '審判不公開', '傳聞證據', '證據能力'
+                '審判不公開', '傳聞證據', '證據能力', 'procedural', '程序性裁定',
+                '再開辯論', '程序性羈押延長', '犯罪嫌疑重大延長限制'
             ];
 
-            if (checkAnyMatch(proceduralIndicators, [verdict, verdictType, summary])) {
+            if (checkAnyMatch(proceduralIndicators, [verdict, verdictType, summary]) ||
+                isRuling) {
                 return JUDGE_CENTRIC_OUTCOMES.CRIMINAL_PROCEDURAL;
             }
 
@@ -784,6 +817,9 @@ function analyzeJudgeCentricOutcome(source, mainType) {
                     }
                     if (sentence.includes('罰金') && !sentence.includes('徒刑') && !sentence.includes('拘役')) {
                         return JUDGE_CENTRIC_OUTCOMES.CRIMINAL_DEFENDANT_GUILTY_FINE;
+                    }
+                    if (sentence.includes('減輕') || sentence.includes('減刑')) {
+                        return JUDGE_CENTRIC_OUTCOMES.CRIMINAL_DEFENDANT_GUILTY_MITIGATED;
                     }
                 }
             }
@@ -809,13 +845,7 @@ function analyzeJudgeCentricOutcome(source, mainType) {
                 return JUDGE_CENTRIC_OUTCOMES.CRIMINAL_DEFENDANT_GUILTY_OTHER;
             }
 
-            // 7. 檢查是否為程序性質
-            if (isRuling || summary.includes('裁定') || verdict.includes('裁定') ||
-                jcase.includes('裁') || mainReasons.some(r => r.includes('程序'))) {
-                return JUDGE_CENTRIC_OUTCOMES.CRIMINAL_PROCEDURAL;
-            }
-
-            // 8. 默認結果
+            // 7. 默認結果
             return JUDGE_CENTRIC_OUTCOMES.CRIMINAL_OTHER;
     }
 }
