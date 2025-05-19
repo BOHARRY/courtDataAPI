@@ -168,7 +168,7 @@ async function getJudgeSimilarCases(judgeName, complaintSummary) {
     // 這裡需與您的ES設置整合，先提供一個框架實現
     
     // 如果有ES客戶端，可以參考以下方式查詢:
-    /*
+
     const response = await esClient.search({
       index: 'search-boooook',
       body: {
@@ -204,38 +204,7 @@ async function getJudgeSimilarCases(judgeName, complaintSummary) {
         similarity: Math.round(hit._score * 10) // 根據ES評分計算相似度
       };
     });
-    */
     
-    // 暫時返回模擬數據
-    return [
-      {
-        id: "109-345",
-        title: "台北地方法院 109年度訴字第345號",
-        summary: "房屋租賃修繕糾紛，法官判定房東應進行修繕並賠償因漏水導致的損失",
-        cause: "租賃糾紛",
-        result: "原告勝訴",
-        date: "2020-05-12",
-        similarity: 87
-      },
-      {
-        id: "111-789",
-        title: "台北地方法院 111年度訴字第789號",
-        summary: "房屋修繕爭議案件，因缺乏損害因果關係證明，部分訴求被駁回",
-        cause: "租賃糾紛",
-        result: "原告部分勝訴",
-        date: "2022-08-25",
-        similarity: 75
-      },
-      {
-        id: "110-456",
-        title: "台北地方法院 110年度訴字第456號",
-        summary: "因房東未履行修繕義務導致承租人財產損失，法官裁定全額賠償",
-        cause: "租賃糾紛",
-        result: "原告勝訴",
-        date: "2021-03-18",
-        similarity: 68
-      }
-    ];
   } catch (error) {
     console.error('獲取相似案例錯誤:', error);
     // 發生錯誤時返回空數組，避免整個分析失敗
