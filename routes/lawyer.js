@@ -13,7 +13,19 @@ const router = express.Router();
 // 積分檢查將在控制器內部與服務層結合的 Transaction 中處理
 
 // 搜尋律師並獲取其案件資料 (GET /api/lawyers/:name)
-router.get('/:name', verifyToken, searchLawyerByNameController);
+router.get(
+    '/:name',
+    verifyToken,
+    checkAndDeductCredits(
+        CREDIT_COSTS.LAWYER_PROFILE_BASIC,
+        CREDIT_PURPOSES.LAWYER_PROFILE_BASIC,
+        {
+            description: '查詢律師基本資料與案件列表',
+            relatedIdKey: 'params.name' // 從 req.params.name 獲取律師名
+        }
+    ),
+    searchLawyerByNameController
+);
 
 // 獲取律師案件類型分佈 (GET /api/lawyers/:name/cases-distribution)
 // 注意：原程式碼中此路由的實現是返回固定數據，我們將遵循該邏輯
