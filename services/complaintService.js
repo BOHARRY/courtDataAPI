@@ -253,7 +253,7 @@ export async function checkJudgeExists(judgeName) {
     // 這裡使用最基本的查詢，並按日期降序排序，只取一條記錄
     
     // 以下是模擬的ES查詢框架，實際實現時替換
-    /*
+
     const response = await esClient.search({
       index: 'search-boooook',
       body: {
@@ -281,36 +281,11 @@ export async function checkJudgeExists(judgeName) {
         exists: false
       };
     }
-    */
+
     
     // 為了示範，這裡使用模擬邏輯
     // 在實際實現中，替換為真實的ES查詢
-    
-    // 隨機模擬是否找到法官
-    const randomFound = Math.random() > 0.3; // 70%機率找到
-    
-    if (randomFound) {
-      // 模擬找到法官的情況
-      const courtOptions = [
-        '臺灣臺北地方法院',
-        '臺灣高等法院',
-        '臺灣新北地方法院',
-        '臺灣高雄地方法院',
-        '臺灣最高法院'
-      ];
-      
-      const randomCourt = courtOptions[Math.floor(Math.random() * courtOptions.length)];
-      
-      return {
-        exists: true,
-        lastCourt: randomCourt
-      };
-    } else {
-      // 模擬未找到法官的情況
-      return {
-        exists: false
-      };
-    }
+  
     
   } catch (error) {
     console.error('查詢法官存在性錯誤:', error);
