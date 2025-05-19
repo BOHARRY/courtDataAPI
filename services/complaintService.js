@@ -243,6 +243,82 @@ async function getJudgeSimilarCases(judgeName, complaintSummary) {
 }
 
 /**
+ * 檢查法官是否存在並返回最近判決資訊
+ * @param {string} judgeName - 法官姓名
+ * @returns {Promise<Object>} 檢查結果
+ */
+export async function checkJudgeExists(judgeName) {
+  try {
+    // 使用Elasticsearch查詢，只取最近一筆判決
+    // 這裡使用最基本的查詢，並按日期降序排序，只取一條記錄
+    
+    // 以下是模擬的ES查詢框架，實際實現時替換
+    /*
+    const response = await esClient.search({
+      index: 'search-boooook',
+      body: {
+        query: {
+          match: { "judges": judgeName }
+        },
+        sort: [
+          { "JDATE": { "order": "desc" } }  // 按日期降序排序
+        ],
+        _source: ["court"],  // 只需要法院信息
+        size: 1  // 只取一條記錄
+      }
+    });
+    
+    if (response.hits.total.value > 0) {
+      // 有記錄，返回存在以及最近判決法院
+      const lastCourt = response.hits.hits[0]._source.court || '未知法院';
+      return {
+        exists: true,
+        lastCourt: lastCourt
+      };
+    } else {
+      // 無記錄
+      return {
+        exists: false
+      };
+    }
+    */
+    
+    // 為了示範，這裡使用模擬邏輯
+    // 在實際實現中，替換為真實的ES查詢
+    
+    // 隨機模擬是否找到法官
+    const randomFound = Math.random() > 0.3; // 70%機率找到
+    
+    if (randomFound) {
+      // 模擬找到法官的情況
+      const courtOptions = [
+        '臺灣臺北地方法院',
+        '臺灣高等法院',
+        '臺灣新北地方法院',
+        '臺灣高雄地方法院',
+        '臺灣最高法院'
+      ];
+      
+      const randomCourt = courtOptions[Math.floor(Math.random() * courtOptions.length)];
+      
+      return {
+        exists: true,
+        lastCourt: randomCourt
+      };
+    } else {
+      // 模擬未找到法官的情況
+      return {
+        exists: false
+      };
+    }
+    
+  } catch (error) {
+    console.error('查詢法官存在性錯誤:', error);
+    throw new Error('查詢法官資訊時發生錯誤，請稍後再試');
+  }
+}
+
+/**
  * 將判決結果代碼轉換為可讀文字
  * @param {string} verdictType - 判決結果類型代碼
  * @returns {string} 可讀的判決結果文字

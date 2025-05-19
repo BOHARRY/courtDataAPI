@@ -33,7 +33,47 @@ export async function validateComplaintText(req, res) {
     });
   }
 }
-
+/**
+ * 檢驗法官是否存在並返回最近判決資訊
+ * @param {Request} req - Express 請求對象
+ * @param {Response} res - Express 響應對象
+ */
+export async function checkJudgeExists(req, res) {
+  try {
+    const { judgeName } = req.body;
+    
+    if (!judgeName || judgeName.trim() === '') {
+      return res.status(400).json({
+        status: 'error',
+        message: '請提供法官姓名'
+      });
+    }
+    
+    const result = await complaintService.checkJudgeExists(judgeName);
+    
+    if (result.exists) {
+      return res.status(200).json({
+        status: 'success',
+        exists: true,
+        message: `有查詢到此法官，最近一次判決在：${result.lastCourt}`,
+        lastCourt: result.lastCourt
+      });
+    } else {
+      return res.status(200).json({
+        status: 'success',
+        exists: false,
+        message: '查無此法官，請確認是否為近三年在職法官或是否輸入錯誤名字'
+      });
+    }
+  } catch (error) {
+    console.error('檢驗法官存在性錯誤:', error);
+    return res.status(500).json({
+      status: 'error',
+      message: '檢驗法官時發生錯誤',
+      error: error.message
+    });
+  }
+}
 /**
  * 分析訴狀與法官匹配度
  * @param {Request} req - Express 請求對象
