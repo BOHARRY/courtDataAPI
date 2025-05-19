@@ -2,6 +2,7 @@
 import OpenAI from 'openai';
 import admin from 'firebase-admin';
 import { OPENAI_API_KEY } from '../config/environment.js';
+import esClient from '../config/elasticsearch.js';
 
 const openai = new OpenAI({
   apiKey: OPENAI_API_KEY,
