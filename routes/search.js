@@ -12,8 +12,6 @@ const router = express.Router();
 // 應用 checkAndDeductCredits 中間件處理積分 (假設搜尋成本為 1)
 // 注意：checkAndDeductCredits 返回的是一個配置好的中間件函數
 // 我們將在服務層處理積分邏輯，以利用 Firestore transaction
-router.get('/', verifyToken, checkAndDeductCredits(1, 'search_judgement', {description: '判例搜尋'}), searchController.searchCases);
-
 router.get(
     '/',
     verifyToken,
