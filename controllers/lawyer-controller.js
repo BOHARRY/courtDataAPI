@@ -1,15 +1,11 @@
 // controllers/lawyer-controller.js
 import * as lawyerService from '../services/lawyer.js';
-import * as creditService from '../services/credit.js'; // 引入積分服務
-import * as userService from '../services/user.js'; // 引入用戶服務 (用於記錄歷史)
-import admin from 'firebase-admin';
+import * as userService from '../services/user.js'; // 用於記錄歷史
 
-const LAWYER_SEARCH_COST = 1;
-const LAWYER_ANALYSIS_COST = 2;
-const LAWYER_CASES_DISTRIBUTION_COST = 1; // 根據原程式碼的註解
+// 成本定義已移至 config/creditCosts.js，此處不再需要局部成本變數
 
 export async function searchLawyerByNameController(req, res, next) {
-  const userId = req.user.uid;
+  const userId = req.user.uid; // 來自 verifyToken
   const lawyerName = req.params.name;
 
   if (!lawyerName) {
@@ -17,168 +13,71 @@ export async function searchLawyerByNameController(req, res, next) {
   }
 
   // console.log(`[Lawyer Controller - Search] User: ${userId} searching for lawyer: ${lawyerName}`);
-  const userDocRef = admin.firestore().collection('users').doc(userId);
 
   try {
-    let lawyerApiData = null;
-
-    await admin.firestore().runTransaction(async (transaction) => {
-      // 1. 檢查並扣除積分
-      const { sufficient, currentCredits } = await creditService.checkAndDeductUserCreditsInTransaction(
-        transaction,
-        userDocRef,
-        userId,
-        LAWYER_SEARCH_COST,
-        { action: 'lawyer_search', details: { lawyerName } }
-      );
-
-      if (!sufficient) {
-        const error = new Error('Insufficient credits');
-        error.statusCode = 402;
-        error.details = { required: LAWYER_SEARCH_COST, current: currentCredits };
-        throw error;
-      }
-
-      // 2. 執行律師搜尋 (調用 lawyerService)
-      lawyerApiData = await lawyerService.searchLawyerData(lawyerName);
-    });
+    // 直接執行律師搜尋 (調用 lawyerService)
+    // 積分已由路由層的 checkAndDeductCredits 中介軟體處理
+    const lawyerApiData = await lawyerService.searchLawyerData(lawyerName);
 
     if (lawyerApiData) {
-      // 3. 異步記錄搜尋歷史 (Transaction 成功後執行)
+      // 異步記錄搜尋歷史
       try {
         await userService.addLawyerSearchHistory(userId, lawyerName, lawyerApiData.cases.length > 0);
       } catch (historyError) {
         console.error(`[Lawyer Controller - Search] Failed to record search history for user ${userId}, lawyer ${lawyerName}:`, historyError);
-        // 記錄歷史失敗不應影響主操作成功的回應
       }
       res.status(200).json(lawyerApiData);
     } else {
-      // 即使 service 返回了空的有效結構 (例如無案件)，也應該是 200
-      // 這裡的 else 更多是針對 transaction 成功但 lawyerApiData 意外為 null 的情況
-      console.error(`[Lawyer Controller - Search] Transaction succeeded but lawyerApiData is unexpectedly null for ${lawyerName}.`);
-      const err = new Error('Internal server error after lawyer search (empty response).');
-      err.statusCode = 500;
-      next(err);
+      // 服務層應確保返回有效結構或拋出錯誤
+      // 如果 lawyerApiData 為 null 或 undefined，可能表示服務層邏輯問題或律師不存在
+      // 根據您的 lawyerService.searchLawyerData 的行為決定如何響應
+      // 假設如果找不到律師，service 會返回一個表示 "not found" 的特定結構或 null
+      // 如果返回 null，可以視為 404 Not Found
+      console.warn(`[Lawyer Controller - Search] No data found for lawyer: ${lawyerName}.`);
+      return res.status(404).json({ message: `Lawyer "${lawyerName}" not found.` });
     }
   } catch (error) {
     // console.error(`[Lawyer Controller - Search Error] User: ${userId}, Lawyer: ${lawyerName}, Error:`, error.message);
-    if (error.message === 'Insufficient credits' && error.statusCode === 402) {
-      return res.status(402).json({
-        error: '您的積分不足，請購買積分或升級方案。',
-        required: error.details?.required || LAWYER_SEARCH_COST,
-        current: error.details?.current || 0
-      });
-    }
-    if (error.message === 'User data not found.' && error.statusCode === 404) {
-        return res.status(404).json({
-            error: '找不到您的用戶資料，請嘗試重新登入。'
-        });
-    }
-    next(error);
+    // 這裡的錯誤主要是 lawyerService 可能拋出的錯誤
+    next(error); // 交給全局錯誤處理器
   }
 }
 
 export async function getLawyerCasesDistributionController(req, res, next) {
-  const userId = req.user.uid;
-  const lawyerName = req.params.name; // 雖然目前服務層不使用，但保持一致性
+  // const userId = req.user.uid; // 來自 verifyToken
+  const lawyerName = req.params.name;
 
-  // console.log(`[Lawyer Controller - Cases Distribution] User: ${userId} requesting for lawyer: ${lawyerName}`);
-  const userDocRef = admin.firestore().collection('users').doc(userId);
+  // console.log(`[Lawyer Controller - Cases Distribution] Requesting for lawyer: ${lawyerName}`);
 
   try {
-     let distributionData = null;
-     await admin.firestore().runTransaction(async (transaction) => {
-         // 1. 檢查並扣除積分
-         const { sufficient, currentCredits } = await creditService.checkAndDeductUserCreditsInTransaction(
-             transaction,
-             userDocRef,
-             userId,
-             LAWYER_CASES_DISTRIBUTION_COST,
-             { action: 'lawyer_cases_distribution', details: { lawyerName } }
-         );
-         if (!sufficient) {
-             const error = new Error('Insufficient credits');
-             error.statusCode = 402;
-             error.details = { required: LAWYER_CASES_DISTRIBUTION_COST, current: currentCredits };
-             throw error;
-         }
-         // 2. 獲取案件分佈數據 (目前是固定數據)
-         distributionData = lawyerService.getStaticLawyerCasesDistribution(lawyerName); // 假設服務中有此方法
-     });
-
+    // 積分已由路由層的 checkAndDeductCredits 中介軟體處理
+    const distributionData = lawyerService.getStaticLawyerCasesDistribution(lawyerName);
     res.status(200).json(distributionData);
   } catch (error) {
-    // console.error(`[Lawyer Controller - Cases Distribution Error] User: ${userId}, Lawyer: ${lawyerName}, Error:`, error.message);
-     if (error.message === 'Insufficient credits' && error.statusCode === 402) {
-         return res.status(402).json({
-         error: '您的積分不足，請購買積分或升級方案。',
-         required: error.details?.required || LAWYER_CASES_DISTRIBUTION_COST,
-         current: error.details?.current || 0
-         });
-     }
-     if (error.message === 'User data not found.' && error.statusCode === 404) {
-         return res.status(404).json({
-             error: '找不到您的用戶資料，請嘗試重新登入。'
-         });
-     }
+    // console.error(`[Lawyer Controller - Cases Distribution Error] Lawyer: ${lawyerName}, Error:`, error.message);
     next(error);
   }
 }
 
 export async function getLawyerAnalysisController(req, res, next) {
-  const userId = req.user.uid;
+  // const userId = req.user.uid; // 來自 verifyToken
   const lawyerName = req.params.name;
-  // console.log(`[Lawyer Controller - Analysis] User: ${userId} requesting analysis for lawyer: ${lawyerName}`);
-  const userDocRef = admin.firestore().collection('users').doc(userId);
+  // console.log(`[Lawyer Controller - Analysis] Requesting analysis for lawyer: ${lawyerName}`);
 
   try {
-     let analysisData = null;
-     await admin.firestore().runTransaction(async (transaction) => {
-         // 1. 檢查並扣除積分
-         const { sufficient, currentCredits } = await creditService.checkAndDeductUserCreditsInTransaction(
-             transaction,
-             userDocRef,
-             userId,
-             LAWYER_ANALYSIS_COST,
-             { action: 'lawyer_analysis', details: { lawyerName } }
-         );
-         if (!sufficient) {
-             const error = new Error('Insufficient credits');
-             error.statusCode = 402; // 注意這裡原碼是 402，但 message 不同
-             error.details = { required: LAWYER_ANALYSIS_COST, current: currentCredits };
-             throw error;
-         }
-         // 2. 生成/獲取律師分析 (目前是基於模板)
-         // 假設 lawyerService 有一個方法可以獲取 analyzeLawyerData 的結果，然後傳給 generateLawyerAnalysis
-         // const analyzedCaseData = await lawyerService.getAnalyzedLawyerCaseData(lawyerName); // 這步可能也需要ES查詢
-         // analysisData = lawyerService.generateDynamicLawyerAnalysis(lawyerName, analyzedCaseData);
-         // 簡化：直接使用 utils 中的 generateLawyerAnalysis
-         analysisData = lawyerService.getGeneratedLawyerAnalysis(lawyerName); // 服務層封裝 utils 的調用
-     });
+    // 積分已由路由層的 checkAndDeductCredits 中介軟體處理
+    const analysisData = lawyerService.getGeneratedLawyerAnalysis(lawyerName);
 
     if (analysisData) {
       res.status(200).json(analysisData);
     } else {
-      // 正常情況下，基於模板的分析總會有數據
-      // 但如果未來是動態生成且可能失敗
+      // 如果 getGeneratedLawyerAnalysis 可能返回 null
       const err = new Error(`Could not generate analysis for lawyer "${lawyerName}".`);
-      err.statusCode = 404; // 或者 500，取決於原因
+      err.statusCode = 404;
       next(err);
     }
   } catch (error) {
-    // console.error(`[Lawyer Controller - Analysis Error] User: ${userId}, Lawyer: ${lawyerName}, Error:`, error.message);
-    if (error.message === 'Insufficient credits' && error.statusCode === 402) {
-      return res.status(402).json({
-        error: '生成分析需要額外積分，請購買積分或升級方案。', // 與原碼 message 保持一致
-        required: error.details?.required || LAWYER_ANALYSIS_COST,
-        current: error.details?.current || 0
-      });
-    }
-    if (error.message === 'User data not found.' && error.statusCode === 404) {
-        return res.status(404).json({
-            error: '找不到您的用戶資料，請嘗試重新登入。'
-        });
-    }
+    // console.error(`[Lawyer Controller - Analysis Error] Lawyer: ${lawyerName}, Error:`, error.message);
     next(error);
   }
 }

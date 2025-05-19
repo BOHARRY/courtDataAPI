@@ -2,15 +2,15 @@
 import express from 'express';
 import {
   searchLawyerByNameController,
-  getLawyerCasesDistributionController, // 假設這是新功能，來自原碼的 /api/lawyers/:name/cases-distribution
+  getLawyerCasesDistributionController,
   getLawyerAnalysisController
 } from '../controllers/lawyer-controller.js';
 import { verifyToken } from '../middleware/auth.js';
 import { checkAndDeductCredits } from '../middleware/credit.js';
-import { CREDIT_COSTS, CREDIT_PURPOSES } from '../config/creditCosts.js'; // <--- 引入成本和用途常數
-// 積分檢查將在控制器內部與服務層結合的 Transaction 中處理
+import { CREDIT_COSTS, CREDIT_PURPOSES } from '../config/creditCosts.js';
 
 const router = express.Router();
+// 積分檢查將在控制器內部與服務層結合的 Transaction 中處理
 
 // 搜尋律師並獲取其案件資料 (GET /api/lawyers/:name)
 router.get('/:name', verifyToken, searchLawyerByNameController);
@@ -22,8 +22,8 @@ router.get(
   '/:name/cases-distribution',
   verifyToken,
   checkAndDeductCredits(
-    CREDIT_COSTS.SEARCH_JUDGEMENT, // <--- 使用常數
-    CREDIT_PURPOSES.LAWYER_CASES_DISTRIBUTION, // <--- 使用常數
+    CREDIT_COSTS.LAWYER_CASES_DISTRIBUTION, // 使用了新的成本定義
+    CREDIT_PURPOSES.LAWYER_CASES_DISTRIBUTION,
     {
       description: '查詢律師案件分布',
       relatedIdKey: 'params.name'
