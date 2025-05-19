@@ -1,175 +1,61 @@
 // controllers/judgeController.js
 import * as judgeService from '../services/judgeService.js';
-import * as creditService from '../services/credit.js'; // <<--- 引入 creditService
-import admin from 'firebase-admin';
-
-// 注意：點數成本的定義可以放在這裡，或者從 constants.js 引入
-// 為了與路由文件中的示例保持一致，這裡假設它們是在路由層傳入 checkAndDeductCredits 中介軟體的
-
-const JUDGE_ANALYTICS_BASE_COST = 2;
-const JUDGE_REANALYZE_COST = 1;
 
 export async function getJudgeAnalyticsController(req, res, next) {
-    const userId = req.user.uid;
-    const judgeName = req.params.judgeName;
+  // userId 已經由 verifyToken (和即將加入的 checkAndDeductCredits) 處理
+  const judgeName = req.params.judgeName;
 
-    if (!judgeName) {
-        return res.status(400).json({ error: 'Bad Request', message: 'Judge name is required in URL path.' });
+  if (!judgeName) {
+    return res.status(400).json({ error: 'Bad Request', message: 'Judge name is required.' });
+  }
+
+  // console.log(`[Judge Controller - Analytics] User: ${req.user.uid} requesting analytics for judge: ${judgeName}`);
+
+  try {
+    // 積分已由路由層的 checkAndDeductCredits 中介軟體處理
+    const result = await judgeService.getJudgeAnalytics(judgeName);
+
+    // judgeService 返回的結果結構是 { status: "complete" | "partial", data: object }
+    // status 用於前端判斷是否需要輪詢 AI 狀態
+    if (result && result.data) {
+      res.status(200).json(result); // 直接將服務層返回的完整結果傳給前端
+    } else {
+      // 這種情況理論上不應發生，因為 judgeService 會處理錯誤或無數據的情況
+      console.error(`[Judge Controller - Analytics] Unexpected empty result from judgeService for judge: ${judgeName}`);
+      const err = new Error('Internal server error while fetching judge analytics.');
+      err.statusCode = 500;
+      next(err);
     }
-
-    console.log(`[JudgeController] User: ${userId} requesting analytics for judge: ${judgeName}`);
-    const userDocRef = admin.firestore().collection('users').doc(userId);
-
-    try {
-        let analyticsResult = null;
-
-        await admin.firestore().runTransaction(async (transaction) => {
-            // 1. 檢查並扣除積分
-            const { sufficient, currentCredits } = await creditService.checkAndDeductUserCreditsInTransaction(
-                transaction,
-                userDocRef,
-                userId,
-                JUDGE_ANALYTICS_BASE_COST,
-                { action: 'judge_analytics_fetch', details: { judgeName } }
-            );
-
-            if (!sufficient) {
-                const error = new Error('Insufficient credits');
-                error.statusCode = 402;
-                error.details = { required: JUDGE_ANALYTICS_BASE_COST, current: currentCredits };
-                throw error; // 拋出以便外層 catch 捕獲並返回 402
-            }
-
-            // 2. 執行獲取法官分析數據的服務
-            analyticsResult = await judgeService.getJudgeAnalytics(judgeName);
-        });
-
-        // Transaction 成功完成
-        if (analyticsResult && analyticsResult.data) {
-            console.log(`[JudgeController] Successfully retrieved analytics for ${judgeName}. Status: ${analyticsResult.status}`);
-            res.status(200).json({
-                status: analyticsResult.status,
-                data: analyticsResult.data,
-            });
-        } else {
-            console.error(`[JudgeController] Transaction succeeded but service returned unexpected result for ${judgeName}:`, analyticsResult);
-            const err = new Error(`Failed to get analytics for judge "${judgeName}" (unexpected service response after transaction).`);
-            err.statusCode = 500;
-            next(err);
-        }
-    } catch (error) {
-        console.error(`[JudgeController] Error getting analytics for judge ${judgeName}, User ${userId}:`, error.message, error.stack);
-        if (error.message === 'Insufficient credits' && error.statusCode === 402) {
-            return res.status(402).json({
-                error: '您的點數不足，請購買積分或升級方案。',
-                required: error.details?.required || JUDGE_ANALYTICS_BASE_COST,
-                current: error.details?.current || 0
-            });
-        }
-        if (error.statusCode === 404 && error.message.includes('not found')) {
-            return res.status(404).json({ error: 'Not Found', message: error.message });
-        }
-        // User data not found from creditService
-        if (error.message === 'User data not found.' && error.statusCode === 404) {
-            return res.status(404).json({
-                error: 'User data not found',
-                message: '找不到您的用戶資料，請嘗試重新登入。'
-            });
-        }
-        next(error);
-    }
+  } catch (error) {
+    // console.error(`[Judge Controller - Analytics Error] Judge: ${judgeName}, Error:`, error.message);
+    // 這裡的錯誤主要是 judgeService 可能拋出的錯誤
+    next(error); // 交給全局錯誤處理器
+  }
 }
 
 export async function getAIAnalysisStatusController(req, res, next) {
-    const userId = req.user.uid;
-    const judgeName = req.params.judgeName;
-
-    if (!judgeName) {
-        return res.status(400).json({ error: 'Bad Request', message: 'Judge name is required.' });
-    }
-
-    console.log(`[JudgeController] User: ${userId} requesting AI analysis status for judge: ${judgeName}`);
-
-    try {
-        // 查詢狀態通常不消耗點數
-        const statusResult = await judgeService.getAIAnalysisStatus(judgeName);
-
-        // statusResult 結構應為 { processingStatus, traits?, tendency?, estimatedTimeRemaining? }
-        if (statusResult.processingStatus === 'not_found_in_status_check' || statusResult.processingStatus === 'not_found') {
-            return res.status(404).json({ error: 'Not Found', message: `Analysis status for judge "${judgeName}" not found.` });
-        }
-
-        res.status(200).json(statusResult);
-
-    } catch (error) {
-        console.error(`[JudgeController] Error getting AI status for judge ${judgeName}, User ${userId}:`, error);
-        next(error);
-    }
+  const judgeName = req.params.judgeName;
+  // console.log(`[Judge Controller - AI Status] Requesting AI status for judge: ${judgeName}`);
+  try {
+    const statusData = await judgeService.getAIAnalysisStatus(judgeName);
+    res.status(200).json(statusData);
+  } catch (error) {
+    // console.error(`[Judge Controller - AI Status Error] Judge: ${judgeName}, Error:`, error.message);
+    next(error);
+  }
 }
 
 export async function triggerReanalysisController(req, res, next) {
-    const userId = req.user.uid;
-    const judgeName = req.params.judgeName;
-
-    if (!judgeName) {
-        return res.status(400).json({ error: 'Bad Request', message: 'Judge name is required.' });
-    }
-
-    console.log(`[JudgeController] User: ${userId} triggering reanalysis for judge: ${judgeName}`);
-    const userDocRef = admin.firestore().collection('users').doc(userId);
-
-    try {
-        let reanalyzeServiceResult = null;
-
-        await admin.firestore().runTransaction(async (transaction) => {
-            // 1. 檢查並扣除積分
-            const { sufficient, currentCredits } = await creditService.checkAndDeductUserCreditsInTransaction(
-                transaction,
-                userDocRef,
-                userId,
-                JUDGE_REANALYZE_COST,
-                { action: 'judge_reanalyze', details: { judgeName } }
-            );
-
-            if (!sufficient) {
-                const error = new Error('Insufficient credits for reanalysis');
-                error.statusCode = 402;
-                error.details = { required: JUDGE_REANALYZE_COST, current: currentCredits };
-                throw error;
-            }
-
-            // 2. 執行觸發重新分析的服務
-            reanalyzeServiceResult = await judgeService.triggerReanalysis(judgeName);
-        });
-
-        // Transaction 成功完成
-        if (reanalyzeServiceResult && (reanalyzeServiceResult.status === "initiated" || reanalyzeServiceResult.status === "initiated_no_cases")) {
-            console.log(`[JudgeController] Reanalysis ${reanalyzeServiceResult.status} for ${judgeName}.`);
-            res.status(200).json(reanalyzeServiceResult);
-        } else {
-            console.error(`[JudgeController] Transaction succeeded but service returned unexpected result for reanalysis of ${judgeName}:`, reanalyzeServiceResult);
-            const err = new Error(`Failed to trigger reanalysis for judge "${judgeName}" (unexpected service response after transaction).`);
-            err.statusCode = 500;
-            next(err);
-        }
-    } catch (error) {
-        console.error(`[JudgeController] Error triggering reanalysis for judge ${judgeName}, User ${userId}:`, error);
-        if (error.message === 'Insufficient credits for reanalysis' && error.statusCode === 402) {
-            return res.status(402).json({
-                error: '您的點數不足以觸發重新分析。',
-                required: error.details?.required || JUDGE_REANALYZE_COST,
-                current: error.details?.current || 0
-            });
-        }
-        if (error.statusCode === 404 && error.message.includes('not found for reanalysis')) {
-            return res.status(404).json({ error: 'Not Found', message: error.message });
-        }
-        if (error.message === 'User data not found.' && error.statusCode === 404) {
-            return res.status(404).json({
-                error: 'User data not found',
-                message: '找不到您的用戶資料，請嘗試重新登入。'
-            });
-        }
-        next(error);
-    }
+  const judgeName = req.params.judgeName;
+  // console.log(`[Judge Controller - Reanalyze] Triggering reanalysis for judge: ${judgeName}`);
+  try {
+    // 注意：如果重新分析本身也需要一個較低的成本（例如1點），
+    // 則此路由也需要掛載 checkAndDeductCredits 中介軟體
+    // 目前假設重新分析觸發本身不直接扣點（AI分析過程消耗的資源可能已包含在訂閱或更高層級服務中）
+    const result = await judgeService.triggerReanalysis(judgeName);
+    res.status(200).json(result); // 例如 { status: "initiated", message: "重新分析已啟動" }
+  } catch (error) {
+    // console.error(`[Judge Controller - Reanalyze Error] Judge: ${judgeName}, Error:`, error.message);
+    next(error);
+  }
 }
