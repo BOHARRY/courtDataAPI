@@ -68,3 +68,45 @@ export async function getLawyerSearchHistory(userId, limit = 10) {
     throw new Error('Failed to retrieve lawyer search history.'); // 服務層可以拋出通用錯誤
   }
 }
+
+/**
+ * 獲取使用者的積分變動歷史。
+ * @param {string} userId - 使用者 ID。
+ * @param {number} [limit=20] - 返回的歷史記錄數量上限。
+ * @returns {Promise<Array<object>>} 積分變動歷史列表。
+ */
+export async function getCreditTransactionHistory(userId, limit = 20) {
+  // console.log(`[User Service] Getting credit transaction history for user ${userId}, limit: ${limit}`);
+  try {
+    const historySnapshot = await admin.firestore()
+      .collection('users')
+      .doc(userId)
+      .collection('creditTransactions') // 子集合名稱
+      .orderBy('timestamp', 'desc')     // 按時間倒序
+      .limit(limit)
+      .get();
+
+    if (historySnapshot.empty) {
+      return [];
+    }
+
+    const history = historySnapshot.docs.map(doc => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        amount: data.amount,
+        type: data.type, // 'DEBIT' 或 'CREDIT'
+        purpose: data.purpose,
+        description: data.description || '',
+        balanceBefore: data.balanceBefore, // (可選)
+        balanceAfter: data.balanceAfter,   // (可選)
+        timestamp: data.timestamp.toDate().toISOString(), // 轉換為 ISO 字串
+        relatedId: data.relatedId || null
+      };
+    });
+    return history;
+  } catch (error) {
+    console.error(`[User Service] Error getting credit transaction history for user ${userId}:`, error);
+    throw new Error('Failed to retrieve credit transaction history.');
+  }
+}

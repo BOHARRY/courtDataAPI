@@ -14,7 +14,7 @@ router.post('/validate-text',
 );
 // 檢驗法官是否存在 (不消耗積分)
 router.post('/check-judge', 
-  //verifyToken,   仍需身份驗證
+  verifyToken,   //仍需身份驗證
   complaintController.checkJudgeExists
 );
 
