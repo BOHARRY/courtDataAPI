@@ -1,9 +1,9 @@
 // routes/search.js
 import express from 'express';
-import * as searchController from '../controllers/search-controller.js'; // 或者具體引入某個函數
+import * as searchController from '../controllers/search-controller.js';
 import { verifyToken } from '../middleware/auth.js';
-import { checkAndDeductCredits } from '../middleware/credit.js';
-import { CREDIT_COSTS, CREDIT_PURPOSES } from '../config/creditCosts.js'; // <--- 引入成本和用途常數
+import { checkAndDeductCredits } from '../middleware/credit.js'; // 引入積分中介
+import { CREDIT_COSTS, CREDIT_PURPOSES } from '../config/creditCosts.js'; // 引入成本和用途常數
 
 const router = express.Router();
 
@@ -16,13 +16,11 @@ router.get(
     '/',
     verifyToken,
     checkAndDeductCredits(
-        CREDIT_COSTS.SEARCH_JUDGEMENT, // <--- 使用常數
-        CREDIT_PURPOSES.SEARCH_JUDGEMENT, // <--- 使用常數
-        {
-            description: '判例搜尋'
-        }
+        CREDIT_COSTS.SEARCH_JUDGEMENT,
+        CREDIT_PURPOSES.SEARCH_JUDGEMENT,
+        { description: '判例搜尋' } // 這裡的 description 會傳給 middleware/credit.js
     ),
-     searchController.searchCases
+    searchController.searchJudgmentsController // 控制器不再處理積分
 );
 
 // 獲取篩選選項資料 (GET /api/search/filters) - 注意路由路徑調整
