@@ -58,7 +58,7 @@ export async function checkAndDeductUserCreditsInTransaction(transaction, userDo
     amount: cost,
     type: 'DEBIT', // 標記為扣除
     purpose: purpose,
-    description: logDetails.description || `扣除 ${cost} 點積分用於 ${purpose}`, // 預設描述
+    description: logDetails.description,
     balanceBefore: currentCredits,
     balanceAfter: newCredits,
     timestamp: admin.firestore.FieldValue.serverTimestamp(),
