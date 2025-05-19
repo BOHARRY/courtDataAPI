@@ -1,6 +1,6 @@
 // routes/search.js
 import express from 'express';
-import { searchJudgmentsController, getFiltersController } from '../controllers/search-controller.js';
+import * as searchController from '../controllers/search-controller.js'; // 或者具體引入某個函數
 import { verifyToken } from '../middleware/auth.js';
 import { checkAndDeductCredits } from '../middleware/credit.js';
 import { CREDIT_COSTS, CREDIT_PURPOSES } from '../config/creditCosts.js'; // <--- 引入成本和用途常數
