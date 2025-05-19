@@ -7,7 +7,6 @@ dotenv.config();
 import app from './config/express.js';
 import { initializeFirebase } from './config/firebase.js';
 import { checkElasticsearchConnection } from './config/elasticsearch.js';
-import mainRouter from './routes/index.js';
 import { PORT } from './config/environment.js';
 
 
