@@ -10,8 +10,6 @@ import { checkElasticsearchConnection } from './config/elasticsearch.js';
 import mainRouter from './routes/index.js';
 import { PORT } from './config/environment.js';
 
-// 掛載主路由
-app.use('/api', mainRouter);
 
 // 啟動伺服器的主函數
 async function startServer() {
