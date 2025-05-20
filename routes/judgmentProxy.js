@@ -33,10 +33,25 @@ function getMimeType(filePath) {
 
 // 帶重試的 fetch 函數
 async function fetchWithRetry(url, options, retries = MAX_RETRIES) {
+    const userAgents = [
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0'
+    ];
+    const randomUserAgent = userAgents[Math.floor(Math.random() * userAgents.length)];
+
     for (let i = 0; i < retries; i++) {
         try {
             const response = await fetch(url, {
                 ...options,
+                headers: {
+                    ...options.headers,
+                    'User-Agent': randomUserAgent,
+                    'Sec-Fetch-Dest': options.headers['Accept'].includes('json') ? 'empty' : 'document',
+                    'Sec-Fetch-Mode': 'cors',
+                    'Sec-Fetch-Site': 'same-origin',
+                    'Accept-Language': 'zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7'
+                },
                 timeout: REQUEST_TIMEOUT
             });
             return response;
