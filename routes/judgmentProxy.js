@@ -86,12 +86,21 @@ router.get('/', async (req, res) => {
     let html = await response.text();
     const baseUrl = req.protocol + '://' + req.get('host') + '/api/judgment-proxy';
     
-    // 1. 注入 jQuery 和 fancybox
-    html = html.replace(/<script.*jquery.*?<\/script>/gi, '');
+    // 1. 注入 jQuery 和 fancybox，添加 jQuery.noConflict
+    html = html.replace(/<script.*jquery.*?\.js.*?<\/script>/gi, '');
     const scripts = `
       <script src="${baseUrl}/proxy/js/jquery-3.6.0.min.js"></script>
+      <script>
+        // 避免 jQuery 衝突
+        jQuery.noConflict();
+      </script>
       <script src="${baseUrl}/proxy/js/jquery.fancybox.min.js"></script>
       <link rel="stylesheet" href="${baseUrl}/proxy/css/jquery.fancybox.min.css">
+      <!-- 模擬 subset 變數，防止未定義錯誤 -->
+      <script>
+        window.subset = window.subset || {};
+        console.log("Defined dummy subset object to prevent ReferenceError");
+      </script>
     `;
     html = html.replace('<head>', `<head>${scripts}`);
     
@@ -111,12 +120,14 @@ router.get('/', async (req, res) => {
       .replace(/<link.*fontawesome.*?\.css.*?>/gi, '<!-- FontAwesome CSS Removed -->')
       .replace(/<script.*fontawesome.*?\.js.*?>/gi, '<!-- FontAwesome JS Removed -->');
 
-    // 3. 添加攔截所有 AJAX 請求的代碼
+    // 3. 添加攔截所有 AJAX 請求的代碼，包含防抖邏輯
     const interceptScript = `
     <script>
       (function() {
         const PROXY_BASE = "${baseUrl}/proxy";
         const JUDICIAL_BASE = "${JUDICIAL_BASE}";
+        let lastAjaxCall = 0;
+        const debounceDelay = 500; // 500ms 防抖
         
         function rewriteUrl(url) {
           console.log("Original URL:", url);
@@ -158,6 +169,12 @@ router.get('/', async (req, res) => {
           return url;
         }
         
+        // 阻止頁面重新加載
+        const origReload = window.location.reload;
+        window.location.reload = function() {
+          console.warn("Prevented page reload to avoid NS_BINDING_ABORTED");
+        };
+        
         // 攔截 XHR 請求
         const origXHROpen = XMLHttpRequest.prototype.open;
         XMLHttpRequest.prototype.open = function(method, url, async, user, pass) {
@@ -183,6 +200,12 @@ router.get('/', async (req, res) => {
             
             const origAjax = jQuery.ajax;
             jQuery.ajax = function(options) {
+              const now = Date.now();
+              if (now - lastAjaxCall < debounceDelay) {
+                console.log("Debouncing AJAX call:", options.url);
+                return;
+              }
+              lastAjaxCall = now;
               if (typeof options === 'string') {
                 options = { url: options };
               }
