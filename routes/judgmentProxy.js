@@ -5,6 +5,8 @@ import path from 'path';
 
 const router = express.Router();
 const JUDICIAL_BASE = 'https://judgment.judicial.gov.tw';
+const REQUEST_TIMEOUT = 10000; // 10 秒超時
+const MAX_RETRIES = 3; // 最大重試次數
 
 // 判斷 MIME 類型的輔助函數
 function getMimeType(filePath) {
@@ -29,20 +31,43 @@ function getMimeType(filePath) {
   return mimeTypes[ext] || 'application/octet-stream';
 }
 
+// 帶重試的 fetch 函數
+async function fetchWithRetry(url, options, retries = MAX_RETRIES) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const response = await fetch(url, {
+        ...options,
+        timeout: REQUEST_TIMEOUT
+      });
+      return response;
+    } catch (err) {
+      if (i === retries - 1) throw err;
+      console.warn(`Fetch 重試 ${i + 1}/${retries} 失敗: ${url}, 錯誤: ${err.message}`);
+      await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1))); // 延遲重試
+    }
+  }
+}
+
 // 主頁面代理路由
 router.get('/', async (req, res) => {
   const { id } = req.query;
   if (!id) return res.status(400).send('缺少 id 參數');
 
-  const url = `${JUDICIAL_BASE}/FJUD/data.aspx?ty=JD&id=${id}`;
+  // 解碼 id 參數，確保正確格式
+  const decodedId = decodeURIComponent(id);
+  const url = `${JUDICIAL_BASE}/FJUD/data.aspx?ty=JD&id=${encodeURIComponent(decodedId)}`;
+  
+  console.log(`請求 URL: ${url}`);
   
   try {
-    const response = await fetch(url, {
+    const response = await fetchWithRetry(url, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.127 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
         'Referer': JUDICIAL_BASE,
         'Accept-Language': 'zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Connection': 'keep-alive',
+        'Accept-Encoding': 'gzip, deflate, br'
       }
     });
     
@@ -226,11 +251,13 @@ router.get('/proxy/controls/*', async (req, res) => {
   console.log(`處理 controls 請求: ${url}`);
   
   try {
-    const response = await fetch(url, {
+    const response = await fetchWithRetry(url, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.127 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
         'Referer': JUDICIAL_BASE + '/FJUD/',
-        'Accept': '*/*'
+        'Accept': '*/*',
+        'Connection': 'keep-alive',
+        'Accept-Encoding': 'gzip, deflate, br'
       }
     });
     
@@ -263,11 +290,13 @@ router.get('/proxy/*', async (req, res) => {
   console.log(`處理通用資源請求: ${url}`);
   
   try {
-    const response = await fetch(url, {
+    const response = await fetchWithRetry(url, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.127 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
         'Referer': JUDICIAL_BASE,
-        'Accept': '*/*'
+        'Accept': '*/*',
+        'Connection': 'keep-alive',
+        'Accept-Encoding': 'gzip, deflate, br'
       }
     });
     
