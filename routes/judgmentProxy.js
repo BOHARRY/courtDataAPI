@@ -500,6 +500,77 @@ router.get('/api/judgment-proxy/proxy/controls/GetJudTerms.ashx', async (req, re
     }
 });
 
+router.get('/api/judgment-proxy/terms', async (req, res) => {
+    const queryString = req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : '';
+    const url = `${JUDICIAL_BASE}/controls/GetJudTerms.ashx${queryString}`;
+
+    console.log(`處理自定義 terms 請求: ${url}`);
+
+    try {
+        const response = await fetchWithRetry(url, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+                'Referer': JUDICIAL_BASE,
+                'Accept': 'application/json',
+                'Connection': 'keep-alive',
+                'Accept-Encoding': 'gzip, deflate, br'
+            },
+            redirect: 'manual'
+        });
+
+        const corsHeaders = {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, X-Requested-With, Authorization',
+            'Cache-Control': 'no-cache',
+            'Content-Type': 'application/json'
+        };
+
+        if (response.status === 307) {
+            const redirectUrl = response.headers.get('location');
+            console.log(`重定向到: ${redirectUrl}`);
+            const redirectResponse = await fetchWithRetry(redirectUrl, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+                    'Referer': JUDICIAL_BASE,
+                    'Accept': 'application/json'
+                }
+            });
+
+            if (!redirectResponse.ok) {
+                throw new Error(`重定向後 HTTP 錯誤! Status: ${redirectResponse.status}`);
+            }
+
+            const data = await redirectResponse.json();
+            res.set(corsHeaders);
+            res.json(data);
+            return;
+        }
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! Status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        res.set(corsHeaders);
+        res.json(data);
+    } catch (err) {
+        console.error(`Terms 請求錯誤: ${url}`, err.message, err.stack);
+        res.set(corsHeaders);
+        res.status(500).json({ error: '請求失敗' });
+    }
+});
+
+// 為 OPTIONS 請求添加支持
+router.options('/api/judgment-proxy/terms', (req, res) => {
+    res.set({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, X-Requested-With, Authorization'
+    });
+    res.sendStatus(204);
+});
+
 // 處理 controls 請求
 router.options('/proxy/controls/*', (req, res) => {
     res.set({
