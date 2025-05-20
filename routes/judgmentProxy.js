@@ -13,7 +13,6 @@ router.get('/', async (req, res) => {
   console.log(`嘗試訪問: ${url}`);
 
   try {
-    // 在這裡添加請求頭
     const response = await fetch(url, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.127 Safari/537.36',
@@ -27,9 +26,20 @@ router.get('/', async (req, res) => {
     let html = await response.text();
     console.log(`返回內容長度: ${html.length} 字元`);
 
-    // 修正 CSS 和 JS 相對路徑
-    html = html.replace(/src=\"\/(FJUD.*?)\"/g, 'src=\"https://judgment.judicial.gov.tw/$1\"')
-           .replace(/href=\"\/(FJUD.*?)\"/g, 'href=\"https://judgment.judicial.gov.tw/$1\"');
+    // 修正所有相對路徑 - 擴展處理範圍
+    html = html
+      // 處理 /FJUD/ 開頭的路徑
+      .replace(/src=\"\/(FJUD.*?)\"/g, 'src=\"https://judgment.judicial.gov.tw/$1\"')
+      .replace(/href=\"\/(FJUD.*?)\"/g, 'href=\"https://judgment.judicial.gov.tw/$1\"')
+      // 處理 /css/ 開頭的路徑
+      .replace(/href=\"\/(css\/.*?)(\"|\?)/g, 'href=\"https://judgment.judicial.gov.tw/$1$2')
+      // 處理 /js/ 開頭的路徑
+      .replace(/src=\"\/(js\/.*?)(\"|\?)/g, 'src=\"https://judgment.judicial.gov.tw/$1$2')
+      // 處理 /images/ 開頭的路徑
+      .replace(/src=\"\/(images\/.*?)\"/g, 'src=\"https://judgment.judicial.gov.tw/$1\"')
+      // 處理其他可能的相對路徑（如果有）
+      .replace(/href=\"\/([^\"]*?)(\"|\?)/g, 'href=\"https://judgment.judicial.gov.tw/$1$2')
+      .replace(/src=\"\/([^\"]*?)(\"|\?)/g, 'src=\"https://judgment.judicial.gov.tw/$1$2');
 
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.send(html);
