@@ -89,23 +89,78 @@ router.get('/', async (req, res) => {
         // 1. 注入 jQuery 和 fancybox，保持 jQuery.noConflict
         html = html.replace(/<script.*jquery.*?\.js.*?<\/script>/gi, '');
         const scripts = `
+  <!-- 確保 jQuery 和 $ 在最早期設置 -->
+  <script>
+    // 先清除可能存在的 jQuery 和 $ 變數，避免衝突
+    window.jQuery = window.$ = undefined;
+  </script>
   <script src="${baseUrl}/proxy/js/jquery-3.6.0.min.js"></script>
   <script>
-    // 使用 noConflict 但保留 $ 變數供其他腳本使用
-    var jq = jQuery.noConflict(true);
-    // 重新將 $ 設置為 jQuery，使其他腳本能正常使用
-    window.$ = window.jQuery;
-    console.log("jQuery 已載入且 $ 變數已設置");
+    // 確保 $ 可用，不使用 noConflict
+    if (window.jQuery) {
+      window.$ = window.jQuery;
+      console.log("jQuery 已載入設置成功，版本:", jQuery.fn.jquery);
+    } else {
+      console.error("jQuery 載入失敗!");
+    }
+    
+    // 定義一個全局的 jQuery 就緒檢查函數，供其他腳本使用
+    window.jQueryReady = function(callback) {
+      if (window.jQuery && window.$) {
+        callback(window.$, window.jQuery);
+      } else {
+        setTimeout(function() { window.jQueryReady(callback); }, 50);
+      }
+    };
   </script>
   <script src="${baseUrl}/proxy/js/jquery.fancybox.min.js"></script>
   <link rel="stylesheet" href="${baseUrl}/proxy/css/jquery.fancybox.min.css">
   <!-- 保持 subset 作為對象 -->
   <script>
     window.subset = window.subset || {};
-    console.log("Defined dummy subset object to prevent ReferenceError");
+    console.log("模擬 subset 對象以避免錯誤");
   </script>
 `;
         html = html.replace('<head>', `<head>${scripts}`);
+
+        const compatibilityScript = `
+<script>
+  // jQuery 相容性檢查
+  (function() {
+    // 確保 $ 始終可用
+    function ensureJQuery() {
+      if (window.jQuery && !window.$) {
+        window.$ = window.jQuery;
+        console.log("修復缺失的 $ 函數");
+      }
+      
+      // 每 100ms 檢查一次，持續 10 秒
+      setTimeout(function() {
+        ensureJQuery();
+      }, 100);
+    }
+    
+    // 啟動檢查
+    ensureJQuery();
+  })();
+</script>
+`;
+
+        // 在 HTML 頭部插入此腳本
+        html = html.replace('<head>', `<head>${compatibilityScript}`);
+
+        html = html.replace(
+            /<script.*?bootstrap\.min\.js.*?><\/script>/g,
+            `<script>
+    // 確保 jQuery 可用後再載入 Bootstrap
+    window.jQueryReady(function($, jQuery) {
+      console.log("jQuery 準備就緒，現在載入 Bootstrap");
+      var script = document.createElement('script');
+      script.src = "${baseUrl}/proxy/js/bootstrap.min.js";
+      document.head.appendChild(script);
+    });
+  </script>`
+        );
 
         // 2. 替換所有 URL，忽略字體相關資源
         html = html
@@ -122,6 +177,20 @@ router.get('/', async (req, res) => {
             .replace(/<script.*tpjwebfont2\.judicial\.gov\.tw.*?<\/script>/gi, '<!-- Webfont Removed -->')
             .replace(/<link.*fontawesome.*?\.css.*?>/gi, '<!-- FontAwesome CSS Removed -->')
             .replace(/<script.*fontawesome.*?\.js.*?>/gi, '<!-- FontAwesome JS Removed -->');
+
+            // 在這裡添加 terms-tooltip.js 的特殊處理
+html = html.replace(
+  /<script.*?terms-tooltip\.js.*?><\/script>/g,
+  `<script>
+    // 確保 jQuery 可用後再載入 terms-tooltip.js
+    window.jQueryReady(function($, jQuery) {
+      console.log("jQuery 準備就緒，現在載入 terms-tooltip.js");
+      var script = document.createElement('script');
+      script.src = "${baseUrl}/proxy/js/terms-tooltip.js";
+      document.head.appendChild(script);
+    });
+  </script>`
+);
 
         // 3. 添加攔截所有 AJAX 請求的代碼，包含防抖邏輯
         const interceptScript = `
@@ -302,7 +371,7 @@ router.get('/', async (req, res) => {
     </script>
     `;
 
-    
+
 
         // 4. 添加簡化的 CSP，忽略字體
         html = html.replace('</head>', `
@@ -319,35 +388,43 @@ router.get('/', async (req, res) => {
         html = html.replace(/<script.*?googletagmanager.*?<\/script>/g, '<!-- Google Tag Manager Removed -->');
 
         // 7. 添加非常簡單的 Fancybox 檢測和初始化腳本，避免過多干預
-        const fancyboxInitScript = `
+       const fancyboxInitScript = `
 <script>
-  window.addEventListener('load', function() {
-    console.log("頁面載入完成，確保 jQuery 和 Fancybox 可用...");
+  // 等待 jQuery 和文檔準備就緒
+  window.jQueryReady(function($, jQuery) {
+    console.log("jQuery 準備就緒，檢查 Fancybox...");
     
-    // 確保 $ 變數可用
-    if (window.jQuery && !window.$) {
-      window.$ = window.jQuery;
-      console.log("在頁面載入後重新設置 $ 變數");
-    }
-    
-    setTimeout(function() {
-      if (window.jQuery) {
-        // 檢查 fancybox 是否可用
-        if (jQuery.fancybox) {
-          console.log("Fancybox 插件已載入 ✓");
+    $(document).ready(function() {
+      console.log("文檔準備就緒，初始化 Fancybox...");
+      
+      if ($.fancybox) {
+        console.log("Fancybox 插件已載入 ✓");
+        
+        // 初始化所有可能的 fancybox 元素
+        try {
+          $('a[rel^="fancybox"], a.fancybox, a[data-fancybox]').fancybox({
+            helpers: {
+              title: {
+                type: 'inside'
+              }
+            }
+          });
           
-          // 嘗試初始化可能的 fancybox 元素
-          try {
-            jQuery('[data-fancybox], .fancybox').fancybox();
-            console.log("已初始化找到的 fancybox 元素");
-          } catch(e) {
-            console.warn("初始化 fancybox 元素時出錯:", e);
-          }
-        } else {
-          console.warn("Fancybox 插件未找到!");
+          // 也初始化圖片連結
+          $('a[href$=".jpg"], a[href$=".jpeg"], a[href$=".png"], a[href$=".gif"]').each(function() {
+            if (!$(this).attr('data-fancybox')) {
+              $(this).attr('data-fancybox', 'gallery');
+            }
+          }).fancybox();
+          
+          console.log("Fancybox 元素初始化完成");
+        } catch(e) {
+          console.warn("初始化 Fancybox 時出錯:", e);
         }
+      } else {
+        console.warn("Fancybox 插件未找到!");
       }
-    }, 2000);
+    });
   });
 </script>
 `;
