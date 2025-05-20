@@ -86,20 +86,25 @@ router.get('/', async (req, res) => {
     let html = await response.text();
     const baseUrl = req.protocol + '://' + req.get('host') + '/api/judgment-proxy';
     
-    // 1. 注入 jQuery 和 fancybox，添加 jQuery.noConflict
+    // 1. 注入 jQuery 和 fancybox，移除 jQuery.noConflict()
     html = html.replace(/<script.*jquery.*?\.js.*?<\/script>/gi, '');
     const scripts = `
       <script src="${baseUrl}/proxy/js/jquery-3.6.0.min.js"></script>
-      <script>
-        // 避免 jQuery 衝突
-        jQuery.noConflict();
-      </script>
       <script src="${baseUrl}/proxy/js/jquery.fancybox.min.js"></script>
       <link rel="stylesheet" href="${baseUrl}/proxy/css/jquery.fancybox.min.css">
       <!-- 模擬 subset 變數，防止未定義錯誤 -->
       <script>
         window.subset = window.subset || {};
         console.log("Defined dummy subset object to prevent ReferenceError");
+      </script>
+      <!-- 修復 terms-tooltip.js 的 $ 錯誤 -->
+      <script>
+        if (window.jQuery) {
+          console.log("jQuery loaded, ensuring $ alias for terms-tooltip.js");
+          window.$ = window.$ || jQuery;
+        } else {
+          console.warn("jQuery not loaded, terms-tooltip.js may fail");
+        }
       </script>
     `;
     html = html.replace('<head>', `<head>${scripts}`);
@@ -197,7 +202,7 @@ router.get('/', async (req, res) => {
         setTimeout(function() {
           if (window.jQuery) {
             console.log("jQuery found, intercepting AJAX...");
-            
+            window.$ = window.$ || jQuery; // 確保 $ 可用
             const origAjax = jQuery.ajax;
             jQuery.ajax = function(options) {
               const now = Date.now();
