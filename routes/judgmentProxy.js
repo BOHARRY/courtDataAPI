@@ -428,7 +428,6 @@ router.options('/api/judgment-proxy/proxy/controls/GetJudTerms.ashx', (req, res)
 
 router.get('/api/judgment-proxy/proxy/controls/GetJudTerms.ashx', async (req, res) => {
     const queryString = req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : '';
-    // 注意這裡修正了 URL 構造，移除了不必要的 /FJUD/ 部分
     const url = `${JUDICIAL_BASE}/controls/GetJudTerms.ashx${queryString}`;
 
     console.log(`處理特殊 GetJudTerms 請求: ${url}`);
@@ -442,11 +441,18 @@ router.get('/api/judgment-proxy/proxy/controls/GetJudTerms.ashx', async (req, re
                 'Connection': 'keep-alive',
                 'Accept-Encoding': 'gzip, deflate, br'
             },
-            // 禁止重定向，避免 307 狀態碼
-            redirect: 'manual'
+            redirect: 'manual' // 手動處理重定向
         });
 
-        // 處理可能的重定向
+        // 設置 CORS 頭部
+        const corsHeaders = {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, X-Requested-With, Authorization',
+            'Cache-Control': 'no-cache'
+        };
+
+        // 處理 307 重定向
         if (response.status === 307) {
             const redirectUrl = response.headers.get('location');
             console.log(`重定向到: ${redirectUrl}`);
@@ -454,7 +460,9 @@ router.get('/api/judgment-proxy/proxy/controls/GetJudTerms.ashx', async (req, re
                 headers: {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
                     'Referer': JUDICIAL_BASE,
-                    'Accept': '*/*'
+                    'Accept': '*/*',
+                    'Connection': 'keep-alive',
+                    'Accept-Encoding': 'gzip, deflate, br'
                 }
             });
 
@@ -466,13 +474,9 @@ router.get('/api/judgment-proxy/proxy/controls/GetJudTerms.ashx', async (req, re
             const buffer = await redirectResponse.buffer();
 
             res.set({
-                'Content-Type': contentType,
-                'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-                'Access-Control-Allow-Headers': 'Content-Type, X-Requested-With, Authorization',
-                'Cache-Control': 'no-cache'
+                ...corsHeaders,
+                'Content-Type': contentType
             });
-
             res.send(buffer);
             return;
         }
@@ -481,29 +485,17 @@ router.get('/api/judgment-proxy/proxy/controls/GetJudTerms.ashx', async (req, re
             throw new Error(`HTTP error! Status: ${response.status}`);
         }
 
-        let contentType = response.headers.get('content-type') || 'application/json';
-
-        // 設置必要的跨域頭
+        const contentType = response.headers.get('content-type') || 'application/json';
         res.set({
-            'Content-Type': contentType,
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, X-Requested-With, Authorization',
-            'Cache-Control': 'no-cache'
+            ...corsHeaders,
+            'Content-Type': contentType
         });
 
         const buffer = await response.buffer();
         res.send(buffer);
     } catch (err) {
         console.error(`GetJudTerms 請求錯誤: ${url}`, err.message, err.stack);
-
-        // 即使發生錯誤也要設置 CORS 頭
-        res.set({
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, X-Requested-With, Authorization'
-        });
-
+        res.set(corsHeaders); // 確保錯誤響應也包含 CORS 頭部
         res.status(500).send('請求失敗');
     }
 });
