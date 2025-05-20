@@ -2,6 +2,7 @@
 import express from 'express';
 import cors from 'cors';
 import mainRouter from '../routes/index.js';
+import judgmentProxyRouter from '../routes/judgmentProxy.js';
 
 const app = express();
 
@@ -46,5 +47,7 @@ app.use((err, req, res, next) => {
     ...(process.env.NODE_ENV !== 'production' && { stack: err.stack }) // 開發模式下顯示堆疊
   });
 });
+
+app.use('/api/judgment-proxy', judgmentProxyRouter);
 
 export default app;
