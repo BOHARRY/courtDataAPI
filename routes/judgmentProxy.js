@@ -86,10 +86,17 @@ router.get('/', async (req, res) => {
         let html = await response.text();
         const baseUrl = req.protocol + '://' + req.get('host') + '/api/judgment-proxy';
 
-        // 1. 注入 jQuery 和 fancybox，移除 jQuery.noConflict()
+        // 1. 注入 jQuery 和 fancybox，添加 jQuery.noConflict
         html = html.replace(/<script.*jquery.*?\.js.*?<\/script>/gi, '');
         const scripts = `
   <script src="${baseUrl}/proxy/js/jquery-3.6.0.min.js"></script>
+  <script>
+    // 確保 $ 別名可用於 jQuery 插件
+    window.$ = window.$ || jQuery;
+    
+    // 移除 noConflict，因為 fancybox 需要 $ 變數
+    // jQuery.noConflict();
+  </script>
   <script src="${baseUrl}/proxy/js/jquery.fancybox.min.js"></script>
   <link rel="stylesheet" href="${baseUrl}/proxy/css/jquery.fancybox.min.css">
   <!-- 模擬 subset 函數，而不是對象 -->
@@ -100,17 +107,133 @@ router.get('/', async (req, res) => {
       return ""; // 返回空字串避免出現 undefined
     };
     console.log("Defined dummy subset function to prevent ReferenceError");
-    
-    // 確保 $ 別名可用於 jQuery 插件
-    window.$ = window.$ || jQuery;
-    
-    // 模擬其他可能的依賴
-    window.webfont_log = window.webfont_log || function() {
-      console.log("Mock webfont_log called with:", arguments);
-    };
   </script>
 `;
         html = html.replace('<head>', `<head>${scripts}`);
+
+        const fancyboxInitScript = `
+<script>
+  // 頁面載入完成後執行
+  window.addEventListener('load', function() {
+    console.log("正在初始化 Fancybox...");
+    
+    try {
+      // 確保 jQuery 和 $ 可用
+      if (window.jQuery) {
+        console.log("jQuery 可用，版本:", jQuery.fn.jquery);
+        window.$ = window.$ || jQuery;
+        
+        // 1. 強制初始化所有具有 fancybox 類別或 data-fancybox 屬性的元素
+        setTimeout(function() {
+          console.log("尋找 fancybox 元素...");
+          
+          // 對所有可能的 fancybox 元素進行初始化
+          $('[data-fancybox], .fancybox, [rel^="fancybox"], a[href$=".jpg"], a[href$=".jpeg"], a[href$=".png"], a[href$=".gif"]').each(function() {
+            console.log("找到 fancybox 目標元素:", this);
+            
+            // 確保元素有 data-fancybox 屬性
+            if (!$(this).attr('data-fancybox')) {
+              $(this).attr('data-fancybox', 'gallery');
+            }
+          });
+          
+          // 手動初始化 fancybox
+          if ($.fancybox) {
+            console.log("Fancybox 插件可用，初始化...");
+            
+            // 全局配置
+            $.fancybox.defaults.animationEffect = "fade";
+            $.fancybox.defaults.transitionEffect = "fade";
+            $.fancybox.defaults.buttons = [
+              "zoom",
+              "slideShow",
+              "fullScreen",
+              "close"
+            ];
+            
+            // 初始化所有元素
+            $('[data-fancybox]').fancybox({
+              beforeShow: function() {
+                console.log("Fancybox 顯示中...");
+              },
+              afterShow: function() {
+                console.log("Fancybox 顯示完成");
+              },
+              onComplete: function() {
+                console.log("Fancybox 加載完成");
+              }
+            });
+            
+            console.log("Fancybox 初始化完成");
+          } else {
+            console.error("找不到 $.fancybox 插件!");
+          }
+        }, 1500);
+      } else {
+        console.error("找不到 jQuery!");
+      }
+    } catch (e) {
+      console.error("初始化 Fancybox 時發生錯誤:", e);
+    }
+  });
+</script>
+`;
+
+        // 在 html 的結尾處添加
+        html = html.replace('</body>', `${fancyboxInitScript}</body>`);
+
+        const resourceFixScript = `
+<script>
+  // 監聽圖片載入錯誤，嘗試修復路徑
+  document.addEventListener('error', function(e) {
+    const element = e.target;
+    
+    // 只處理圖片和腳本資源
+    if (element.tagName === 'IMG' || element.tagName === 'SCRIPT') {
+      console.log("資源載入失敗:", element.src);
+      
+      // 嘗試修復相對路徑
+      if (element.src && !element.src.startsWith('http') && !element.src.startsWith('data:')) {
+        const originalSrc = element.src;
+        element.src = "${baseUrl}/proxy/" + originalSrc;
+        console.log("嘗試修復路徑:", originalSrc, "->", element.src);
+      }
+    }
+  }, true);
+  
+  // 在點擊 fancybox 目標時監聽事件
+  document.addEventListener('click', function(e) {
+    // 檢查是否點擊了可能觸發 fancybox 的元素
+    const target = e.target.closest('a[data-fancybox], .fancybox, a[rel^="fancybox"], a[href$=".jpg"], a[href$=".jpeg"], a[href$=".png"], a[href$=".gif"]');
+    
+    if (target) {
+      console.log("點擊了可能的 fancybox 元素:", target);
+      
+      // 確保有 jQuery 和 fancybox
+      if (window.jQuery && jQuery.fancybox) {
+        console.log("嘗試手動呼叫 fancybox");
+        
+        // 阻止默認行為
+        e.preventDefault();
+        
+        // 手動呼叫 fancybox
+        jQuery(target).fancybox({
+          openEffect: 'fade',
+          closeEffect: 'fade',
+          helpers: {
+            title: {
+              type: 'inside'
+            }
+          }
+        }).trigger('click');
+      }
+    }
+  });
+</script>
+`;
+
+        // 在 html 的結尾處添加
+        html = html.replace('</body>', `${resourceFixScript}</body>`);
 
         // 2. 替換所有 URL，忽略字體相關資源
         html = html
@@ -139,7 +262,11 @@ router.get('/', async (req, res) => {
         
         function rewriteUrl(url) {
           console.log("Original URL:", url);
-         
+          
+          // 處理以 '../' 開頭的相對路徑
+          if (url.startsWith('../')) {
+            return PROXY_BASE + '/' + url.substring(3);
+          }
           
           // 處理絕對路徑
           if (url.startsWith('http')) {
@@ -201,7 +328,7 @@ router.get('/', async (req, res) => {
         setTimeout(function() {
           if (window.jQuery) {
             console.log("jQuery found, intercepting AJAX...");
-            window.$ = window.$ || jQuery; // 確保 $ 可用
+            
             const origAjax = jQuery.ajax;
             jQuery.ajax = function(options) {
               const now = Date.now();
