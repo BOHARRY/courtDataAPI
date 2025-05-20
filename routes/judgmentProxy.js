@@ -1,5 +1,3 @@
-// routes/judgmentProxy.js 修訂版
-
 import express from 'express';
 import fetch from 'node-fetch';
 import { URL } from 'url';
@@ -7,8 +5,9 @@ import path from 'path';
 
 const router = express.Router();
 const JUDICIAL_BASE = 'https://judgment.judicial.gov.tw';
+const WEBFONT_BASE = 'https://tpjwebfont2.judicial.gov.tw';
 
-// 判斷MIME類型的輔助函數
+// 判斷 MIME 類型的輔助函數
 function getMimeType(filePath) {
   const ext = path.extname(filePath).toLowerCase();
   const mimeTypes = {
@@ -55,43 +54,46 @@ router.get('/', async (req, res) => {
     let html = await response.text();
     const baseUrl = req.protocol + '://' + req.get('host') + '/api/judgment-proxy';
     
-    // 1. 移除現有的jQuery (如果有)，然後在頂部添加jQuery
+    // 1. 注入 jQuery 和 fancybox
     html = html.replace(/<script.*jquery.*?<\/script>/gi, '');
-    const jqueryScript = `<script src="${baseUrl}/proxy/js/jquery-3.6.0.min.js"></script>`;
-    html = html.replace('<head>', `<head>${jqueryScript}`);
+    const scripts = `
+      <script src="${baseUrl}/proxy/js/jquery-3.6.0.min.js"></script>
+      <script src="${baseUrl}/proxy/js/jquery.fancybox.min.js"></script>
+      <link rel="stylesheet" href="${baseUrl}/proxy/css/jquery.fancybox.min.css">
+    `;
+    html = html.replace('<head>', `<head>${scripts}`);
     
-    // 2. 替換所有URL
+    // 2. 替換所有 URL
     html = html
-      // 替換src和href屬性中的URL
       .replace(/src=["'](https?:\/\/judgment\.judicial\.gov\.tw)?\/([^"']+)["']/g, 
               `src="${baseUrl}/proxy/$2"`)
       .replace(/href=["'](https?:\/\/judgment\.judicial\.gov\.tw)?\/([^"']+)["']/g, 
               `href="${baseUrl}/proxy/$2"`)
-      
-      // 處理內聯JavaScript中的URL
+      .replace(/src=["'](https?:\/\/tpjwebfont2\.judicial\.gov\.tw)?\/([^"']+)["']/g, 
+              `src="${baseUrl}/webfont/$2"`)
+      .replace(/href=["'](https?:\/\/tpjwebfont2\.judicial\.gov\.tw)?\/([^"']+)["']/g, 
+              `href="${baseUrl}/webfont/$2"`)
       .replace(/url\s*:\s*["'](\/[^"']+)["']/g, `url: "${baseUrl}/proxy$1"`)
       .replace(/\$\.get\(["'](\/[^"']+)["']/g, `$.get("${baseUrl}/proxy$1"`)
       .replace(/\$\.post\(["'](\/[^"']+)["']/g, `$.post("${baseUrl}/proxy$1"`)
       .replace(/ajax\(\s*{\s*url\s*:\s*["'](\/[^"']+)["']/g, `ajax({ url: "${baseUrl}/proxy$1"`)
-      
-      // 處理以//開頭的URL (沒有協議的絕對URL)
       .replace(/(src|href)=["'](\/\/[^"']+)["']/g, `$1="https:$2"`);
 
-    // 3. 添加攔截所有AJAX請求的代碼
+    // 3. 添加攔截所有 AJAX 請求的代碼
     const interceptScript = `
     <script>
       (function() {
-        // 代理設置
         const PROXY_BASE = "${baseUrl}/proxy";
+        const WEBFONT_PROXY = "${baseUrl}/webfont";
         const JUDICIAL_BASE = "${JUDICIAL_BASE}";
+        const WEBFONT_BASE = "${WEBFONT_BASE}";
         
-        // URL重寫函數
         function rewriteUrl(url) {
           console.log("Original URL:", url);
           
-          // 處理特殊情況 - 以 '../' 開頭的相對路徑
+          // 處理以 '../' 開頭的相對路徑
           if (url.startsWith('../')) {
-            return PROXY_BASE + '/controls/' + url.substring(3);
+            return PROXY_BASE + '/' + url.substring(3);
           }
           
           // 處理絕對路徑
@@ -101,7 +103,16 @@ router.get('/', async (req, res) => {
                 const urlObj = new URL(url);
                 return PROXY_BASE + urlObj.pathname + urlObj.search;
               } catch (e) {
-                console.error("URL解析錯誤:", e);
+                console.error("URL 解析錯誤:", e);
+                return url;
+              }
+            }
+            if (url.includes('tpjwebfont2.judicial.gov.tw')) {
+              try {
+                const urlObj = new URL(url);
+                return WEBFONT_PROXY + urlObj.pathname + urlObj.search;
+              } catch (e) {
+                console.error("Webfont URL 解析錯誤:", e);
                 return url;
               }
             }
@@ -113,27 +124,15 @@ router.get('/', async (req, res) => {
             return PROXY_BASE + url;
           }
           
-          // 處理localhost URLs
-          if (url.includes('localhost')) {
-            try {
-              const urlObj = new URL(url);
-              return PROXY_BASE + urlObj.pathname + urlObj.search;
-            } catch (e) {
-              console.error("localhost URL解析錯誤:", e);
-              return url;
-            }
-          }
-          
           // 處理不帶斜線的相對路徑
           if (!url.startsWith('http') && !url.startsWith('/') && !url.startsWith('data:')) {
-            // 假設這些是相對於當前路徑的
-            return PROXY_BASE + '/controls/' + url;
+            return PROXY_BASE + '/' + url;
           }
           
           return url;
         }
         
-        // 監聽所有XHR請求
+        // 攔截 XHR 請求
         const origXHROpen = XMLHttpRequest.prototype.open;
         XMLHttpRequest.prototype.open = function(method, url, async, user, pass) {
           console.log("Original XHR URL:", url);
@@ -142,28 +141,33 @@ router.get('/', async (req, res) => {
           return origXHROpen.call(this, method, newUrl, async, user, pass);
         };
         
-        // 延遲一點時間去攔截jQuery
+        // 攔截 Fetch 請求
+        const origFetch = window.fetch;
+        window.fetch = function(input, init) {
+          console.log("Original Fetch URL:", input);
+          const newInput = typeof input === 'string' ? rewriteUrl(input) : input;
+          console.log("Rewritten Fetch URL:", newInput);
+          return origFetch.call(window, newInput, init);
+        };
+        
+        // 延遲攔截 jQuery AJAX
         setTimeout(function() {
           if (window.jQuery) {
             console.log("jQuery found, intercepting AJAX...");
             
-            // 攔截jQuery AJAX
             const origAjax = jQuery.ajax;
             jQuery.ajax = function(options) {
               if (typeof options === 'string') {
                 options = { url: options };
               }
-              
               if (options.url) {
                 console.log("Original AJAX URL:", options.url);
                 options.url = rewriteUrl(options.url);
                 console.log("Rewritten AJAX URL:", options.url);
               }
-              
               return origAjax.apply(jQuery, [options]);
             };
             
-            // 攔截get和post方法
             ['get', 'post'].forEach(function(method) {
               const orig = jQuery[method];
               jQuery[method] = function(url, data, callback, type) {
@@ -174,7 +178,6 @@ router.get('/', async (req, res) => {
               };
             });
             
-            // 替換jQuery的getScript方法
             const origGetScript = jQuery.getScript;
             jQuery.getScript = function(url, callback) {
               console.log("Original getScript URL:", url);
@@ -194,35 +197,35 @@ router.get('/', async (req, res) => {
     </script>
     `;
     
-    // 添加內容安全策略和攔截腳本
+    // 4. 添加改進的 CSP
     html = html.replace('</head>', `
-    <meta http-equiv="Content-Security-Policy" content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; font-src * data:; img-src * data:;">
+    <meta http-equiv="Content-Security-Policy" content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; font-src * data: ${WEBFONT_BASE}; img-src * data:; script-src * 'unsafe-inline' 'unsafe-eval' ${WEBFONT_BASE}; style-src * 'unsafe-inline'; connect-src * ${WEBFONT_BASE};">
     ${interceptScript}
     </head>`);
     
-    // 4. 修復 "controls" 相對路徑請求問題 - 添加基本路徑
-    html = html.replace(/<base.*?>/g, ''); // 移除任何現有的base標籤
+    // 5. 設置基底路徑
+    html = html.replace(/<base.*?>/g, '');
     html = html.replace('<head>', `<head><base href="${JUDICIAL_BASE}/FJUD/">`);
     
-    // 5. 阻止Google Analytics和其他第三方請求
+    // 6. 阻止第三方追蹤腳本
     html = html.replace(/<script.*?google-analytics.*?<\/script>/g, '<!-- Google Analytics Removed -->');
     html = html.replace(/<script.*?googletagmanager.*?<\/script>/g, '<!-- Google Tag Manager Removed -->');
     
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.send(html);
   } catch (err) {
-    console.error('Proxy Error:', err);
-    res.status(500).send(`擷取失敗: ${err.message}`);
+    console.error('Proxy Error:', err.message);
+    res.status(500).send('伺服器錯誤，請稍後重試');
   }
 });
 
-// 處理到 /controls 的請求 - 特殊處理相對路徑
-router.get('/proxy/controls/*', async (req, res) => {
+// 處理 webfont 請求
+router.get('/webfont/*', async (req, res) => {
   const resourcePath = req.params[0] || '';
   const queryString = req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : '';
-  const url = `${JUDICIAL_BASE}/FJUD/controls/${resourcePath}${queryString}`;
+  const url = `${WEBFONT_BASE}/${resourcePath}${queryString}`;
   
-  console.log(`處理controls請求: ${url}`);
+  console.log(`處理 webfont 請求: ${url}`);
   
   try {
     const response = await fetch(url, {
@@ -233,29 +236,60 @@ router.get('/proxy/controls/*', async (req, res) => {
       }
     });
     
-    // 獲取內容類型
-    let contentType = response.headers.get('content-type');
-    if (!contentType) {
-      contentType = getMimeType(resourcePath);
+    if (!response.ok) {
+      throw new Error(`HTTP error! Status: ${response.status}`);
     }
     
-    // 設置響應頭
+    let contentType = response.headers.get('content-type') || getMimeType(resourcePath);
     res.set('Content-Type', contentType);
     
-    // 返回資源內容
     const buffer = await response.buffer();
     res.send(buffer);
   } catch (err) {
-    console.error(`Controls路徑代理錯誤: ${url}`, err);
+    console.error(`Webfont 路徑代理錯誤: ${url}`, err.message);
+    res.status(404).send('資源未找到');
+  }
+});
+
+// 處理 controls 請求
+router.get('/proxy/controls/*', async (req, res) => {
+  const resourcePath = req.params[0] || '';
+  const queryString = req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : '';
+  const url = `${JUDICIAL_BASE}/FJUD/controls/${resourcePath}${queryString}`;
+  
+  console.log(`處理 controls 請求: ${url}`);
+  
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.127 Safari/537.36',
+        'Referer': JUDICIAL_BASE + '/FJUD/',
+        'Accept': '*/*'
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! Status: ${response.status}`);
+    }
+    
+    let contentType = response.headers.get('content-type') || getMimeType(resourcePath);
+    res.set('Content-Type', contentType);
+    
+    const buffer = await response.buffer();
+    res.send(buffer);
+  } catch (err) {
+    console.error(`Controls 路徑代理錯誤: ${url}`, err.message);
     res.status(404).send('資源未找到');
   }
 });
 
 // 通用資源代理路由
 router.get('/proxy/*', async (req, res) => {
-  let resourcePath = req.params[0] || '';
+  const resourcePath = req.params[0] || '';
   const queryString = req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : '';
   const url = `${JUDICIAL_BASE}/${resourcePath}${queryString}`;
+  
+  console.log(`處理通用資源請求: ${url}`);
   
   try {
     const response = await fetch(url, {
@@ -266,20 +300,17 @@ router.get('/proxy/*', async (req, res) => {
       }
     });
     
-    // 嘗試獲取內容類型，或根據文件擴展名確定
-    let contentType = response.headers.get('content-type');
-    if (!contentType || contentType === 'application/octet-stream' || contentType === 'text/html') {
-      contentType = getMimeType(resourcePath);
+    if (!response.ok) {
+      throw new Error(`HTTP error! Status: ${response.status}`);
     }
     
-    // 設置響應頭
+    let contentType = response.headers.get('content-type') || getMimeType(resourcePath);
     res.set('Content-Type', contentType);
     
-    // 返回資源內容
     const buffer = await response.buffer();
     res.send(buffer);
   } catch (err) {
-    console.error(`資源代理錯誤: ${url}`, err);
+    console.error(`資源代理錯誤: ${url}`, err.message);
     res.status(404).send('資源未找到');
   }
 });
