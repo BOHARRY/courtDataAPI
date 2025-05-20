@@ -417,40 +417,35 @@ router.get('/', async (req, res) => {
 });
 
 // 特別處理 GetJudTerms.ashx 路由
-router.options('/api/judgment-proxy/proxy/controls/GetJudTerms.ashx', (req, res) => {
-  res.set({
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, X-Requested-With, Authorization'
-  });
-  res.sendStatus(204);
-});
-
+// 處理 GetJudTerms.ashx 路由
 router.get('/api/judgment-proxy/proxy/controls/GetJudTerms.ashx', async (req, res) => {
     const queryString = req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : '';
     const url = `${JUDICIAL_BASE}/controls/GetJudTerms.ashx${queryString}`;
 
     console.log(`處理特殊 GetJudTerms 請求: ${url}`);
 
+    // 定義 CORS 頭部
+    const corsHeaders = {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, X-Requested-With, Authorization',
+        'Cache-Control': 'no-cache'
+    };
+
     try {
         const response = await fetchWithRetry(url, {
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
                 'Referer': JUDICIAL_BASE,
-                'Accept': '*/*',
+                'Accept': 'application/json, text/plain, */*',
                 'Connection': 'keep-alive',
-                'Accept-Encoding': 'gzip, deflate, br'
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Sec-Fetch-Dest': 'empty',
+                'Sec-Fetch-Mode': 'cors',
+                'Sec-Fetch-Site': 'same-origin'
             },
             redirect: 'manual' // 手動處理重定向
         });
-
-        // 設置 CORS 頭部
-        const corsHeaders = {
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, X-Requested-With, Authorization',
-            'Cache-Control': 'no-cache'
-        };
 
         // 處理 307 重定向
         if (response.status === 307) {
@@ -460,7 +455,7 @@ router.get('/api/judgment-proxy/proxy/controls/GetJudTerms.ashx', async (req, re
                 headers: {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
                     'Referer': JUDICIAL_BASE,
-                    'Accept': '*/*',
+                    'Accept': 'application/json, text/plain, */*',
                     'Connection': 'keep-alive',
                     'Accept-Encoding': 'gzip, deflate, br'
                 }
@@ -496,77 +491,17 @@ router.get('/api/judgment-proxy/proxy/controls/GetJudTerms.ashx', async (req, re
     } catch (err) {
         console.error(`GetJudTerms 請求錯誤: ${url}`, err.message, err.stack);
         res.set(corsHeaders); // 確保錯誤響應也包含 CORS 頭部
-        res.status(500).send('請求失敗');
+        res.status(500).send('請求失敗，請稍後重試');
     }
 });
 
-router.get('/api/judgment-proxy/terms', async (req, res) => {
-    const queryString = req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : '';
-    const url = `${JUDICIAL_BASE}/controls/GetJudTerms.ashx${queryString}`;
-
-    console.log(`處理自定義 terms 請求: ${url}`);
-
-    try {
-        const response = await fetchWithRetry(url, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-                'Referer': JUDICIAL_BASE,
-                'Accept': 'application/json',
-                'Connection': 'keep-alive',
-                'Accept-Encoding': 'gzip, deflate, br'
-            },
-            redirect: 'manual'
-        });
-
-        const corsHeaders = {
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, X-Requested-With, Authorization',
-            'Cache-Control': 'no-cache',
-            'Content-Type': 'application/json'
-        };
-
-        if (response.status === 307) {
-            const redirectUrl = response.headers.get('location');
-            console.log(`重定向到: ${redirectUrl}`);
-            const redirectResponse = await fetchWithRetry(redirectUrl, {
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-                    'Referer': JUDICIAL_BASE,
-                    'Accept': 'application/json'
-                }
-            });
-
-            if (!redirectResponse.ok) {
-                throw new Error(`重定向後 HTTP 錯誤! Status: ${redirectResponse.status}`);
-            }
-
-            const data = await redirectResponse.json();
-            res.set(corsHeaders);
-            res.json(data);
-            return;
-        }
-
-        if (!response.ok) {
-            throw new Error(`HTTP error! Status: ${response.status}`);
-        }
-
-        const data = await response.json();
-        res.set(corsHeaders);
-        res.json(data);
-    } catch (err) {
-        console.error(`Terms 請求錯誤: ${url}`, err.message, err.stack);
-        res.set(corsHeaders);
-        res.status(500).json({ error: '請求失敗' });
-    }
-});
-
-// 為 OPTIONS 請求添加支持
-router.options('/api/judgment-proxy/terms', (req, res) => {
+// 確保 OPTIONS 請求正確處理
+router.options('/api/judgment-proxy/proxy/controls/GetJudTerms.ashx', (req, res) => {
     res.set({
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, X-Requested-With, Authorization'
+        'Access-Control-Allow-Headers': 'Content-Type, X-Requested-With, Authorization',
+        'Access-Control-Max-Age': '86400'
     });
     res.sendStatus(204);
 });
