@@ -99,7 +99,7 @@ router.get('/', async (req, res) => {
         }
 
         let html = await response.text();
-        const baseUrl = req.protocol + '://' + req.get('host') + '/api/judgment-proxy';
+        const baseUrl = 'https://' + req.get('host') + '/api/judgment-proxy';
 
         // 1. 注入 jQuery 和 fancybox，保持 jQuery.noConflict
         html = html.replace(/<script.*jquery.*?\.js.*?<\/script>/gi, '');
@@ -548,7 +548,8 @@ router.get('/api/judgment-proxy/terms', async (req, res) => {
     };
 
     try {
-        const response = await fetchWithRetry(url, {
+        // 處理多次重定向（最多 3 次）
+        let response = await fetchWithRetry(url, {
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
                 'Referer': JUDICIAL_BASE,
@@ -558,34 +559,33 @@ router.get('/api/judgment-proxy/terms', async (req, res) => {
                 'Accept-Language': 'zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7',
                 'Sec-Fetch-Dest': 'empty',
                 'Sec-Fetch-Mode': 'cors',
-                'Sec-Fetch-Site': 'same-origin'
+                'Sec-Fetch-Site': 'same-origin',
+                'X-Requested-With': 'XMLHttpRequest'
             },
             redirect: 'manual' // 手動處理重定向
         });
 
-        // 處理 307 重定向
-        if (response.status === 307) {
+        let redirectCount = 0;
+        const maxRedirects = 3;
+        while (response.status === 307 && redirectCount < maxRedirects) {
             const redirectUrl = response.headers.get('location');
-            console.log(`重定向到: ${redirectUrl}`);
-            const redirectResponse = await fetchWithRetry(redirectUrl, {
+            console.log(`重定向 ${redirectCount + 1}/${maxRedirects} 到: ${redirectUrl}`);
+            response = await fetchWithRetry(redirectUrl, {
                 headers: {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
                     'Referer': JUDICIAL_BASE,
                     'Accept': 'application/json, text/plain, */*',
                     'Connection': 'keep-alive',
                     'Accept-Encoding': 'gzip, deflate, br',
-                    'Accept-Language': 'zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7'
+                    'Accept-Language': 'zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7',
+                    'X-Requested-With': 'XMLHttpRequest'
                 }
             });
+            redirectCount++;
+        }
 
-            if (!redirectResponse.ok) {
-                throw new Error(`重定向後 HTTP 錯誤! 狀態碼: ${redirectResponse.status}`);
-            }
-
-            const data = await redirectResponse.json();
-            res.set(corsHeaders);
-            res.json(data);
-            return;
+        if (response.status === 307) {
+            throw new Error(`超過最大重定向次數 (${maxRedirects})`);
         }
 
         if (!response.ok) {
@@ -602,14 +602,16 @@ router.get('/api/judgment-proxy/terms', async (req, res) => {
     }
 });
 
-// 支援 OPTIONS 請求
+// 支援 OPTIONS 請求，確保預檢請求正確響應
 router.options('/api/judgment-proxy/terms', (req, res) => {
-    res.set({
+    const corsHeaders = {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type, X-Requested-With, Authorization',
-        'Access-Control-Max-Age': '86400'
-    });
+        'Access-Control-Max-Age': '86400',
+        'Content-Length': '0'
+    };
+    res.set(corsHeaders);
     res.sendStatus(204);
 });
 
