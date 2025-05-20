@@ -86,10 +86,15 @@ router.get('/', async (req, res) => {
         let html = await response.text();
         const baseUrl = req.protocol + '://' + req.get('host') + '/api/judgment-proxy';
 
-        // 1. 注入 jQuery 和 fancybox，保持 jQuery.noConflict
+        // 1. 移除原始 jQuery 引用，避免衝突
         html = html.replace(/<script.*jquery.*?\.js.*?<\/script>/gi, '');
-        const scripts = `
-  <!-- 確保 jQuery 和 $ 在最早期設置 -->
+
+        // 2. 準備所有需要加入 <head> 的腳本
+        const headScripts = `
+  <!-- 基礎路徑設置 -->
+  <base href="${JUDICIAL_BASE}/FJUD/">
+  
+  <!-- jQuery 相關設置 -->
   <script>
     // 先清除可能存在的 jQuery 和 $ 變數，避免衝突
     window.jQuery = window.$ = undefined;
@@ -112,46 +117,46 @@ router.get('/', async (req, res) => {
         setTimeout(function() { window.jQueryReady(callback); }, 50);
       }
     };
+    
+    // jQuery 相容性檢查
+    (function() {
+      // 確保 $ 始終可用
+      function ensureJQuery() {
+        if (window.jQuery && !window.$) {
+          window.$ = window.jQuery;
+          console.log("修復缺失的 $ 函數");
+        }
+        
+        // 每 100ms 檢查一次，最多 100 次 (10秒)
+        var checkCount = 0;
+        var intervalId = setInterval(function() {
+          if (window.jQuery && !window.$) {
+            window.$ = window.jQuery;
+          }
+          checkCount++;
+          if (checkCount >= 100) {
+            clearInterval(intervalId);
+          }
+        }, 100);
+      }
+      
+      // 啟動檢查
+      ensureJQuery();
+    })();
   </script>
+  
+  <!-- Fancybox 相關資源 -->
   <script src="${baseUrl}/proxy/js/jquery.fancybox.min.js"></script>
   <link rel="stylesheet" href="${baseUrl}/proxy/css/jquery.fancybox.min.css">
-  <!-- 保持 subset 作為對象 -->
+  
+  <!-- 模擬 subset 對象 -->
   <script>
     window.subset = window.subset || {};
     console.log("模擬 subset 對象以避免錯誤");
   </script>
-`;
-        html = html.replace('<head>', `<head>${scripts}`);
-
-        const compatibilityScript = `
-<script>
-  // jQuery 相容性檢查
-  (function() {
-    // 確保 $ 始終可用
-    function ensureJQuery() {
-      if (window.jQuery && !window.$) {
-        window.$ = window.jQuery;
-        console.log("修復缺失的 $ 函數");
-      }
-      
-      // 每 100ms 檢查一次，持續 10 秒
-      setTimeout(function() {
-        ensureJQuery();
-      }, 100);
-    }
-    
-    // 啟動檢查
-    ensureJQuery();
-  })();
-</script>
-`;
-
-        // 在 HTML 頭部插入此腳本
-        html = html.replace('<head>', `<head>${compatibilityScript}`);
-
-        html = html.replace(
-            /<script.*?bootstrap\.min\.js.*?><\/script>/g,
-            `<script>
+  
+  <!-- Bootstrap 處理 -->
+  <script>
     // 確保 jQuery 可用後再載入 Bootstrap
     window.jQueryReady(function($, jQuery) {
       console.log("jQuery 準備就緒，現在載入 Bootstrap");
@@ -159,10 +164,16 @@ router.get('/', async (req, res) => {
       script.src = "${baseUrl}/proxy/js/bootstrap.min.js";
       document.head.appendChild(script);
     });
-  </script>`
-        );
+  </script>
+  
+  <!-- 安全策略設置 -->
+  <meta http-equiv="Content-Security-Policy" content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; img-src * data:; script-src * 'unsafe-inline' 'unsafe-eval'; style-src * 'unsafe-inline'; connect-src *;">
+`;
 
-        // 2. 替換所有 URL，忽略字體相關資源
+        // 3. 一次性替換 <head> 標籤，避免多次替換的問題
+        html = html.replace(/<head>[\s\S]*?<\/head>/, `<head>${headScripts}</head>`);
+
+        // 4. 替換所有 URL，忽略字體相關資源
         html = html
             .replace(/src=["'](https?:\/\/judgment\.judicial\.gov\.tw)?\/([^"']+)["']/g,
                 `src="${baseUrl}/proxy/$2"`)
@@ -178,10 +189,10 @@ router.get('/', async (req, res) => {
             .replace(/<link.*fontawesome.*?\.css.*?>/gi, '<!-- FontAwesome CSS Removed -->')
             .replace(/<script.*fontawesome.*?\.js.*?>/gi, '<!-- FontAwesome JS Removed -->');
 
-            // 在這裡添加 terms-tooltip.js 的特殊處理
-html = html.replace(
-  /<script.*?terms-tooltip\.js.*?><\/script>/g,
-  `<script>
+        // 5. 特殊處理 terms-tooltip.js
+        html = html.replace(
+            /<script.*?terms-tooltip\.js.*?><\/script>/g,
+            `<script>
     // 確保 jQuery 可用後再載入 terms-tooltip.js
     window.jQueryReady(function($, jQuery) {
       console.log("jQuery 準備就緒，現在載入 terms-tooltip.js");
@@ -190,205 +201,193 @@ html = html.replace(
       document.head.appendChild(script);
     });
   </script>`
-);
-
-        // 3. 添加攔截所有 AJAX 請求的代碼，包含防抖邏輯
-        const interceptScript = `
-    <script>
-      (function() {
-        const PROXY_BASE = "${baseUrl}/proxy";
-        const JUDICIAL_BASE = "${JUDICIAL_BASE}";
-        let lastAjaxCall = 0;
-        const debounceDelay = 500; // 500ms 防抖
-        
-        function rewriteUrl(url) {
-          console.log("Original URL:", url);
-          
-          // 處理以 '../' 開頭的相對路徑
-          if (url.startsWith('../')) {
-            return PROXY_BASE + '/' + url.substring(3);
-          }
-          
-          // 處理絕對路徑
-          if (url.startsWith('http')) {
-            if (url.includes('judgment.judicial.gov.tw')) {
-              try {
-                const urlObj = new URL(url);
-                return PROXY_BASE + urlObj.pathname + urlObj.search;
-              } catch (e) {
-                console.error("URL 解析錯誤:", e);
-                return url;
-              }
-            }
-            // 忽略字體相關域名
-            if (url.includes('tpjwebfont2.judicial.gov.tw') || url.includes('fontawesome')) {
-              console.log("Ignoring webfont/fontawesome URL:", url);
-              return url;
-            }
-            return url;
-          }
-          
-          // 處理相對路徑
-          if (url.startsWith('/')) {
-            return PROXY_BASE + url;
-          }
-          
-          // 處理不帶斜線的相對路徑
-          if (!url.startsWith('http') && !url.startsWith('/') && !url.startsWith('data:')) {
-            return PROXY_BASE + '/' + url;
-          }
-          
-          return url;
-        }
-        
-        // 阻止頁面重新加載
-        const origReload = window.location.reload;
-        window.location.reload = function() {
-          console.warn("Prevented page reload to avoid NS_BINDING_ABORTED");
-        };
-        
-        // 攔截 XHR 請求
-        const origXHROpen = XMLHttpRequest.prototype.open;
-        XMLHttpRequest.prototype.open = function(method, url, async, user, pass) {
-          console.log("Original XHR URL:", url);
-          const newUrl = rewriteUrl(url);
-          console.log("Rewritten XHR URL:", newUrl);
-          return origXHROpen.call(this, method, newUrl, async, user, pass);
-        };
-        
-        // 攔截 Fetch 請求
-        const origFetch = window.fetch;
-        window.fetch = function(input, init) {
-          console.log("Original Fetch URL:", input);
-          const newInput = typeof input === 'string' ? rewriteUrl(input) : input;
-          console.log("Rewritten Fetch URL:", newInput);
-          return origFetch.call(window, newInput, init);
-        };
-        
-        // 延遲攔截 jQuery AJAX
-        setTimeout(function() {
-  if (window.jQuery) {
-    console.log("jQuery found, intercepting AJAX...");
-    
-    // 確保 $ 變數也能訪問 jQuery
-    if (!window.$) {
-      window.$ = window.jQuery;
-      console.log("重新設置 $ 變數以供腳本使用");
-    }
-    
-    // 攔截 jQuery.ajax
-    const origAjax = jQuery.ajax;
-    jQuery.ajax = function(options) {
-      const now = Date.now();
-      if (now - lastAjaxCall < debounceDelay) {
-        console.log("Debouncing AJAX call:", options.url);
-        return;
-      }
-      lastAjaxCall = now;
-      if (typeof options === 'string') {
-        options = { url: options };
-      }
-      if (options.url) {
-        console.log("Original AJAX URL:", options.url);
-        options.url = rewriteUrl(options.url);
-        console.log("Rewritten AJAX URL:", options.url);
-      }
-      return origAjax.apply(jQuery, [options]);
-    };
-    
-    // 攔截 jQuery 的 get 和 post 方法
-    ['get', 'post'].forEach(function(method) {
-      const orig = jQuery[method];
-      jQuery[method] = function(url, data, callback, type) {
-        console.log("Original jQuery." + method + " URL:", url);
-        url = rewriteUrl(url);
-        console.log("Rewritten jQuery." + method + " URL:", url);
-        return orig.call(jQuery, url, data, callback, type);
-      };
-      
-      // 如果 $ 存在且不等於 jQuery，也攔截 $.method
-      if (window.$ && window.$ !== jQuery) {
-        const origDollar = $[method];
-        $[method] = function(url, data, callback, type) {
-          console.log("Original $." + method + " URL:", url);
-          url = rewriteUrl(url);
-          console.log("Rewritten $." + method + " URL:", url);
-          return origDollar.call($, url, data, callback, type);
-        };
-      }
-    });
-    
-    // 攔截 jQuery.getScript
-    const origGetScript = jQuery.getScript;
-    jQuery.getScript = function(url, callback) {
-      console.log("Original getScript URL:", url);
-      url = rewriteUrl(url);
-      console.log("Rewritten getScript URL:", url);
-      return origGetScript.call(jQuery, url, callback);
-    };
-    
-    // 如果 $ 存在且不等於 jQuery，也攔截 $.getScript
-    if (window.$ && window.$ !== jQuery) {
-      const origDollarGetScript = $.getScript;
-      $.getScript = function(url, callback) {
-        console.log("Original $.getScript URL:", url);
-        url = rewriteUrl(url);
-        console.log("Rewritten $.getScript URL:", url);
-        return origDollarGetScript.call($, url, callback);
-      };
-    }
-    
-    // 攔截 $.ajax (如果 $ 存在且不等於 jQuery)
-    if (window.$ && window.$ !== jQuery) {
-      const origDollarAjax = $.ajax;
-      $.ajax = function(options) {
-        const now = Date.now();
-        if (now - lastAjaxCall < debounceDelay) {
-          console.log("Debouncing $.ajax call:", options.url);
-          return;
-        }
-        lastAjaxCall = now;
-        if (typeof options === 'string') {
-          options = { url: options };
-        }
-        if (options.url) {
-          console.log("Original $.ajax URL:", options.url);
-          options.url = rewriteUrl(options.url);
-          console.log("Rewritten $.ajax URL:", options.url);
-        }
-        return origDollarAjax.apply($, [options]);
-      };
-    }
-    
-    console.log("jQuery AJAX interception complete ✓");
-  } else {
-    console.warn("jQuery not available for interception!");
-  }
-}, 1000);
-        
-        console.log("AJAX Interception initialized ✓");
-      })();
-    </script>
-    `;
-
-
-
-        // 4. 添加簡化的 CSP，忽略字體
-        html = html.replace('</head>', `
-    <meta http-equiv="Content-Security-Policy" content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; img-src * data:; script-src * 'unsafe-inline' 'unsafe-eval'; style-src * 'unsafe-inline'; connect-src *;">
-    ${interceptScript}
-    </head>`);
-
-        // 5. 設置基底路徑
-        html = html.replace(/<base.*?>/g, '');
-        html = html.replace('<head>', `<head><base href="${JUDICIAL_BASE}/FJUD/">`);
+        );
 
         // 6. 阻止第三方追蹤腳本
         html = html.replace(/<script.*?google-analytics.*?<\/script>/g, '<!-- Google Analytics Removed -->');
         html = html.replace(/<script.*?googletagmanager.*?<\/script>/g, '<!-- Google Tag Manager Removed -->');
 
-        // 7. 添加非常簡單的 Fancybox 檢測和初始化腳本，避免過多干預
-       const fancyboxInitScript = `
+        // 7. 添加攔截所有 AJAX 請求的代碼
+        const interceptScript = `
+<script>
+  (function() {
+    const PROXY_BASE = "${baseUrl}/proxy";
+    const JUDICIAL_BASE = "${JUDICIAL_BASE}";
+    let lastAjaxCall = 0;
+    const debounceDelay = 500; // 500ms 防抖
+    
+    function rewriteUrl(url) {
+      console.log("Original URL:", url);
+      
+      // 處理以 '../' 開頭的相對路徑
+      if (url.startsWith('../')) {
+        return PROXY_BASE + '/' + url.substring(3);
+      }
+      
+      // 處理絕對路徑
+      if (url.startsWith('http')) {
+        if (url.includes('judgment.judicial.gov.tw')) {
+          try {
+            const urlObj = new URL(url);
+            return PROXY_BASE + urlObj.pathname + urlObj.search;
+          } catch (e) {
+            console.error("URL 解析錯誤:", e);
+            return url;
+          }
+        }
+        // 忽略字體相關域名
+        if (url.includes('tpjwebfont2.judicial.gov.tw') || url.includes('fontawesome')) {
+          console.log("Ignoring webfont/fontawesome URL:", url);
+          return url;
+        }
+        return url;
+      }
+      
+      // 處理相對路徑
+      if (url.startsWith('/')) {
+        return PROXY_BASE + url;
+      }
+      
+      // 處理不帶斜線的相對路徑
+      if (!url.startsWith('http') && !url.startsWith('/') && !url.startsWith('data:')) {
+        return PROXY_BASE + '/' + url;
+      }
+      
+      return url;
+    }
+    
+    // 阻止頁面重新加載
+    const origReload = window.location.reload;
+    window.location.reload = function() {
+      console.warn("Prevented page reload to avoid NS_BINDING_ABORTED");
+    };
+    
+    // 攔截 XHR 請求
+    const origXHROpen = XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.open = function(method, url, async, user, pass) {
+      console.log("Original XHR URL:", url);
+      const newUrl = rewriteUrl(url);
+      console.log("Rewritten XHR URL:", newUrl);
+      return origXHROpen.call(this, method, newUrl, async, user, pass);
+    };
+    
+    // 攔截 Fetch 請求
+    const origFetch = window.fetch;
+    window.fetch = function(input, init) {
+      console.log("Original Fetch URL:", input);
+      const newInput = typeof input === 'string' ? rewriteUrl(input) : input;
+      console.log("Rewritten Fetch URL:", newInput);
+      return origFetch.call(window, newInput, init);
+    };
+    
+    // 延遲攔截 jQuery AJAX
+    setTimeout(function() {
+      if (window.jQuery) {
+        console.log("jQuery found, intercepting AJAX...");
+        
+        // 確保 $ 變數也能訪問 jQuery
+        if (!window.$) {
+          window.$ = window.jQuery;
+          console.log("重新設置 $ 變數以供腳本使用");
+        }
+        
+        // 攔截 jQuery.ajax
+        const origAjax = jQuery.ajax;
+        jQuery.ajax = function(options) {
+          const now = Date.now();
+          if (now - lastAjaxCall < debounceDelay) {
+            console.log("Debouncing AJAX call:", options.url);
+            return;
+          }
+          lastAjaxCall = now;
+          if (typeof options === 'string') {
+            options = { url: options };
+          }
+          if (options.url) {
+            console.log("Original AJAX URL:", options.url);
+            options.url = rewriteUrl(options.url);
+            console.log("Rewritten AJAX URL:", options.url);
+          }
+          return origAjax.apply(jQuery, [options]);
+        };
+        
+        // 攔截 jQuery 的 get 和 post 方法
+        ['get', 'post'].forEach(function(method) {
+          const orig = jQuery[method];
+          jQuery[method] = function(url, data, callback, type) {
+            console.log("Original jQuery." + method + " URL:", url);
+            url = rewriteUrl(url);
+            console.log("Rewritten jQuery." + method + " URL:", url);
+            return orig.call(jQuery, url, data, callback, type);
+          };
+          
+          // 如果 $ 存在且不等於 jQuery，也攔截 $.method
+          if (window.$ && window.$ !== jQuery) {
+            const origDollar = $[method];
+            $[method] = function(url, data, callback, type) {
+              console.log("Original $." + method + " URL:", url);
+              url = rewriteUrl(url);
+              console.log("Rewritten $." + method + " URL:", url);
+              return origDollar.call($, url, data, callback, type);
+            };
+          }
+        });
+        
+        // 攔截 jQuery.getScript
+        const origGetScript = jQuery.getScript;
+        jQuery.getScript = function(url, callback) {
+          console.log("Original getScript URL:", url);
+          url = rewriteUrl(url);
+          console.log("Rewritten getScript URL:", url);
+          return origGetScript.call(jQuery, url, callback);
+        };
+        
+        // 如果 $ 存在且不等於 jQuery，也攔截 $.getScript
+        if (window.$ && window.$ !== jQuery) {
+          const origDollarGetScript = $.getScript;
+          $.getScript = function(url, callback) {
+            console.log("Original $.getScript URL:", url);
+            url = rewriteUrl(url);
+            console.log("Rewritten $.getScript URL:", url);
+            return origDollarGetScript.call($, url, callback);
+          };
+        }
+        
+        // 攔截 $.ajax (如果 $ 存在且不等於 jQuery)
+        if (window.$ && window.$ !== jQuery) {
+          const origDollarAjax = $.ajax;
+          $.ajax = function(options) {
+            const now = Date.now();
+            if (now - lastAjaxCall < debounceDelay) {
+              console.log("Debouncing $.ajax call:", options.url);
+              return;
+            }
+            lastAjaxCall = now;
+            if (typeof options === 'string') {
+              options = { url: options };
+            }
+            if (options.url) {
+              console.log("Original $.ajax URL:", options.url);
+              options.url = rewriteUrl(options.url);
+              console.log("Rewritten $.ajax URL:", options.url);
+            }
+            return origDollarAjax.apply($, [options]);
+          };
+        }
+        
+        console.log("jQuery AJAX interception complete ✓");
+      } else {
+        console.warn("jQuery not available for interception!");
+      }
+    }, 1000);
+    
+    console.log("AJAX Interception initialized ✓");
+  })();
+</script>
+`;
+
+        // 8. 添加 Fancybox 初始化腳本
+        const fancyboxInitScript = `
 <script>
   // 等待 jQuery 和文檔準備就緒
   window.jQueryReady(function($, jQuery) {
@@ -428,9 +427,11 @@ html = html.replace(
   });
 </script>
 `;
-        html = html.replace('</body>', `${fancyboxInitScript}</body>`);
 
-        // 8. 添加 CORS 頭
+        // 9. 添加 AJAX 攔截腳本和 Fancybox 初始化腳本到 body 結尾
+        html = html.replace('</body>', `${interceptScript}${fancyboxInitScript}</body>`);
+
+        // 10. 添加 CORS 頭
         res.set({
             'Content-Type': 'text/html; charset=utf-8',
             'Access-Control-Allow-Origin': '*',
