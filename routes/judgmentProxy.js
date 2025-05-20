@@ -417,18 +417,19 @@ router.get('/', async (req, res) => {
 });
 
 // 特別處理 GetJudTerms.ashx 路由
-router.options('/proxy/controls/GetJudTerms.ashx', (req, res) => {
-    res.set({
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, X-Requested-With, Authorization'
-    });
-    res.sendStatus(204);
+router.options('/api/judgment-proxy/proxy/controls/GetJudTerms.ashx', (req, res) => {
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, X-Requested-With, Authorization'
+  });
+  res.sendStatus(204);
 });
 
-router.get('/proxy/controls/GetJudTerms.ashx', async (req, res) => {
+router.get('/api/judgment-proxy/proxy/controls/GetJudTerms.ashx', async (req, res) => {
     const queryString = req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : '';
-    const url = `${JUDICIAL_BASE}/FJUD/controls/GetJudTerms.ashx${queryString}`;
+    // 注意這裡修正了 URL 構造，移除了不必要的 /FJUD/ 部分
+    const url = `${JUDICIAL_BASE}/controls/GetJudTerms.ashx${queryString}`;
 
     console.log(`處理特殊 GetJudTerms 請求: ${url}`);
 
@@ -436,12 +437,45 @@ router.get('/proxy/controls/GetJudTerms.ashx', async (req, res) => {
         const response = await fetchWithRetry(url, {
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-                'Referer': JUDICIAL_BASE + '/FJUD/',
+                'Referer': JUDICIAL_BASE,
                 'Accept': '*/*',
                 'Connection': 'keep-alive',
                 'Accept-Encoding': 'gzip, deflate, br'
-            }
+            },
+            // 禁止重定向，避免 307 狀態碼
+            redirect: 'manual'
         });
+
+        // 處理可能的重定向
+        if (response.status === 307) {
+            const redirectUrl = response.headers.get('location');
+            console.log(`重定向到: ${redirectUrl}`);
+            const redirectResponse = await fetchWithRetry(redirectUrl, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+                    'Referer': JUDICIAL_BASE,
+                    'Accept': '*/*'
+                }
+            });
+
+            if (!redirectResponse.ok) {
+                throw new Error(`重定向後 HTTP 錯誤! Status: ${redirectResponse.status}`);
+            }
+
+            const contentType = redirectResponse.headers.get('content-type') || 'application/json';
+            const buffer = await redirectResponse.buffer();
+
+            res.set({
+                'Content-Type': contentType,
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+                'Access-Control-Allow-Headers': 'Content-Type, X-Requested-With, Authorization',
+                'Cache-Control': 'no-cache'
+            });
+
+            res.send(buffer);
+            return;
+        }
 
         if (!response.ok) {
             throw new Error(`HTTP error! Status: ${response.status}`);
@@ -455,13 +489,21 @@ router.get('/proxy/controls/GetJudTerms.ashx', async (req, res) => {
             'Access-Control-Allow-Origin': '*',
             'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
             'Access-Control-Allow-Headers': 'Content-Type, X-Requested-With, Authorization',
-            'Access-Control-Max-Age': '86400' // 24小時
+            'Cache-Control': 'no-cache'
         });
 
         const buffer = await response.buffer();
         res.send(buffer);
     } catch (err) {
         console.error(`GetJudTerms 請求錯誤: ${url}`, err.message, err.stack);
+
+        // 即使發生錯誤也要設置 CORS 頭
+        res.set({
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, X-Requested-With, Authorization'
+        });
+
         res.status(500).send('請求失敗');
     }
 });
