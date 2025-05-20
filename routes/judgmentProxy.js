@@ -10,123 +10,126 @@ const MAX_RETRIES = 3; // 最大重試次數
 
 // 判斷 MIME 類型的輔助函數
 function getMimeType(filePath) {
-  const ext = path.extname(filePath).toLowerCase();
-  const mimeTypes = {
-    '.html': 'text/html',
-    '.js': 'application/javascript',
-    '.css': 'text/css',
-    '.json': 'application/json',
-    '.png': 'image/png',
-    '.jpg': 'image/jpeg',
-    '.jpeg': 'image/jpeg',
-    '.gif': 'image/gif',
-    '.svg': 'image/svg+xml',
-    '.ico': 'image/x-icon',
-    '.ttf': 'font/ttf',
-    '.otf': 'font/otf',
-    '.woff': 'font/woff',
-    '.woff2': 'font/woff2',
-    '.eot': 'application/vnd.ms-fontobject'
-  };
-  return mimeTypes[ext] || 'application/octet-stream';
+    const ext = path.extname(filePath).toLowerCase();
+    const mimeTypes = {
+        '.html': 'text/html',
+        '.js': 'application/javascript',
+        '.css': 'text/css',
+        '.json': 'application/json',
+        '.png': 'image/png',
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.gif': 'image/gif',
+        '.svg': 'image/svg+xml',
+        '.ico': 'image/x-icon',
+        '.ttf': 'font/ttf',
+        '.otf': 'font/otf',
+        '.woff': 'font/woff',
+        '.woff2': 'font/woff2',
+        '.eot': 'application/vnd.ms-fontobject'
+    };
+    return mimeTypes[ext] || 'application/octet-stream';
 }
 
 // 帶重試的 fetch 函數
 async function fetchWithRetry(url, options, retries = MAX_RETRIES) {
-  for (let i = 0; i < retries; i++) {
-    try {
-      const response = await fetch(url, {
-        ...options,
-        timeout: REQUEST_TIMEOUT
-      });
-      return response;
-    } catch (err) {
-      if (i === retries - 1) throw err;
-      console.warn(`Fetch 重試 ${i + 1}/${retries} 失敗: ${url}, 錯誤: ${err.message}`);
-      await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+    for (let i = 0; i < retries; i++) {
+        try {
+            const response = await fetch(url, {
+                ...options,
+                timeout: REQUEST_TIMEOUT
+            });
+            return response;
+        } catch (err) {
+            if (i === retries - 1) throw err;
+            console.warn(`Fetch 重試 ${i + 1}/${retries} 失敗: ${url}, 錯誤: ${err.message}`);
+            await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+        }
     }
-  }
 }
 
 // 主頁面代理路由
 router.options('/', (req, res) => {
-  res.set({
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type'
-  });
-  res.sendStatus(204);
+    res.set({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type'
+    });
+    res.sendStatus(204);
 });
 
 router.get('/', async (req, res) => {
-  const { id } = req.query;
-  if (!id) return res.status(400).send('缺少 id 參數');
+    const { id } = req.query;
+    if (!id) return res.status(400).send('缺少 id 參數');
 
-  const decodedId = decodeURIComponent(id);
-  const url = `${JUDICIAL_BASE}/FJUD/data.aspx?ty=JD&id=${encodeURIComponent(decodedId)}`;
-  
-  console.log(`請求 URL: ${url}`);
-  
-  try {
-    const response = await fetchWithRetry(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-        'Referer': JUDICIAL_BASE,
-        'Accept-Language': 'zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Connection': 'keep-alive',
-        'Accept-Encoding': 'gzip, deflate, br'
-      }
-    });
-    
-    if (!response.ok) {
-      throw new Error(`HTTP error! Status: ${response.status}`);
-    }
-    
-    let html = await response.text();
-    const baseUrl = req.protocol + '://' + req.get('host') + '/api/judgment-proxy';
-    
-    // 1. 注入 jQuery 和 fancybox，移除 jQuery.noConflict()
-    html = html.replace(/<script.*jquery.*?\.js.*?<\/script>/gi, '');
-    const scripts = `
-      <script src="${baseUrl}/proxy/js/jquery-3.6.0.min.js"></script>
-      <script src="${baseUrl}/proxy/js/jquery.fancybox.min.js"></script>
-      <link rel="stylesheet" href="${baseUrl}/proxy/css/jquery.fancybox.min.css">
-      <!-- 模擬 subset 變數，防止未定義錯誤 -->
-      <script>
-        window.subset = window.subset || {};
-        console.log("Defined dummy subset object to prevent ReferenceError");
-      </script>
-      <!-- 修復 terms-tooltip.js 的 $ 錯誤 -->
-      <script>
-        if (window.jQuery) {
-          console.log("jQuery loaded, ensuring $ alias for terms-tooltip.js");
-          window.$ = window.$ || jQuery;
-        } else {
-          console.warn("jQuery not loaded, terms-tooltip.js may fail");
+    const decodedId = decodeURIComponent(id);
+    const url = `${JUDICIAL_BASE}/FJUD/data.aspx?ty=JD&id=${encodeURIComponent(decodedId)}`;
+
+    console.log(`請求 URL: ${url}`);
+
+    try {
+        const response = await fetchWithRetry(url, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+                'Referer': JUDICIAL_BASE,
+                'Accept-Language': 'zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                'Connection': 'keep-alive',
+                'Accept-Encoding': 'gzip, deflate, br'
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! Status: ${response.status}`);
         }
-      </script>
-    `;
-    html = html.replace('<head>', `<head>${scripts}`);
-    
-    // 2. 替換所有 URL，忽略字體相關資源
-    html = html
-      .replace(/src=["'](https?:\/\/judgment\.judicial\.gov\.tw)?\/([^"']+)["']/g, 
-              `src="${baseUrl}/proxy/$2"`)
-      .replace(/href=["'](https?:\/\/judgment\.judicial\.gov\.tw)?\/([^"']+)["']/g, 
-              `href="${baseUrl}/proxy/$2"`)
-      .replace(/url\s*:\s*["'](\/[^"']+)["']/g, `url: "${baseUrl}/proxy$1"`)
-      .replace(/\$\.get\(["'](\/[^"']+)["']/g, `$.get("${baseUrl}/proxy$1"`)
-      .replace(/\$\.post\(["'](\/[^"']+)["']/g, `$.post("${baseUrl}/proxy$1"`)
-      .replace(/ajax\(\s*{\s*url\s*:\s*["'](\/[^"']+)["']/g, `ajax({ url: "${baseUrl}/proxy$1"`)
-      .replace(/(src|href)=["'](\/\/[^"']+)["']/g, `$1="https:$2"`)
-      // 移除字體相關腳本和資源
-      .replace(/<script.*tpjwebfont2\.judicial\.gov\.tw.*?<\/script>/gi, '<!-- Webfont Removed -->')
-      .replace(/<link.*fontawesome.*?\.css.*?>/gi, '<!-- FontAwesome CSS Removed -->')
-      .replace(/<script.*fontawesome.*?\.js.*?>/gi, '<!-- FontAwesome JS Removed -->');
 
-    // 3. 添加攔截所有 AJAX 請求的代碼，包含防抖邏輯
-    const interceptScript = `
+        let html = await response.text();
+        const baseUrl = req.protocol + '://' + req.get('host') + '/api/judgment-proxy';
+
+        // 1. 注入 jQuery 和 fancybox，移除 jQuery.noConflict()
+        html = html.replace(/<script.*jquery.*?\.js.*?<\/script>/gi, '');
+        const scripts = `
+  <script src="${baseUrl}/proxy/js/jquery-3.6.0.min.js"></script>
+  <script src="${baseUrl}/proxy/js/jquery.fancybox.min.js"></script>
+  <link rel="stylesheet" href="${baseUrl}/proxy/css/jquery.fancybox.min.css">
+  <!-- 模擬 subset 函數，而不是對象 -->
+  <script>
+    // 定義 subset 為一個函數，接受任何參數並返回空字符串
+    window.subset = window.subset || function() {
+      console.log("Mock subset function called with:", arguments);
+      return ""; // 返回空字串避免出現 undefined
+    };
+    console.log("Defined dummy subset function to prevent ReferenceError");
+    
+    // 確保 $ 別名可用於 jQuery 插件
+    window.$ = window.$ || jQuery;
+    
+    // 模擬其他可能的依賴
+    window.webfont_log = window.webfont_log || function() {
+      console.log("Mock webfont_log called with:", arguments);
+    };
+  </script>
+`;
+        html = html.replace('<head>', `<head>${scripts}`);
+
+        // 2. 替換所有 URL，忽略字體相關資源
+        html = html
+            .replace(/src=["'](https?:\/\/judgment\.judicial\.gov\.tw)?\/([^"']+)["']/g,
+                `src="${baseUrl}/proxy/$2"`)
+            .replace(/href=["'](https?:\/\/judgment\.judicial\.gov\.tw)?\/([^"']+)["']/g,
+                `href="${baseUrl}/proxy/$2"`)
+            .replace(/url\s*:\s*["'](\/[^"']+)["']/g, `url: "${baseUrl}/proxy$1"`)
+            .replace(/\$\.get\(["'](\/[^"']+)["']/g, `$.get("${baseUrl}/proxy$1"`)
+            .replace(/\$\.post\(["'](\/[^"']+)["']/g, `$.post("${baseUrl}/proxy$1"`)
+            .replace(/ajax\(\s*{\s*url\s*:\s*["'](\/[^"']+)["']/g, `ajax({ url: "${baseUrl}/proxy$1"`)
+            .replace(/(src|href)=["'](\/\/[^"']+)["']/g, `$1="https:$2"`)
+            // 移除字體相關腳本和資源
+            .replace(/<script.*tpjwebfont2\.judicial\.gov\.tw.*?<\/script>/gi, '<!-- Webfont Removed -->')
+            .replace(/<link.*fontawesome.*?\.css.*?>/gi, '<!-- FontAwesome CSS Removed -->')
+            .replace(/<script.*fontawesome.*?\.js.*?>/gi, '<!-- FontAwesome JS Removed -->');
+
+        // 3. 添加攔截所有 AJAX 請求的代碼，包含防抖邏輯
+        const interceptScript = `
     <script>
       (function() {
         const PROXY_BASE = "${baseUrl}/proxy";
@@ -136,11 +139,7 @@ router.get('/', async (req, res) => {
         
         function rewriteUrl(url) {
           console.log("Original URL:", url);
-          
-          // 處理以 '../' 開頭的相對路徑
-          if (url.startsWith('../')) {
-            return PROXY_BASE + '/' + url.substring(3);
-          }
+         
           
           // 處理絕對路徑
           if (url.startsWith('http')) {
@@ -250,129 +249,129 @@ router.get('/', async (req, res) => {
       })();
     </script>
     `;
-    
-    // 4. 添加簡化的 CSP，忽略字體
-    html = html.replace('</head>', `
+
+        // 4. 添加簡化的 CSP，忽略字體
+        html = html.replace('</head>', `
     <meta http-equiv="Content-Security-Policy" content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; img-src * data:; script-src * 'unsafe-inline' 'unsafe-eval'; style-src * 'unsafe-inline'; connect-src *;">
     ${interceptScript}
     </head>`);
-    
-    // 5. 設置基底路徑
-    html = html.replace(/<base.*?>/g, '');
-    html = html.replace('<head>', `<head><base href="${JUDICIAL_BASE}/FJUD/">`);
-    
-    // 6. 阻止第三方追蹤腳本
-    html = html.replace(/<script.*?google-analytics.*?<\/script>/g, '<!-- Google Analytics Removed -->');
-    html = html.replace(/<script.*?googletagmanager.*?<\/script>/g, '<!-- Google Tag Manager Removed -->');
-    
-    // 7. 添加 CORS 頭
-    res.set({
-      'Content-Type': 'text/html; charset=utf-8',
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type'
-    });
-    res.send(html);
-  } catch (err) {
-    console.error('Proxy Error:', err.message, err.stack);
-    res.status(500).send('伺服器錯誤，請稍後重試');
-  }
+
+        // 5. 設置基底路徑
+        html = html.replace(/<base.*?>/g, '');
+        html = html.replace('<head>', `<head><base href="${JUDICIAL_BASE}/FJUD/">`);
+
+        // 6. 阻止第三方追蹤腳本
+        html = html.replace(/<script.*?google-analytics.*?<\/script>/g, '<!-- Google Analytics Removed -->');
+        html = html.replace(/<script.*?googletagmanager.*?<\/script>/g, '<!-- Google Tag Manager Removed -->');
+
+        // 7. 添加 CORS 頭
+        res.set({
+            'Content-Type': 'text/html; charset=utf-8',
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type'
+        });
+        res.send(html);
+    } catch (err) {
+        console.error('Proxy Error:', err.message, err.stack);
+        res.status(500).send('伺服器錯誤，請稍後重試');
+    }
 });
 
 // 處理 controls 請求
 router.options('/proxy/controls/*', (req, res) => {
-  res.set({
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type'
-  });
-  res.sendStatus(204);
+    res.set({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type'
+    });
+    res.sendStatus(204);
 });
 
 router.get('/proxy/controls/*', async (req, res) => {
-  const resourcePath = req.params[0] || '';
-  const queryString = req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : '';
-  const url = `${JUDICIAL_BASE}/FJUD/controls/${resourcePath}${queryString}`;
-  
-  console.log(`處理 controls 請求: ${url}`);
-  
-  try {
-    const response = await fetchWithRetry(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-        'Referer': JUDICIAL_BASE + '/FJUD/',
-        'Accept': '*/*',
-        'Connection': 'keep-alive',
-        'Accept-Encoding': 'gzip, deflate, br'
-      }
-    });
-    
-    if (!response.ok) {
-      throw new Error(`HTTP error! Status: ${response.status}`);
+    const resourcePath = req.params[0] || '';
+    const queryString = req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : '';
+    const url = `${JUDICIAL_BASE}/FJUD/controls/${resourcePath}${queryString}`;
+
+    console.log(`處理 controls 請求: ${url}`);
+
+    try {
+        const response = await fetchWithRetry(url, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+                'Referer': JUDICIAL_BASE + '/FJUD/',
+                'Accept': '*/*',
+                'Connection': 'keep-alive',
+                'Accept-Encoding': 'gzip, deflate, br'
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! Status: ${response.status}`);
+        }
+
+        let contentType = response.headers.get('content-type') || getMimeType(resourcePath);
+        res.set({
+            'Content-Type': contentType,
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type'
+        });
+
+        const buffer = await response.buffer();
+        res.send(buffer);
+    } catch (err) {
+        console.error(`Controls 路徑代理錯誤: ${url}`, err.message, err.stack);
+        res.status(404).send('資源未找到');
     }
-    
-    let contentType = response.headers.get('content-type') || getMimeType(resourcePath);
-    res.set({
-      'Content-Type': contentType,
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type'
-    });
-    
-    const buffer = await response.buffer();
-    res.send(buffer);
-  } catch (err) {
-    console.error(`Controls 路徑代理錯誤: ${url}`, err.message, err.stack);
-    res.status(404).send('資源未找到');
-  }
 });
 
 // 通用資源代理路由
 router.options('/proxy/*', (req, res) => {
-  res.set({
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type'
-  });
-  res.sendStatus(204);
+    res.set({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type'
+    });
+    res.sendStatus(204);
 });
 
 router.get('/proxy/*', async (req, res) => {
-  const resourcePath = req.params[0] || '';
-  const queryString = req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : '';
-  const url = `${JUDICIAL_BASE}/${resourcePath}${queryString}`;
-  
-  console.log(`處理通用資源請求: ${url}`);
-  
-  try {
-    const response = await fetchWithRetry(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-        'Referer': JUDICIAL_BASE,
-        'Accept': '*/*',
-        'Connection': 'keep-alive',
-        'Accept-Encoding': 'gzip, deflate, br'
-      }
-    });
-    
-    if (!response.ok) {
-      throw new Error(`HTTP error! Status: ${response.status}`);
+    const resourcePath = req.params[0] || '';
+    const queryString = req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : '';
+    const url = `${JUDICIAL_BASE}/${resourcePath}${queryString}`;
+
+    console.log(`處理通用資源請求: ${url}`);
+
+    try {
+        const response = await fetchWithRetry(url, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+                'Referer': JUDICIAL_BASE,
+                'Accept': '*/*',
+                'Connection': 'keep-alive',
+                'Accept-Encoding': 'gzip, deflate, br'
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! Status: ${response.status}`);
+        }
+
+        let contentType = response.headers.get('content-type') || getMimeType(resourcePath);
+        res.set({
+            'Content-Type': contentType,
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type'
+        });
+
+        const buffer = await response.buffer();
+        res.send(buffer);
+    } catch (err) {
+        console.error(`資源代理錯誤: ${url}`, err.message, err.stack);
+        res.status(404).send('資源未找到');
     }
-    
-    let contentType = response.headers.get('content-type') || getMimeType(resourcePath);
-    res.set({
-      'Content-Type': contentType,
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type'
-    });
-    
-    const buffer = await response.buffer();
-    res.send(buffer);
-  } catch (err) {
-    console.error(`資源代理錯誤: ${url}`, err.message, err.stack);
-    res.status(404).send('資源未找到');
-  }
 });
 
 export default router;
