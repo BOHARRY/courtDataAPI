@@ -124,9 +124,9 @@ router.get('/', async (req, res) => {
             .replace(/<script.*fontawesome.*?\.js.*?>/gi, '<!-- FontAwesome JS Removed -->');
 
         // 在 URL 替換部分之後，添加 terms-tooltip 的特殊處理
-html = html.replace(
-  /<script.*?terms-tooltip\.js.*?><\/script>/g,
-  `<script>
+        html = html.replace(
+            /<script.*?terms-tooltip\.js.*?><\/script>/g,
+            `<script>
     // 使用匿名函數創建獨立作用域
     (function() {
       // 先確保 CSS 載入
@@ -170,7 +170,7 @@ html = html.replace(
       }, 100);
     })();
   </script>`
-);
+        );
 
         // 3. 添加攔截所有 AJAX 請求的代碼，包含防抖邏輯
         const interceptScript = `
@@ -351,7 +351,7 @@ html = html.replace(
     </script>
     `;
 
-    
+
 
         // 4. 添加簡化的 CSP，忽略字體
         html = html.replace('</head>', `
@@ -416,12 +416,63 @@ html = html.replace(
     }
 });
 
+// 特別處理 GetJudTerms.ashx 路由
+router.options('/proxy/controls/GetJudTerms.ashx', (req, res) => {
+    res.set({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, X-Requested-With, Authorization'
+    });
+    res.sendStatus(204);
+});
+
+router.get('/proxy/controls/GetJudTerms.ashx', async (req, res) => {
+    const queryString = req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : '';
+    const url = `${JUDICIAL_BASE}/FJUD/controls/GetJudTerms.ashx${queryString}`;
+
+    console.log(`處理特殊 GetJudTerms 請求: ${url}`);
+
+    try {
+        const response = await fetchWithRetry(url, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+                'Referer': JUDICIAL_BASE + '/FJUD/',
+                'Accept': '*/*',
+                'Connection': 'keep-alive',
+                'Accept-Encoding': 'gzip, deflate, br'
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! Status: ${response.status}`);
+        }
+
+        let contentType = response.headers.get('content-type') || 'application/json';
+
+        // 設置必要的跨域頭
+        res.set({
+            'Content-Type': contentType,
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, X-Requested-With, Authorization',
+            'Access-Control-Max-Age': '86400' // 24小時
+        });
+
+        const buffer = await response.buffer();
+        res.send(buffer);
+    } catch (err) {
+        console.error(`GetJudTerms 請求錯誤: ${url}`, err.message, err.stack);
+        res.status(500).send('請求失敗');
+    }
+});
+
 // 處理 controls 請求
 router.options('/proxy/controls/*', (req, res) => {
     res.set({
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type'
+        'Access-Control-Allow-Headers': 'Content-Type, X-Requested-With, Authorization',
+        'Access-Control-Max-Age': '86400' // 24小時
     });
     res.sendStatus(204);
 });
@@ -453,7 +504,8 @@ router.get('/proxy/controls/*', async (req, res) => {
             'Content-Type': contentType,
             'Access-Control-Allow-Origin': '*',
             'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type'
+            'Access-Control-Allow-Headers': 'Content-Type, X-Requested-With, Authorization',
+            'Cache-Control': 'no-cache'
         });
 
         const buffer = await response.buffer();
