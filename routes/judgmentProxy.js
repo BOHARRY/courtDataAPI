@@ -12,7 +12,15 @@ router.get('/', async (req, res) => {
   const url = `https://judgment.judicial.gov.tw/FJUD/data.aspx?ty=JD&id=${id}`;
 
   try {
-    const response = await fetch(url);
+    // 在這裡添加請求頭
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.127 Safari/537.36',
+        'Referer': 'https://judgment.judicial.gov.tw/',
+        'Accept-Language': 'zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7'
+      }
+    });
+    
     let html = await response.text();
 
     // 修正 CSS 和 JS 相對路徑
