@@ -123,6 +123,55 @@ router.get('/', async (req, res) => {
             .replace(/<link.*fontawesome.*?\.css.*?>/gi, '<!-- FontAwesome CSS Removed -->')
             .replace(/<script.*fontawesome.*?\.js.*?>/gi, '<!-- FontAwesome JS Removed -->');
 
+        // 在 URL 替換部分之後，添加 terms-tooltip 的特殊處理
+html = html.replace(
+  /<script.*?terms-tooltip\.js.*?><\/script>/g,
+  `<script>
+    // 使用匿名函數創建獨立作用域
+    (function() {
+      // 先確保 CSS 載入
+      var css = document.createElement('link');
+      css.rel = 'stylesheet';
+      css.type = 'text/css';
+      css.href = "${baseUrl}/proxy/css/terms-tooltip.css";
+      document.head.appendChild(css);
+      
+      // 等待 jQuery 加載完成
+      var checkJQuery = setInterval(function() {
+        if (window.jQuery) {
+          clearInterval(checkJQuery);
+          console.log("jQuery 已就緒，載入 terms-tooltip 插件...");
+          
+          // 創建臨時的 $ 引用
+          var _$ = window.jQuery;
+          
+          // 載入 terms-tooltip.js
+          var script = document.createElement('script');
+          script.src = "${baseUrl}/proxy/js/terms-tooltip.js";
+          script.onload = function() {
+            console.log("terms-tooltip.js 已載入，嘗試初始化...");
+            
+            setTimeout(function() {
+              try {
+                // 手動初始化 term_tooltip
+                if (typeof _$.fn.term_tooltip === 'function') {
+                  _$('.TooltipTarget').term_tooltip();
+                  console.log("terms-tooltip 已手動初始化");
+                } else {
+                  console.error("terms-tooltip 插件未正確定義");
+                }
+              } catch(e) {
+                console.error("初始化 terms-tooltip 時出錯:", e);
+              }
+            }, 1000); // 給足夠時間讓插件註冊
+          };
+          document.head.appendChild(script);
+        }
+      }, 100);
+    })();
+  </script>`
+);
+
         // 3. 添加攔截所有 AJAX 請求的代碼，包含防抖邏輯
         const interceptScript = `
     <script>
