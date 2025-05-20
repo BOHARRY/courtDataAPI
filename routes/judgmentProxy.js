@@ -43,17 +43,25 @@ async function fetchWithRetry(url, options, retries = MAX_RETRIES) {
     } catch (err) {
       if (i === retries - 1) throw err;
       console.warn(`Fetch 重試 ${i + 1}/${retries} 失敗: ${url}, 錯誤: ${err.message}`);
-      await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1))); // 延遲重試
+      await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
     }
   }
 }
 
 // 主頁面代理路由
+router.options('/', (req, res) => {
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type'
+  });
+  res.sendStatus(204);
+});
+
 router.get('/', async (req, res) => {
   const { id } = req.query;
   if (!id) return res.status(400).send('缺少 id 參數');
 
-  // 解碼 id 參數，確保正確格式
   const decodedId = decodeURIComponent(id);
   const url = `${JUDICIAL_BASE}/FJUD/data.aspx?ty=JD&id=${encodeURIComponent(decodedId)}`;
   
@@ -100,7 +108,8 @@ router.get('/', async (req, res) => {
       .replace(/(src|href)=["'](\/\/[^"']+)["']/g, `$1="https:$2"`)
       // 移除字體相關腳本和資源
       .replace(/<script.*tpjwebfont2\.judicial\.gov\.tw.*?<\/script>/gi, '<!-- Webfont Removed -->')
-      .replace(/<link.*fontawesome.*?\.css.*?>/gi, '<!-- FontAwesome CSS Removed -->');
+      .replace(/<link.*fontawesome.*?\.css.*?>/gi, '<!-- FontAwesome CSS Removed -->')
+      .replace(/<script.*fontawesome.*?\.js.*?>/gi, '<!-- FontAwesome JS Removed -->');
 
     // 3. 添加攔截所有 AJAX 請求的代碼
     const interceptScript = `
@@ -114,7 +123,7 @@ router.get('/', async (req, res) => {
           
           // 處理以 '../' 開頭的相對路徑
           if (url.startsWith('../')) {
-            return PROXY_BASE + '/controls/' + url.substring(3);
+            return PROXY_BASE + '/' + url.substring(3);
           }
           
           // 處理絕對路徑
@@ -129,8 +138,8 @@ router.get('/', async (req, res) => {
               }
             }
             // 忽略字體相關域名
-            if (url.includes('tpjwebfont2.judicial.gov.tw')) {
-              console.log("Ignoring webfont URL:", url);
+            if (url.includes('tpjwebfont2.judicial.gov.tw') || url.includes('fontawesome')) {
+              console.log("Ignoring webfont/fontawesome URL:", url);
               return url;
             }
             return url;
@@ -143,7 +152,7 @@ router.get('/', async (req, res) => {
           
           // 處理不帶斜線的相對路徑
           if (!url.startsWith('http') && !url.startsWith('/') && !url.startsWith('data:')) {
-            return PROXY_BASE + '/controls/' + url;
+            return PROXY_BASE + '/' + url;
           }
           
           return url;
@@ -243,6 +252,15 @@ router.get('/', async (req, res) => {
 });
 
 // 處理 controls 請求
+router.options('/proxy/controls/*', (req, res) => {
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type'
+  });
+  res.sendStatus(204);
+});
+
 router.get('/proxy/controls/*', async (req, res) => {
   const resourcePath = req.params[0] || '';
   const queryString = req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : '';
@@ -282,6 +300,15 @@ router.get('/proxy/controls/*', async (req, res) => {
 });
 
 // 通用資源代理路由
+router.options('/proxy/*', (req, res) => {
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type'
+  });
+  res.sendStatus(204);
+});
+
 router.get('/proxy/*', async (req, res) => {
   const resourcePath = req.params[0] || '';
   const queryString = req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : '';
