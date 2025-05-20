@@ -125,8 +125,8 @@ router.get('/', async (req, res) => {
 
         // 在 URL 替換部分之後，添加 terms-tooltip 的特殊處理
         html = html.replace(
-            /<script.*?terms-tooltip\.js.*?><\/script>/g,
-            `<script>
+    /<script.*?terms-tooltip\.js.*?><\/script>/g,
+    `<script>
     // 使用匿名函數創建獨立作用域
     (function() {
       // 先確保 CSS 載入
@@ -145,32 +145,39 @@ router.get('/', async (req, res) => {
           // 創建臨時的 $ 引用
           var _$ = window.jQuery;
           
+          // 重定向 GetJudTerms.ashx 請求
+          var origAjax = _$.ajax;
+          _$.ajax = function(options) {
+            if (typeof options === 'string') {
+              options = { url: options };
+            }
+            if (options.url && options.url.includes('GetJudTerms.ashx')) {
+              options.url = "${baseUrl}/terms" + (options.url.includes('?') ? options.url.substring(options.url.indexOf('?')) : '');
+              console.log("重定向 terms-tooltip AJAX 請求到:", options.url);
+            }
+            return origAjax.apply(_$, [options]);
+          };
+          
           // 載入 terms-tooltip.js
           var script = document.createElement('script');
           script.src = "${baseUrl}/proxy/js/terms-tooltip.js";
           script.onload = function() {
             console.log("terms-tooltip.js 已載入，嘗試初始化...");
-            
             setTimeout(function() {
               try {
-                // 手動初始化 term_tooltip
-                if (typeof _$.fn.term_tooltip === 'function') {
-                  _$('.TooltipTarget').term_tooltip();
-                  console.log("terms-tooltip 已手動初始化");
-                } else {
-                  console.error("terms-tooltip 插件未正確定義");
-                }
+                _$('.TooltipTarget').term_tooltip();
+                console.log("terms-tooltip 已手動初始化");
               } catch(e) {
                 console.error("初始化 terms-tooltip 時出錯:", e);
               }
-            }, 1000); // 給足夠時間讓插件註冊
+            }, 1000);
           };
           document.head.appendChild(script);
         }
       }, 100);
     })();
   </script>`
-        );
+);
 
         // 3. 添加攔截所有 AJAX 請求的代碼，包含防抖邏輯
         const interceptScript = `
@@ -497,6 +504,83 @@ router.get('/api/judgment-proxy/proxy/controls/GetJudTerms.ashx', async (req, re
 
 // 確保 OPTIONS 請求正確處理
 router.options('/api/judgment-proxy/proxy/controls/GetJudTerms.ashx', (req, res) => {
+    res.set({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, X-Requested-With, Authorization',
+        'Access-Control-Max-Age': '86400'
+    });
+    res.sendStatus(204);
+});
+
+// 自定義 terms 路由，代理 GetJudTerms.ashx 請求
+router.get('/api/judgment-proxy/terms', async (req, res) => {
+    const queryString = req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : '';
+    const url = `${JUDICIAL_BASE}/controls/GetJudTerms.ashx${queryString}`;
+
+    console.log(`處理自定義 terms 請求: ${url}`);
+
+    // 定義 CORS 頭部
+    const corsHeaders = {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, X-Requested-With, Authorization',
+        'Cache-Control': 'no-cache',
+        'Content-Type': 'application/json'
+    };
+
+    try {
+        const response = await fetchWithRetry(url, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+                'Referer': JUDICIAL_BASE,
+                'Accept': 'application/json',
+                'Connection': 'keep-alive',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Sec-Fetch-Dest': 'empty',
+                'Sec-Fetch-Mode': 'cors',
+                'Sec-Fetch-Site': 'same-origin'
+            },
+            redirect: 'manual'
+        });
+
+        if (response.status === 307) {
+            const redirectUrl = response.headers.get('location');
+            console.log(`重定向到: ${redirectUrl}`);
+            const redirectResponse = await fetchWithRetry(redirectUrl, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+                    'Referer': JUDICIAL_BASE,
+                    'Accept': 'application/json'
+                }
+            });
+
+            if (!redirectResponse.ok) {
+                throw new Error(`重定向後 HTTP 錯誤! Status: ${redirectResponse.status}`);
+            }
+
+            const data = await redirectResponse.json();
+            res.set(corsHeaders);
+            res.json(data);
+            return;
+        }
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! Status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        res.set(corsHeaders);
+        res.json(data);
+    } catch (err) {
+        console.error(`Terms 請求錯誤: ${url}`, err.message, err.stack);
+        res.set(corsHeaders);
+        res.status(500).json({ error: '請求失敗，請稍後重試' });
+    }
+});
+
+// 支援 OPTIONS 請求
+router.options('/api/judgment-proxy/terms', (req, res) => {
     res.set({
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
