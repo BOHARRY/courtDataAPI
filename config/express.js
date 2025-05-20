@@ -26,6 +26,7 @@ app.use((req, res, next) => {
 
 // 掛載路由
 app.use('/api', mainRouter); // 所有 API 路由都有 /api 前綴
+app.use('/api/judgment-proxy', judgmentProxyRouter);
 
 // 基本的 404 處理 (如果沒有路由匹配)
 app.use((req, res, next) => {
@@ -48,6 +49,6 @@ app.use((err, req, res, next) => {
   });
 });
 
-app.use('/api/judgment-proxy', judgmentProxyRouter);
+
 
 export default app;
