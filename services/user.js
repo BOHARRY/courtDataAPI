@@ -110,3 +110,77 @@ export async function getCreditTransactionHistory(userId, limit = 20) {
     throw new Error('Failed to retrieve credit transaction history.');
   }
 }
+/**
+ * 更新使用者的訂閱等級。
+ * @param {string} userId - 使用者 ID。
+ * @param {string} newLevel - 新的訂閱等級標識符 (例如 'premium_plus', 'Basic', 'Advanced')。
+ * @param {object} [newSubscriptionDetails={}] - (可選) 新訂閱方案的詳細資訊，例如每月贈點。
+ * @returns {Promise<{success: boolean, message: string, newLevel?: string, grantedCredits?: number}>}
+ */
+export async function updateUserSubscriptionLevel(userId, newLevel, newSubscriptionDetails = {}) {
+  console.log(`[User Service] Attempting to update subscription level for user ${userId} to ${newLevel}`);
+  if (!userId || !newLevel) {
+    throw new Error('User ID and new level are required.');
+  }
+
+  const db = admin.firestore();
+  const userRef = db.collection('users').doc(userId);
+
+  try {
+    // 在一個事務中執行更新和可能的點數贈送
+    const result = await db.runTransaction(async (transaction) => {
+      const userDoc = await transaction.get(userRef);
+      if (!userDoc.exists) {
+        throw new Error('User document not found.');
+      }
+
+      const userData = userDoc.data();
+      const oldLevel = userData.level;
+
+      if (oldLevel === newLevel) {
+        return { success: true, message: `User is already on ${newLevel} plan.`, newLevel: oldLevel };
+      }
+
+      // 更新 level
+      transaction.update(userRef, {
+        level: newLevel,
+        subscriptionUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        // 您可以在這裡添加其他與訂閱相關的欄位，例如訂閱開始/結束日期 (未來)
+      });
+
+      let grantedCredits = 0;
+      // 模擬：如果升級到特定方案，給予一次性或確認首次月贈點
+      // 在真實情況下，每月贈點會由定時任務處理，但首次訂閱/升級時可以立即給予
+      if (newLevel === 'premium_plus' && newSubscriptionDetails.creditsPerMonth) {
+        // 假設 newSubscriptionDetails.creditsPerMonth 是超高階方案的每月贈點數
+        grantedCredits = newSubscriptionDetails.creditsPerMonth;
+        transaction.update(userRef, {
+          credits: admin.firestore.FieldValue.increment(grantedCredits)
+        });
+
+        // 記錄積分增加
+        const creditTransactionRef = userRef.collection('creditTransactions').doc();
+        transaction.set(creditTransactionRef, {
+          amount: grantedCredits,
+          type: 'CREDIT',
+          purpose: `subscription_grant_${newLevel}`, // 例如 'subscription_grant_premium_plus'
+          description: `訂閱 ${newLevel === 'premium_plus' ? '尊榮客製版' : newLevel} 方案 - 首次贈點`,
+          balanceBefore: userData.credits || 0,
+          balanceAfter: (userData.credits || 0) + grantedCredits,
+          timestamp: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        console.log(`[User Service] Granted ${grantedCredits} credits to user ${userId} for subscribing to ${newLevel}.`);
+      }
+      // 您可以為其他方案（如 'Advanced'）也添加類似的首次贈點邏輯
+
+      return { success: true, message: `User subscription level updated to ${newLevel}.`, newLevel, grantedCredits };
+    });
+
+    return result;
+
+  } catch (error) {
+    console.error(`[User Service] Error updating subscription level for user ${userId}:`, error);
+    // 拋出錯誤，讓控制器處理
+    throw new Error(error.message || 'Failed to update subscription level.');
+  }
+}

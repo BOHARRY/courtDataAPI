@@ -2,7 +2,8 @@
 import express from 'express';
 import {
     getLawyerSearchHistoryController,
-    getCreditTransactionHistoryController // <--- 引入新的控制器
+    getCreditTransactionHistoryController,
+    updateUserSubscriptionController
 } from '../controllers/user-controller.js';
 import { verifyToken } from '../middleware/auth.js';
 
@@ -13,6 +14,11 @@ router.get('/lawyer-search-history', verifyToken, getLawyerSearchHistoryControll
 
 // 新增：獲取積分變動歷史 (GET /api/users/credit-history)
 router.get('/credit-history', verifyToken, getCreditTransactionHistoryController);
+
+
+// 更新訂閱方案 (POST /api/users/update-subscription)
+router.post('/update-subscription', verifyToken, updateUserSubscriptionController);
+
 
 
 // 未來可以添加其他用戶相關路由，例如獲取用戶資料、更新用戶資料等
