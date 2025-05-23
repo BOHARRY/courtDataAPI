@@ -1,5 +1,7 @@
 // services/user.js
 import admin from 'firebase-admin';
+import { plans as backendPlansData } from '../config/plansData.js'; // 引入方案配置
+
 
 /**
  * 添加一條律師搜尋歷史記錄到使用者的 Firestore 文件中。
@@ -111,23 +113,22 @@ export async function getCreditTransactionHistory(userId, limit = 20) {
   }
 }
 /**
- * 更新使用者的訂閱等級。
+ * 更新使用者的訂閱等級，並處理升級/降級邏輯。
  * @param {string} userId - 使用者 ID。
- * @param {string} newLevel - 新的訂閱等級標識符 (例如 'premium_plus', 'Basic', 'Advanced')。
- * @param {object} [newSubscriptionDetails={}] - (可選) 新訂閱方案的詳細資訊，例如每月贈點。
- * @returns {Promise<{success: boolean, message: string, newLevel?: string, grantedCredits?: number}>}
+ * @param {string} newPlanId - 新的訂閱方案 ID (例如 'premium_plus')。
+ * @param {object} newPlanDetails - 從 backendPlansData 獲取的新方案詳細資訊 (包含 creditsPerMonth)。
+ * @returns {Promise<{success: boolean, message: string, newLevel?: string, downgradedTo?: string, effectiveAt?: string, grantedCredits?: number}>}
  */
-export async function updateUserSubscriptionLevel(userId, newLevel, newSubscriptionDetails = {}) {
-  console.log(`[User Service] Attempting to update subscription level for user ${userId} to ${newLevel}`);
-  if (!userId || !newLevel) {
-    throw new Error('User ID and new level are required.');
+export async function updateUserSubscriptionLevel(userId, newPlanId, newPlanDetails) {
+  console.log(`[Subscription Service] User ${userId} requests change to plan ${newPlanId}`);
+  if (!userId || !newPlanId || !newPlanDetails) {
+    throw new Error('User ID, new plan ID, and plan details are required.');
   }
 
   const db = admin.firestore();
   const userRef = db.collection('users').doc(userId);
 
   try {
-    // 在一個事務中執行更新和可能的點數贈送
     const result = await db.runTransaction(async (transaction) => {
       const userDoc = await transaction.get(userRef);
       if (!userDoc.exists) {
@@ -135,52 +136,134 @@ export async function updateUserSubscriptionLevel(userId, newLevel, newSubscript
       }
 
       const userData = userDoc.data();
-      const oldLevel = userData.level;
+      const currentLevel = userData.level;
+      const currentCredits = userData.credits || 0;
 
-      if (oldLevel === newLevel) {
-        return { success: true, message: `User is already on ${newLevel} plan.`, newLevel: oldLevel };
+      // 獲取方案的“權重”或順序，以便判斷升降級 (數字越大等級越高)
+      const getPlanOrder = (planId) => {
+        const order = { 'free': 0, 'basic': 1, 'advanced': 2, 'premium_plus': 3 };
+        return order[planId?.toLowerCase()] ?? -1;
+      };
+
+      const currentOrder = getPlanOrder(currentLevel);
+      const newOrder = getPlanOrder(newPlanId);
+
+      if (currentOrder === newOrder) {
+        return { success: true, message: `您目前已經是 ${newPlanDetails.name} 方案了。`, newLevel: currentLevel };
       }
 
-      // 更新 level
-      transaction.update(userRef, {
-        level: newLevel,
-        subscriptionUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        // 您可以在這裡添加其他與訂閱相關的欄位，例如訂閱開始/結束日期 (未來)
-      });
-
-      let grantedCredits = 0;
-      // 模擬：如果升級到特定方案，給予一次性或確認首次月贈點
-      // 在真實情況下，每月贈點會由定時任務處理，但首次訂閱/升級時可以立即給予
-      if (newLevel === 'premium_plus' && newSubscriptionDetails.creditsPerMonth) {
-        // 假設 newSubscriptionDetails.creditsPerMonth 是超高階方案的每月贈點數
-        grantedCredits = newSubscriptionDetails.creditsPerMonth;
+      // --- 處理升級 ---
+      if (newOrder > currentOrder) {
+        console.log(`[Subscription Service] Processing UPGRADE for user ${userId} from ${currentLevel} to ${newPlanId}`);
         transaction.update(userRef, {
-          credits: admin.firestore.FieldValue.increment(grantedCredits)
+          level: newPlanId,
+          subscriptionUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          // 清除可能存在的待降級標記 (如果用戶在降級待生效期間又升級了)
+          pendingDowngradeToLevel: admin.firestore.FieldValue.delete(),
+          pendingDowngradeEffectiveDate: admin.firestore.FieldValue.delete(),
         });
 
-        // 記錄積分增加
-        const creditTransactionRef = userRef.collection('creditTransactions').doc();
-        transaction.set(creditTransactionRef, {
-          amount: grantedCredits,
-          type: 'CREDIT',
-          purpose: `subscription_grant_${newLevel}`, // 例如 'subscription_grant_premium_plus'
-          description: `訂閱 ${newLevel === 'premium_plus' ? '尊榮客製版' : newLevel} 方案 - 首次贈點`,
-          balanceBefore: userData.credits || 0,
-          balanceAfter: (userData.credits || 0) + grantedCredits,
-          timestamp: admin.firestore.FieldValue.serverTimestamp(),
-        });
-        console.log(`[User Service] Granted ${grantedCredits} credits to user ${userId} for subscribing to ${newLevel}.`);
+        let grantedCredits = 0;
+        let upgradeBonusCredits = 0;
+
+        // 1. 新方案的當期贈點
+        if (newPlanDetails.creditsPerMonth && newPlanDetails.creditsPerMonth > 0) {
+          grantedCredits = newPlanDetails.creditsPerMonth;
+          transaction.update(userRef, { credits: admin.firestore.FieldValue.increment(grantedCredits) });
+
+          const grantDesc = `訂閱 ${newPlanDetails.name} 方案 - 首次/當期贈點`;
+          const grantTransactionRef = userRef.collection('creditTransactions').doc();
+          transaction.set(grantTransactionRef, {
+            amount: grantedCredits, type: 'CREDIT', purpose: `subscription_grant_${newPlanId}`,
+            description: grantDesc, balanceBefore: currentCredits,
+            balanceAfter: currentCredits + grantedCredits, // 這裡的 balanceAfter 可能不完全準確，因為還有 bonus
+            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+          });
+        }
+
+        // 2. 升級獎勵積分 (簡化版：固定獎勵或基於等級差異的獎勵)
+        // 示例：從任何非免費版升級到 premium_plus，額外獎勵 1000
+        if (newPlanId === 'premium_plus' && currentLevel !== 'free') {
+            upgradeBonusCredits = 1000; // 可配置
+        } else if (newPlanId === 'advanced' && (currentLevel === 'basic' || currentLevel === 'free')) {
+            upgradeBonusCredits = 500; // 可配置
+        }
+        // ...可以根據需要添加更多升級路徑的獎勵規則
+
+        if (upgradeBonusCredits > 0) {
+          transaction.update(userRef, { credits: admin.firestore.FieldValue.increment(upgradeBonusCredits) });
+          const bonusDesc = `從 ${backendPlansData[currentLevel]?.name || currentLevel} 升級至 ${newPlanDetails.name} - 獎勵積分`;
+          const bonusTransactionRef = userRef.collection('creditTransactions').doc();
+          transaction.set(bonusTransactionRef, {
+            amount: upgradeBonusCredits, type: 'CREDIT', purpose: `upgrade_bonus_to_${newPlanId}`,
+            description: bonusDesc, balanceBefore: currentCredits + grantedCredits, // 基於已贈送 grantedCredits 後的餘額
+            balanceAfter: currentCredits + grantedCredits + upgradeBonusCredits,
+            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+          });
+        }
+        const totalGranted = grantedCredits + upgradeBonusCredits;
+        return {
+          success: true,
+          message: `恭喜！您已成功升級至 ${newPlanDetails.name} 方案！`,
+          newLevel: newPlanId,
+          grantedCredits: totalGranted > 0 ? totalGranted : undefined,
+        };
       }
-      // 您可以為其他方案（如 'Advanced'）也添加類似的首次贈點邏輯
+      // --- 處理降級 ---
+      else if (newOrder < currentOrder) {
+        console.log(`[Subscription Service] Processing DOWNGRADE request for user ${userId} from ${currentLevel} to ${newPlanId}`);
 
-      return { success: true, message: `User subscription level updated to ${newLevel}.`, newLevel, grantedCredits };
+        // 模擬：假設當前週期在一個月後結束 (真實情況需要根據用戶的實際訂閱日期計算)
+        // 為了“直接執行”但保留模擬空間，我們可以立即記錄，但前端可以提示“將在下週期生效”
+        // 或者，我們可以添加一個配置來決定是立即降級還是週期末降級。
+        // 目前，我們直接記錄 pendingDowngrade，並讓後續的定時任務（如果有的話）或手動操作來實際執行降級。
+        // 如果沒有定時任務，那這個 pendingDowngrade 的信息主要是給用戶看的。
+
+        // **為了能“直接執行”降級效果（用於測試），我們可以加入一個開關或特定條件**
+        const SIMULATE_IMMEDIATE_DOWNGRADE = process.env.SIMULATE_IMMEDIATE_DOWNGRADE === 'true'; // 可通過環境變數控制
+        //通過後端的 SIMULATE_IMMEDIATE_DOWNGRADE 環境變數。如果您在開發時將其設為 'true'，那麼所有降級請求都會立即改變 level。
+
+        if (SIMULATE_IMMEDIATE_DOWNGRADE) {
+            console.log(`[Subscription Service] SIMULATING IMMEDIATE DOWNGRADE for user ${userId} to ${newPlanId}`);
+            transaction.update(userRef, {
+                level: newPlanId,
+                subscriptionUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                pendingDowngradeToLevel: admin.firestore.FieldValue.delete(),
+                pendingDowngradeEffectiveDate: admin.firestore.FieldValue.delete(),
+            });
+            // 立即降級通常不退點數，也不扣點數。新的贈點將在下個（模擬的）週期開始。
+            return {
+                success: true,
+                message: `您的方案已（模擬立即）降級為 ${newPlanDetails.name}。新權益已生效。`,
+                newLevel: newPlanId, // 因為是立即降級，所以 newLevel 就是 newPlanId
+            };
+        } else {
+            // 標準處理：記錄待降級信息
+            // 為了演示，我們假設“月底”生效
+            const now = new Date();
+            const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59); // 本月底
+            const effectiveDate = admin.firestore.Timestamp.fromDate(endOfMonth);
+
+            transaction.update(userRef, {
+                pendingDowngradeToLevel: newPlanId,
+                pendingDowngradeEffectiveDate: effectiveDate,
+                // level 和 credits 保持不變
+            });
+            return {
+                success: true,
+                message: `您的方案降級請求已收到。新方案 ${newPlanDetails.name} 將於 ${endOfMonth.toLocaleDateString('zh-TW')} 生效。`,
+                downgradedTo: newPlanId, // 告知前端將要降級到的方案
+                effectiveAt: endOfMonth.toISOString(), // 告知前端預計生效時間
+                // newLevel 保持 currentLevel，因為尚未生效
+            };
+        }
+      }
+      // 理論上不會執行到這裡，因為 currentOrder === newOrder 已處理
+      return { success: false, message: "無效的方案變更請求。" };
     });
-
     return result;
-
   } catch (error) {
-    console.error(`[User Service] Error updating subscription level for user ${userId}:`, error);
-    // 拋出錯誤，讓控制器處理
-    throw new Error(error.message || 'Failed to update subscription level.');
+    console.error(`[Subscription Service] Error updating subscription for user ${userId} to ${newPlanId}:`, error);
+    throw new Error(error.message || '處理您的訂閱變更時發生內部錯誤。');
   }
 }
