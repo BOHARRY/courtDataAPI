@@ -38,7 +38,10 @@ Boooook 是一個司法資訊檢索與分析平台，後端採用 Node.js + Expr
 │   ├── firebase.js           # Firebase 初始化
 │   ├── elasticsearch.js      # Elasticsearch 設定
 │   ├── environment.js        # 環境變數管理
-│   └── express.js            # Express 設定
+│   ├── express.js            # Express 設定
+│   ├── creditCosts.js        # 點數消耗規則設定
+│   ├── plansData.js          # 訂閱方案資料
+│   └── commerceConfig.js     # 積分包與會員優惠設定
 ├── middleware/               # 中介軟體
 │   ├── auth.js               # 身分驗證
 │   └── credit.js             # 點數檢查
@@ -49,7 +52,8 @@ Boooook 是一個司法資訊檢索與分析平台，後端採用 Node.js + Expr
 │   ├── judgment.js           # 判決書詳情
 │   ├── user.js               # 使用者管理
 │   ├── aiAnalysisService.js  # 法官AI特徵分析
-│   └── judgeService.js       # 法官分析與聚合
+│   ├── judgeService.js       # 法官分析與聚合
+│   └── complaintService.js   # 民眾申訴處理
 ├── utils/                    # 工具函式
 │   ├── query-builder.js      # ES查詢建構
 │   ├── response-formatter.js # 回應格式化
@@ -63,16 +67,54 @@ Boooook 是一個司法資訊檢索與分析平台，後端採用 Node.js + Expr
 │   ├── judgment.js           # 判決書詳情
 │   ├── lawyer.js             # 律師
 │   ├── user.js               # 使用者
-│   └── judge.js              # 法官
+│   ├── judge.js              # 法官
+│   ├── complaint.js          # 訴狀智能分析（驗證訴狀、法官檢查、匹配度分析）
+│   ├── judgmentProxy.js      # 判決書代理存取
+│   └── configRoutes.js       # 積分包與會員優惠設定 API 路由
 ├── controllers/              # 控制器
 │   ├── search-controller.js
 │   ├── judgment-controller.js
 │   ├── lawyer-controller.js
 │   ├── user-controller.js
-│   └── judgeController.js
+│   ├── judgeController.js
+│   ├── complaint-controller.js
+│   └── configController.js   # 查詢積分包與會員優惠設定
 ├── index.js                  # 進入點
 └── .env                      # 環境變數
 ```
+
+---
+
+### 新增檔案與目錄補充說明
+
+- `config/creditCosts.js`：定義各 API 功能所需消耗的點數規則。
+- `config/plansData.js`：訂閱方案與權益資料。
+  目前包含四種方案：
+  - `free`（免費）：每月 0 點
+  - `basic`（基本）：每月 250 點
+  - `advanced`（進階）：每月 2500 點
+  - `premium_plus`（尊榮客製版）：每月 5000 點
+  方案名稱與每月贈送點數皆於此設定，供訂閱管理與權益判斷使用。
+
+- `config/commerceConfig.js`：積分包與會員優惠設定。
+  定義所有可購買的積分包（credits_20、credits_50、credits_100、credits_300、credits_500、credits_1000、credits_3000），每包包含點數、價格、單價、是否熱門、是否有折扣等屬性。
+  並針對不同會員方案（如進階、尊榮客製版）設定購買 500 點以上積分包的專屬折扣（如 8 折、7 折），所有積分購買與優惠邏輯皆由此統一管理。
+
+- `controllers/configController.js`：查詢積分包與會員優惠設定的 API 控制器。
+  提供 `/api/config/commerce` 路由，回傳所有積分包與會員優惠設定，未來可擴充根據用戶地區等回傳不同設定。
+
+- `routes/configRoutes.js`：積分包與會員優惠設定 API 路由。
+  提供 `/api/config/commerce` GET 路由，對應 configController，預設不需驗證，供前端查詢所有積分包與優惠資訊。
+
+- `services/aiAnalysisService.js`：法官 AI 特徵分析與裁判傾向分析服務。
+  負責呼叫 OpenAI API，根據法官案件資料自動產生「判決特徵標籤」與「裁判傾向」六大維度分數，並將分析結果寫回 Firestore。支援異步分析、錯誤處理與資料結構標準化。
+
+- `services/complaintService.js`：訴狀相關的商業邏輯（如訴狀驗證、法官匹配分析）。
+- `routes/complaint.js`：訴狀智能分析 API 路由（包含訴狀驗證、法官檢查、匹配度分析）。
+- `routes/judgmentProxy.js`：判決書代理存取，處理跨來源存取、格式轉換等需求。
+- `controllers/complaint-controller.js`：訴狀相關 API 控制器，負責處理訴狀驗證、法官檢查、匹配度分析等請求。
+
+如未來有新增目錄或檔案，請於本區塊補充說明，以利團隊與 AI 理解專案全貌。
 
 ---
 
@@ -124,6 +166,8 @@ node index.js
 | /api/lawyers/:name/cases-distribution | GET | 律師案件分布               | lawyer-controller.js/lawyer.js    | 是     | 1        |
 | /api/lawyers/:name/analysis        | GET  | 律師優劣勢分析             | lawyer-controller.js/lawyer.js    | 是     | 2        |
 | /api/users/lawyer-search-history   | GET  | 律師搜尋歷史               | user-controller.js/user.js        | 是     | 0        |
+| /api/users/credit-history          | GET  | 點數交易紀錄查詢           | user-controller.js/user.js        | 是     | 0        |
+| /api/users/update-subscription     | POST | 更新訂閱方案               | user-controller.js/user.js        | 是     | 0        |
 | /api/judges/:name/analytics        | GET  | 法官分析（含AI）           | judgeController.js/judgeService   | 是     | 3        |
 | /api/judges/:name/ai-status        | GET  | 法官AI分析狀態             | judgeController.js/judgeService   | 是     | 0        |
 | /api/judges/:name/reanalyze        | POST | 重新觸發法官AI分析         | judgeController.js/judgeService   | 是     | 0        |
@@ -308,6 +352,17 @@ node index.js
 - 路由：`GET /api/users/lawyer-search-history`
 - 控制器：user-controller.js
 - 服務：services/user.js
+### 6. 訂閱管理與點數紀錄
+
+- 路由：`POST /api/users/update-subscription`
+  - 控制器：user-controller.js
+  - 服務：services/user.js
+  - 功能：用戶可更新訂閱方案（如升級、降級、取消），需登入授權。請於 request body 傳入新方案資訊，後端將同步更新 Firestore 內的訂閱狀態。
+
+- 路由：`GET /api/users/credit-history`
+  - 控制器：user-controller.js
+  - 服務：services/user.js
+  - 功能：查詢用戶的點數交易紀錄（如購買、消耗、獎勵等），需登入授權。回傳內容包含每筆交易的時間、類型、點數變動與備註。
 - 查詢律師搜尋歷史
 
 ---
