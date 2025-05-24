@@ -116,6 +116,12 @@ Boooook 是一個司法資訊檢索與分析平台，後端採用 Node.js + Expr
 
 如未來有新增目錄或檔案，請於本區塊補充說明，以利團隊與 AI 理解專案全貌。
 
+- `controllers/aiAnalysisController.js`：AI 勝訴關鍵分析 API 控制器，負責驗證輸入並調用 AI 分析服務，回傳案件摘要與勝訴關鍵分析結果。
+- `services/aiSuccessAnalysisService.js`：AI 勝訴率/判決結果分析服務，負責呼叫 OpenAI API 取得文本 embedding（採用 text-embedding-3-large，維度1536），並結合案件資料進行勝訴關鍵分析。
+- `utils/case-analyzer.js`：案件類型判斷與資料標準化工具，根據 Elasticsearch 資料自動判斷案件主類型（民事、刑事、行政），並處理欄位標準化。
+- `utils/constants.js`：專案常數定義，包含案件關鍵字、判決結果標準化代碼等，供多個模組引用。
+- `utils/judgeAnalysisUtils.js`：法官案件聚合分析工具，提供案件類型分布、判決結果分類、代表案件挑選等聚合統計輔助函式。
+- `utils/win-rate-calculator.js`：勝訴率與案件結果統計計算工具，負責案件結果分類、勝訴率百分比計算，供法官/律師分析模組調用。
 ---
 
 ## 安裝、環境變數與啟動
@@ -165,6 +171,7 @@ node index.js
 | /api/lawyers/:name                 | GET  | 律師分析                   | lawyer-controller.js/lawyer.js    | 是     | 1~2      |
 | /api/lawyers/:name/cases-distribution | GET | 律師案件分布               | lawyer-controller.js/lawyer.js    | 是     | 1        |
 | /api/lawyers/:name/analysis        | GET  | 律師優劣勢分析             | lawyer-controller.js/lawyer.js    | 是     | 2        |
+| /api/ai/success-analysis           | POST  | AI 勝訴關鍵分析             | aiAnalysisController.js/aiSuccessAnalysisService.js | 是     | 2        |
 | /api/users/lawyer-search-history   | GET  | 律師搜尋歷史               | user-controller.js/user.js        | 是     | 0        |
 | /api/users/credit-history          | GET  | 點數交易紀錄查詢           | user-controller.js/user.js        | 是     | 0        |
 | /api/users/update-subscription     | POST | 更新訂閱方案               | user-controller.js/user.js        | 是     | 0        |
@@ -355,6 +362,17 @@ node index.js
 ### 6. 訂閱管理與點數紀錄
 
 - 路由：`POST /api/users/update-subscription`
+### 7. AI 勝訴關鍵分析
+
+- 路由：`POST /api/ai/success-analysis`
+- 控制器：aiAnalysisController.js
+- 服務：services/aiSuccessAnalysisService.js
+- 主要工具依賴：
+  - utils/case-analyzer.js：案件類型判斷與資料標準化
+  - utils/constants.js：案件關鍵字與判決結果常數
+  - utils/judgeAnalysisUtils.js：法官案件聚合與統計
+  - utils/win-rate-calculator.js：勝訴率與案件結果計算
+- 功能：根據用戶輸入的案件類型與摘要，結合 AI 與歷史資料，分析勝訴關鍵因素與預測勝率，回傳分析報告。
   - 控制器：user-controller.js
   - 服務：services/user.js
   - 功能：用戶可更新訂閱方案（如升級、降級、取消），需登入授權。請於 request body 傳入新方案資訊，後端將同步更新 Firestore 內的訂閱狀態。
@@ -457,14 +475,169 @@ Boooook 後端 API 是一個具備良好基礎的專案，但也存在一些可�
 
 ### Elasticsearch Mapping 詳細說明
 
-本專案 search-boooook 索引的 mapping 結構如下，涵蓋欄位型別、複合欄位、analyzer、tokenizer、synonym filter 等設計：
+本專案 search-boooook 索引的最新 mapping 結構如下，涵蓋所有重要欄位、型別、複合欄位、analyzer、tokenizer、synonym filter 等設計：
 
 ```json
 {
   "search-boooook": {
+    "aliases": {},
     "mappings": {
       "properties": {
-        ...（此處省略，請見下方重點欄位與設計說明）
+        "JCASE": { "type": "keyword" },
+        "JDATE": { "type": "keyword" },
+        "JFULL": {
+          "type": "text",
+          "fields": {
+            "cjk": { "type": "text", "analyzer": "chinese_combined_analyzer" },
+            "edge_ngram": { "type": "text", "analyzer": "edge_ngram_analyzer", "search_analyzer": "standard" },
+            "legal": { "type": "text", "analyzer": "legal_search_analyzer" },
+            "ngram": { "type": "text", "analyzer": "ngram_analyzer", "search_analyzer": "standard" }
+          }
+        },
+        "JID": { "type": "keyword" },
+        "JNO": { "type": "keyword" },
+        "JPDF": { "type": "keyword" },
+        "JTITLE": {
+          "type": "text",
+          "fields": {
+            "cjk": { "type": "text", "analyzer": "chinese_combined_analyzer" },
+            "edge_ngram": { "type": "text", "analyzer": "edge_ngram_analyzer", "search_analyzer": "standard" },
+            "exact": { "type": "keyword" }
+          }
+        },
+        "JYEAR": { "type": "keyword" },
+        "SCORE": { "type": "integer" },
+        "analysis_version": {
+          "type": "text",
+          "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } }
+        },
+        "appellant": {
+          "type": "text",
+          "fields": { "exact": { "type": "keyword" } },
+          "analyzer": "chinese_combined_analyzer"
+        },
+        "appellant_lawyers": {
+          "type": "text",
+          "fields": { "exact": { "type": "keyword" } },
+          "analyzer": "edge_ngram_analyzer"
+        },
+        "appellee": {
+          "type": "text",
+          "fields": { "exact": { "type": "keyword" } },
+          "analyzer": "chinese_combined_analyzer"
+        },
+        "appellee_lawyers": {
+          "type": "text",
+          "fields": { "exact": { "type": "keyword" } },
+          "analyzer": "edge_ngram_analyzer"
+        },
+        "case_type": { "type": "keyword" },
+        "citations": { "type": "keyword" },
+        "court": {
+          "type": "text",
+          "fields": { "exact": { "type": "keyword" } },
+          "analyzer": "chinese_combined_analyzer"
+        },
+        "data_quality_score": { "type": "float" },
+        "defendant": {
+          "type": "text",
+          "fields": { "exact": { "type": "keyword" } },
+          "analyzer": "chinese_combined_analyzer"
+        },
+        "defendant_defenses_summary": { "type": "text", "analyzer": "chinese_combined_analyzer" },
+        "defendant_type": { "type": "keyword" },
+        "embedding_model": { "type": "keyword" },
+        "embedding_token_count": { "type": "integer" },
+        "indexed_at": { "type": "date" },
+        "is_complex_case": { "type": "boolean" },
+        "is_procedural": { "type": "boolean" },
+        "is_ruling": { "type": "boolean" },
+        "judges": {
+          "type": "text",
+          "fields": { "exact": { "type": "keyword" } },
+          "analyzer": "edge_ngram_analyzer",
+          "search_analyzer": "standard"
+        },
+        "lawyerperformance": {
+          "type": "nested",
+          "properties": {
+            "claim_amount": { "type": "float", "ignore_malformed": true },
+            "claim_type": { "type": "keyword" },
+            "comment": { "type": "text", "analyzer": "chinese_combined_analyzer" },
+            "defense_effectiveness": { "type": "keyword" },
+            "final_verdict": { "type": "text", "analyzer": "chinese_combined_analyzer" },
+            "granted_amount": { "type": "float", "ignore_malformed": true },
+            "is_procedural": { "type": "boolean" },
+            "lawyer": {
+              "type": "text",
+              "fields": { "exact": { "type": "keyword" } },
+              "analyzer": "edge_ngram_analyzer"
+            },
+            "lawyer_type": { "type": "keyword" },
+            "percentage_awarded": { "type": "float", "ignore_malformed": true },
+            "prosecutor_demand": { "type": "text", "analyzer": "chinese_combined_analyzer" },
+            "side": { "type": "keyword" },
+            "verdict": { "type": "keyword" }
+          }
+        },
+        "lawyers": {
+          "type": "text",
+          "fields": { "exact": { "type": "keyword" } },
+          "analyzer": "edge_ngram_analyzer",
+          "search_analyzer": "standard"
+        },
+        "lawyersdef": {
+          "type": "text",
+          "fields": { "exact": { "type": "keyword" } },
+          "analyzer": "edge_ngram_analyzer",
+          "search_analyzer": "standard"
+        },
+        "legal_basis": {
+          "type": "keyword",
+          "fields": { "text": { "type": "text", "analyzer": "chinese_combined_analyzer" } }
+        },
+        "main_reasons_ai": {
+          "type": "text",
+          "fields": { "tags": { "type": "keyword" } },
+          "analyzer": "chinese_combined_analyzer"
+        },
+        "outcome_reasoning_strength": { "type": "keyword" },
+        "plaintiff": {
+          "type": "text",
+          "fields": { "exact": { "type": "keyword" } },
+          "analyzer": "chinese_combined_analyzer"
+        },
+        "plaintiff_claims_summary": { "type": "text", "analyzer": "chinese_combined_analyzer" },
+        "plaintiff_type": { "type": "keyword" },
+        "procedural_focus": { "type": "keyword" },
+        "summary_ai": {
+          "type": "text",
+          "fields": {
+            "cjk": { "type": "text", "analyzer": "chinese_combined_analyzer" },
+            "edge_ngram": { "type": "text", "analyzer": "edge_ngram_analyzer", "search_analyzer": "ai_analysis_analyzer" },
+            "exact": { "type": "keyword" }
+          }
+        },
+        "summary_ai_full": {
+          "type": "text",
+          "fields": {
+            "cjk": { "type": "text", "analyzer": "chinese_combined_analyzer" },
+            "legal": { "type": "text", "analyzer": "legal_search_analyzer" }
+          }
+        },
+        "tags": {
+          "type": "text",
+          "fields": { "keyword": { "type": "keyword" } },
+          "analyzer": "chinese_combined_analyzer"
+        },
+        "text_embedding": {
+          "type": "dense_vector",
+          "dims": 1536,  // 採用 OpenAI text-embedding-3-large，1536維
+          "index": true,
+          "similarity": "cosine",
+          "index_options": { "type": "int8_hnsw", "m": 16, "ef_construction": 100 }
+        },
+        "verdict_type": { "type": "keyword" }
       }
     },
     "settings": {
@@ -473,7 +646,17 @@ Boooook 後端 API 是一個具備良好基礎的專案，但也存在一些可�
           "filter": {
             "legal_synonym": {
               "type": "synonym",
-              "synonyms": [ ... ]
+              "synonyms": [
+                // ...（此處省略，請見原始 JSON 以獲得完整同義詞設計）
+              ]
+            },
+            "ai_analysis_filter": {
+              "type": "synonym",
+              "synonyms": [
+                "AI分析,人工智慧分析,智能分析",
+                "律師績效,辯護效果,訴訟表現",
+                "判決預測,勝訴預測,案件預測"
+              ]
             }
           },
           "analyzer": {
@@ -491,6 +674,11 @@ Boooook 後端 API 是一個具備良好基礎的專案，但也存在一些可�
               "filter": ["lowercase"],
               "type": "custom",
               "tokenizer": "ngram_tokenizer"
+            },
+            "ai_analysis_analyzer": {
+              "filter": ["lowercase", "ai_analysis_filter", "cjk_bigram"],
+              "type": "custom",
+              "tokenizer": "standard"
             },
             "chinese_combined_analyzer": {
               "filter": ["lowercase", "cjk_width", "cjk_bigram", "asciifolding"],
