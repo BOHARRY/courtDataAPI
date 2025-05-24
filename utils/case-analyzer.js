@@ -11,10 +11,33 @@ import {
  * @returns {string} 'civil', 'criminal', 'administrative', 或 'unknown'。
  */
 export function getMainType(source = {}) {
-  const caseType = (source.case_type || '').toLowerCase();
+  let caseTypeInput = source.case_type; // 原始的 case_type 值
+
+  if (Array.isArray(caseTypeInput)) { // <--- 明確檢查是否為陣列
+    if (caseTypeInput.length > 0 && typeof caseTypeInput[0] === 'string') {
+      // 如果是陣列，並且第一個元素是字串，我們就取第一個元素
+      console.log(`[getMainType] source.case_type for JID ${source.JID || 'N/A'} was an array. Using first element: "${caseTypeInput[0]}"`);
+      caseTypeInput = caseTypeInput[0];
+    } else if (caseTypeInput.length === 0) {
+      // 如果是空陣列
+      console.warn(`[getMainType] Warning: source.case_type for JID ${source.JID || 'N/A'} is an empty array. Treating as empty string.`);
+      caseTypeInput = '';
+    } else {
+      // 如果陣列的第一個元素不是字串，或者有其他複雜情況
+      console.warn(`[getMainType] Warning: source.case_type for JID ${source.JID || 'N/A'} is an array but its first element is not a string or array is complex. Value:`, caseTypeInput, `. Treating as empty string.`);
+      caseTypeInput = '';
+    }
+  } else if (typeof caseTypeInput !== 'string') { // 如果不是陣列，也不是字串
+    console.warn(`[getMainType] Warning: source.case_type for JID ${source.JID || 'N/A'} is not a string and not an array. Type: ${typeof caseTypeInput}, Value:`, caseTypeInput, `. Treating as empty string.`);
+    caseTypeInput = '';
+  }
+
+  // 現在 caseTypeInput 應該是字串或者 ''
+  const caseType = (caseTypeInput || '').toLowerCase();
   const court = (source.court || '').toLowerCase();
   const jtitle = (source.JTITLE || '').toLowerCase();
   const jcase = (source.JCASE || '').toLowerCase();
+
 
   if (caseType.includes('行政') || court.includes('行政法院') ||
     ((jtitle.includes('稅') || jtitle.includes('徵收') || jtitle.includes('處分') || jtitle.includes('訴願')) && !jtitle.includes('民事') && !jtitle.includes('刑事'))) {
