@@ -305,9 +305,27 @@ export function getDetailedResult(perfVerdictText, mainType, sourceForContext = 
  * @returns {{neutralOutcomeCode: string, description: string, isSubstantiveOutcome: boolean}}
  */
 export function getStandardizedOutcomeForAnalysis(verdictTypeFromES, mainCaseType) {
+  let safeVerdictType = '';
+  if (verdictTypeFromES !== undefined && verdictTypeFromES !== null) {
+    if (typeof verdictTypeFromES === 'string') {
+      safeVerdictType = verdictTypeFromES;
+    } else if (Array.isArray(verdictTypeFromES)) {
+      if (verdictTypeFromES.length > 0 && typeof verdictTypeFromES[0] === 'string') {
+        // console.log(`[getStandardizedOutcomeForAnalysis] verdictTypeFromES was an array. Using first element: "${verdictTypeFromES[0]}"`);
+        safeVerdictType = verdictTypeFromES[0];
+      } else {
+        // console.warn(`[getStandardizedOutcomeForAnalysis] verdictTypeFromES is an empty array or array of non-strings. Value:`, verdictTypeFromES, ". Treating as empty string.");
+        safeVerdictType = '';
+      }
+    } else {
+      // console.warn(`[getStandardizedOutcomeForAnalysis] verdictTypeFromES is not a string nor a processable array. Type: ${typeof verdictTypeFromES}, Value:`, verdictTypeFromES, ". Converting to string.");
+      safeVerdictType = String(verdictTypeFromES);
+    }
+  }
+
   let neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.UNKNOWN_NEUTRAL;
-  let description = verdictTypeFromES || '結果資訊不足';
-  let isSubstantiveOutcome = false; // 標記是否為實質性判決結果
+  let description = safeVerdictType || '結果資訊不足'; // 使用處理後的 safeVerdictType
+  let isSubstantiveOutcome = false;
 
   const vText = String(verdictTypeFromES || '').toLowerCase();
 
@@ -409,10 +427,8 @@ export function getStandardizedOutcomeForAnalysis(verdictTypeFromES, mainCaseTyp
   }
 
   // 如果 description 仍然是初始值，且 verdictTypeFromES 有值，則使用它
-  if ((description === '結果資訊不足' || !description) && verdictTypeFromES) {
-    description = verdictTypeFromES;
-  }
-  if (!description || description.trim() === '') description = '結果資訊不足';
+  if (typeof description !== 'string') description = String(description);
+  if (!description.trim()) description = '結果資訊不足';
 
 
   return {

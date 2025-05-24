@@ -3,8 +3,7 @@ import esClient from '../config/elasticsearch.js';
 import { OpenAI } from 'openai';
 import { OPENAI_API_KEY, OPENAI_MODEL_NAME_EMBEDDING, OPENAI_MODEL_NAME_CHAT } from '../config/environment.js';
 import { formatEsResponse } from '../utils/response-formatter.js';
-// 引入新的標準化結果函數，以及 NEUTRAL_OUTCOME_CODES
-import { getStandardizedOutcomeForAnalysis } from '../utils/case-analyzer.js';
+import { getStandardizedOutcomeForAnalysis } from '../utils/case-analyzer.js'; // 假設此函數已更新並能處理 verdict_type 陣列
 import { NEUTRAL_OUTCOME_CODES } from '../utils/constants.js';
 
 const openai = new OpenAI({
@@ -12,14 +11,13 @@ const openai = new OpenAI({
 });
 const ES_INDEX_NAME = 'search-boooook';
 const EMBEDDING_MODEL = OPENAI_MODEL_NAME_EMBEDDING || 'text-embedding-3-large';
-const CHAT_MODEL = OPENAI_MODEL_NAME_CHAT || 'gpt-4.1';
-
+const CHAT_MODEL = OPENAI_MODEL_NAME_CHAT || 'gpt-4.1'; // 與您 README.md 中一致
 
 async function getEmbeddingForText(text) {
     if (!text || typeof text !== 'string' || text.trim().length === 0) {
-        // 為了讓前端能捕獲到具體的錯誤，我們可以拋出帶有statusCode的錯誤
-        const error = new Error('getEmbeddingForText: 輸入文本不能為空。');
-        // error.statusCode = 400; // Bad Request (可選)
+        const error = new Error('輸入文本不能為空。');
+        error.statusCode = 400; // Bad Request
+        error.details = { internal_code: 'EMPTY_INPUT_TEXT' };
         throw error;
     }
     try {
@@ -29,94 +27,77 @@ async function getEmbeddingForText(text) {
             input: text.trim(),
         });
         if (response.data && response.data[0] && response.data[0].embedding) {
-            console.log(`[AIEmbedding] 成功獲取文本 embedding。`);
             const embedding = response.data[0].embedding;
-            console.log(`[AIEmbedding] Generated queryVector (first 5 dims): [${embedding.slice(0, 5).join(', ')}, ...]`); // 打印部分向量以確認
-            // console.log(`[AIEmbedding] Full queryVector for testing:`, JSON.stringify(embedding)); // 如果需要完整向量複製
+            console.log(`[AIEmbedding] 成功獲取文本 embedding。 Generated queryVector (first 5 dims): [${embedding.slice(0, 5).join(', ')}, ...]`);
             return embedding;
         } else {
             console.error('[AIEmbedding] OpenAI embedding API 回應格式不符預期:', response);
             const error = new Error('OpenAI embedding API 回應格式錯誤。');
-            // error.statusCode = 502; // Bad Gateway (可選)
+            error.statusCode = 502; // Bad Gateway
+            error.details = { internal_code: 'OPENAI_EMBEDDING_BAD_RESPONSE' };
             throw error;
         }
     } catch (error) {
+        console.error('[AIEmbedding] 調用 OpenAI embedding API 失敗:', error.response ? JSON.stringify(error.response.data, null, 2) : error.message, error.stack);
         const serviceError = new Error(`無法生成文本向量：${error.message}`);
         serviceError.statusCode = error.response?.status || 500;
-        serviceError.details = { internal_code: 'EMBEDDING_FAILED' };
+        serviceError.details = { internal_code: 'EMBEDDING_API_CALL_FAILED', originalError: error.message };
         throw serviceError;
     }
 }
 
-/**
- * 判斷一個標準化的案件結果代碼是否算作「勝訴」，考慮使用者視角。
- * @param {string} neutralOutcomeCode - 案件的結果代碼 (來自 NEUTRAL_OUTCOME_CODES)。
- * @param {string} caseTypeSelected - "民事", "刑事", "行政"。
- * @param {string} [userPerspective="plaintiff"] - 分析視角，對於民事和行政案件，可以是 "plaintiff" 或 "defendant"。
- *                                              對於刑事案件，通常是 "defendant" (被告有利) 或 "prosecution" (檢方/告訴人有利)。
- * @returns {boolean} - 是否算作勝訴。
- */
 function isConsideredWin(neutralOutcomeCode, caseTypeSelected, userPerspective = "plaintiff") {
+    // ... (這裡使用您最新確認過的 isConsideredWin 函數邏輯)
     if (!neutralOutcomeCode) return false;
-
     if (caseTypeSelected === "民事") {
-        if (userPerspective === "plaintiff") { // 原告視角
+        if (userPerspective === "plaintiff") {
             return [
                 NEUTRAL_OUTCOME_CODES.CIVIL_P_WIN_FULL,
                 NEUTRAL_OUTCOME_CODES.CIVIL_P_WIN_PARTIAL,
-                // NEUTRAL_OUTCOME_CODES.CIVIL_P_WIN_MAJOR,
-                // NEUTRAL_OUTCOME_CODES.CIVIL_P_WIN_MINOR,
-                NEUTRAL_OUTCOME_CODES.CIVIL_APPEAL_DISMISSED_FAVOR_P, // 被告上訴被駁回
-                NEUTRAL_OUTCOME_CODES.CIVIL_D_LOSE_FULL // 被告完全敗訴 (等同原告完全勝訴)
+                NEUTRAL_OUTCOME_CODES.CIVIL_APPEAL_DISMISSED_FAVOR_P,
+                NEUTRAL_OUTCOME_CODES.CIVIL_D_LOSE_FULL
             ].includes(neutralOutcomeCode);
-        } else if (userPerspective === "defendant") { // 被告視角
+        } else if (userPerspective === "defendant") {
             return [
-                NEUTRAL_OUTCOME_CODES.CIVIL_D_WIN_FULL, // 被告完全勝訴 (原告之訴駁回)
-                NEUTRAL_OUTCOME_CODES.CIVIL_P_LOSE_FULL, // 原告完全敗訴
-                // NEUTRAL_OUTCOME_CODES.CIVIL_D_MITIGATE_MAJOR, // 如果有定義這些更細緻的被告有利結果
-                // NEUTRAL_OUTCOME_CODES.CIVIL_D_MITIGATE_PARTIAL,
-                // NEUTRAL_OUTCOME_CODES.CIVIL_D_MITIGATE_MINOR,
-                NEUTRAL_OUTCOME_CODES.CIVIL_APPEAL_DISMISSED_FAVOR_D // 原告上訴被駁回
+                NEUTRAL_OUTCOME_CODES.CIVIL_D_WIN_FULL,
+                NEUTRAL_OUTCOME_CODES.CIVIL_P_LOSE_FULL,
+                NEUTRAL_OUTCOME_CODES.CIVIL_APPEAL_DISMISSED_FAVOR_D
             ].includes(neutralOutcomeCode);
         }
     } else if (caseTypeSelected === "刑事") {
-        // 刑事案件，userPerspective 可以是 'defendant' 或 'prosecution'
-        if (userPerspective === "defendant") { // 被告視角 (追求無罪、輕判)
+        if (userPerspective === "defendant") {
             return [
                 NEUTRAL_OUTCOME_CODES.CRIMINAL_ACQUITTED,
-                NEUTRAL_OUTCOME_CODES.CRIMINAL_CHARGE_DISMISSED_NO_PROSECUTION, // 免訴
-                NEUTRAL_OUTCOME_CODES.CRIMINAL_CHARGE_DISMISSED_NOT_ACCEPTED,   // 不受理
+                NEUTRAL_OUTCOME_CODES.CRIMINAL_CHARGE_DISMISSED_NO_PROSECUTION,
+                NEUTRAL_OUTCOME_CODES.CRIMINAL_CHARGE_DISMISSED_NOT_ACCEPTED,
                 NEUTRAL_OUTCOME_CODES.CRIMINAL_GUILTY_PROBATION,
                 NEUTRAL_OUTCOME_CODES.CRIMINAL_GUILTY_FINE_ONLY,
                 NEUTRAL_OUTCOME_CODES.CRIMINAL_GUILTY_FINE_CONVERTIBLE,
-                NEUTRAL_OUTCOME_CODES.CRIMINAL_GUILTY_PARTIAL_WIN, // 如部分有罪部分無罪
-                // NEUTRAL_OUTCOME_CODES.CRIMINAL_GUILTY_SIG_REDUCED,
-                // NEUTRAL_OUTCOME_CODES.CRIMINAL_GUILTY_SLIGHT_REDUCED,
-                NEUTRAL_OUTCOME_CODES.CRIMINAL_APPEAL_DISMISSED_FAVOR_D // 例如檢方上訴被駁回，對被告有利
+                NEUTRAL_OUTCOME_CODES.CRIMINAL_GUILTY_PARTIAL_WIN,
+                NEUTRAL_OUTCOME_CODES.CRIMINAL_APPEAL_DISMISSED_FAVOR_D
             ].includes(neutralOutcomeCode);
-        } else if (userPerspective === "prosecution") { // 檢方/告訴人視角 (追求定罪)
+        } else if (userPerspective === "prosecution") {
             return [
                 NEUTRAL_OUTCOME_CODES.CRIMINAL_GUILTY_AS_EXPECTED_OR_SENTENCED,
-                // NEUTRAL_OUTCOME_CODES.CRIMINAL_GUILTY_AGGRAVATED, // 如果有定義
-                NEUTRAL_OUTCOME_CODES.CRIMINAL_APPEAL_DISMISSED_AGAINST_D // 被告上訴被駁回 (維持有罪)
+                NEUTRAL_OUTCOME_CODES.CRIMINAL_APPEAL_DISMISSED_AGAINST_D
             ].includes(neutralOutcomeCode);
         }
     } else if (caseTypeSelected === "行政") {
-        if (userPerspective === "plaintiff") { // 人民/原告視角
+        if (userPerspective === "plaintiff") {
             return [
                 NEUTRAL_OUTCOME_CODES.ADMIN_WIN_REVOKE_FULL,
                 NEUTRAL_OUTCOME_CODES.ADMIN_WIN_REVOKE_PARTIAL,
                 NEUTRAL_OUTCOME_CODES.ADMIN_WIN_OBLIGATION,
-                NEUTRAL_OUTCOME_CODES.ADMIN_APPEAL_DISMISSED_FAVOR_P // 行政機關上訴被駁回
+                NEUTRAL_OUTCOME_CODES.ADMIN_APPEAL_DISMISSED_FAVOR_P
             ].includes(neutralOutcomeCode);
-        } else if (userPerspective === "defendant") { // 行政機關/被告視角
+        } else if (userPerspective === "defendant") {
             return [
-                NEUTRAL_OUTCOME_CODES.ADMIN_LOSE_DISMISSED, // 原告訴請駁回 (對行政機關是勝訴)
-                NEUTRAL_OUTCOME_CODES.ADMIN_APPEAL_DISMISSED_AGAINST_P // 原告上訴被駁回 (對行政機關是勝訴)
+                NEUTRAL_OUTCOME_CODES.ADMIN_LOSE_DISMISSED,
+                NEUTRAL_OUTCOME_CODES.ADMIN_APPEAL_DISMISSED_AGAINST_P
             ].includes(neutralOutcomeCode);
         }
     }
-    return false; // 默認情況
+    return false;
 }
 
 export async function analyzeSuccessFactors(caseTypeSelected, caseSummaryText) {
@@ -126,37 +107,64 @@ export async function analyzeSuccessFactors(caseTypeSelected, caseSummaryText) {
     try {
         queryVector = await getEmbeddingForText(caseSummaryText);
     } catch (error) {
-        console.error('[AISuccessAnalysisService] 文本向量化失敗:', error);
-        // 直接返回給控制器的錯誤結構
-        const serviceError = new Error(error.message || '文本向量化失敗。');
-        serviceError.statusCode = error.statusCode || 500; // 保留原始 status code
-        // serviceError.details = { internal_code: 'EMBEDDING_FAILED' };
-        throw serviceError;
+        // getEmbeddingForText 已經拋出帶 statusCode 的錯誤
+        console.error('[AISuccessAnalysisService] 文本向量化失敗:', error.message, error.details);
+        throw error; // 直接向上拋出
     }
 
-    const esCaseTypeFilter = caseTypeSelected;
+    // --- 修正 case_type 的 filter ---
+    let typeFilterQuery;
+    const esCaseTypeMainKeyword = caseTypeSelected; // "民事", "刑事", "行政"
+
+    if (esCaseTypeMainKeyword === "民事") {
+        // 匹配所有以 "民事" 或 "家事" 開頭的 case_type
+        typeFilterQuery = {
+            bool: {
+                should: [
+                    { prefix: { "case_type": "民事" } }, // case_type 是 keyword，prefix 可用
+                    { prefix: { "case_type": "家事" } }  // 家事也算廣義民事
+                ],
+                minimum_should_match: 1
+            }
+        };
+    } else if (esCaseTypeMainKeyword === "刑事") {
+        typeFilterQuery = { prefix: { "case_type": "刑事" } };
+    } else if (esCaseTypeMainKeyword === "行政") {
+        // 行政案件的 case_type 可能更多樣，例如 "行政訴訟" "行政處分" "訴願" 等
+        // 這裡使用 wildcard 匹配包含 "行政" 或 "訴願" 的
+        typeFilterQuery = {
+            bool: {
+                should: [
+                    { wildcard: { "case_type": "*行政*" } },
+                    { wildcard: { "case_type": "*訴願*" } }
+                    // 也可以用 terms 列舉您已知的行政 case_type
+                ],
+                minimum_should_match: 1
+            }
+        };
+    } else {
+        // 不應發生，因為控制器已驗證 caseTypeSelected
+        console.warn(`[AISuccessAnalysisService] 未知的案件主類型: ${esCaseTypeMainKeyword}，將不進行案件類型篩選。`);
+        typeFilterQuery = { match_all: {} }; // 或者返回錯誤
+    }
 
     try {
-        console.log(`[AISuccessAnalysisService] 正在從 ES 搜尋相似案件 (類型: ${esCaseTypeFilter})...`);
+        console.log(`[AISuccessAnalysisService] 正在從 ES 搜尋相似案件 (主類型: ${esCaseTypeMainKeyword})...`);
         const knnQuery = {
             field: "text_embedding",
             query_vector: queryVector,
             k: 50,
-            num_candidates: 100,
-            filter: [
-                { term: { "case_type.keyword": esCaseTypeFilter } }
-                // 可以在此加入更多固定篩選，例如 is_ruling: false (只看判決不看裁定)
-                // { term: { "is_ruling": false } }
-            ]
+            num_candidates: 100, // 可以根據數據量和性能調整
+            filter: [typeFilterQuery] // <--- 使用修正後的 typeFilterQuery
         };
 
-        console.log(`[AISuccessAnalysisService] Elasticsearch KNN Query Body:`, JSON.stringify({ knn: knnQuery, _source: ["JID", "case_type"], size: 10 }, null, 2)); // 打印簡化版查詢用於測試
+        console.log(`[AISuccessAnalysisService] Elasticsearch KNN Query:`, JSON.stringify({ knn: knnQuery, _source: ["JID", "case_type"], size: 10 }, null, 2));
 
         const esResult = await esClient.search({
             index: ES_INDEX_NAME,
             knn: knnQuery,
-            _source: ["JID", "verdict_type", "summary_ai_full", "JFULL", "citations", "main_reasons_ai", "JTITLE", "case_type"],
-            size: 30
+            _source: ["JID", "verdict_type", "summary_ai_full", "JFULL", "citations", "main_reasons_ai", "JTITLE", "case_type", "verdict"],
+            size: 30 // 獲取 Top 30 相似且符合類型的案件
         });
 
         const formattedResponse = formatEsResponse(esResult, 30);
@@ -165,32 +173,32 @@ export async function analyzeSuccessFactors(caseTypeSelected, caseSummaryText) {
 
         console.log(`[AISuccessAnalysisService] 找到 ${analyzedCaseCount} 件相似案件。`);
 
-        if (analyzedCaseCount < 5) {
+        if (analyzedCaseCount < 5) { // 閾值可以調整
             return {
                 status: 'insufficient_data',
                 analyzedCaseCount: analyzedCaseCount,
                 estimatedWinRate: null,
                 keyJudgementPoints: [],
                 commonCitedCases: [],
-                message: `找到的相似${caseTypeSelected}案件數量過少 (${analyzedCaseCount}件)，無法進行有效分析。請嘗試提供更詳細的案情描述。`
+                message: `找到的相似${caseTypeSelected}案件數量過少 (${analyzedCaseCount}件)，無法進行有效分析。請嘗試提供更詳細的案情描述或檢查案件類型選擇。`
             };
         }
 
         let winCount = 0;
-        const validCasesForAISummary = []; // 用於 AI 摘要的勝訴案例
+        const validCasesForAISummary = [];
+        let analysisPerspective = caseTypeSelected === "刑事" ? "defendant" : "plaintiff";
+        console.log(`[AISuccessAnalysisService] 分析視角設定為: ${analysisPerspective} (針對 ${caseTypeSelected} 案件)`);
 
         for (const caseDoc of similarCases) {
-            // 使用新的 getStandardizedOutcomeForAnalysis 函數
+            const sourceVerdictType = caseDoc.verdict_type; // 直接從 ES _source 取
             const outcome = getStandardizedOutcomeForAnalysis(
-                caseDoc.verdict_type, // ES 中的 verdict_type
-                caseTypeSelected      // 使用者選擇的案件主類型
+                sourceVerdictType,
+                caseTypeSelected // 這裡傳入的是使用者選擇的主類型 "民事", "刑事", "行政"
+                                 // getStandardizedOutcomeForAnalysis 內部會處理 sourceVerdictType 可能為陣列的情況
             );
 
-            // 判斷勝訴時，也考慮 isSubstantiveOutcome
-            // userPerspective 在 isConsideredWin 內部根據 caseTypeSelected 處理
-            if (outcome.isSubstantiveOutcome && isConsideredWin(outcome.neutralOutcomeCode, caseTypeSelected)) {
+            if (outcome.isSubstantiveOutcome && isConsideredWin(outcome.neutralOutcomeCode, caseTypeSelected, analysisPerspective)) {
                 winCount++;
-                // 確保有足夠內容給 AI 分析
                 if (caseDoc.summary_ai_full || (caseDoc.JFULL && caseDoc.JFULL.length > 100) || (caseDoc.main_reasons_ai && caseDoc.main_reasons_ai.length > 0)) {
                     validCasesForAISummary.push(caseDoc);
                 }
@@ -198,34 +206,31 @@ export async function analyzeSuccessFactors(caseTypeSelected, caseSummaryText) {
         }
 
         const estimatedWinRate = analyzedCaseCount > 0 ? parseFloat(((winCount / analyzedCaseCount) * 100).toFixed(1)) : 0;
-        console.log(`[AISuccessAnalysisService] 勝訴案件數: ${winCount} (基於 isSubstantiveOutcome 和 isConsideredWin), 總分析案件數: ${analyzedCaseCount}, 勝訴率: ${estimatedWinRate}%`);
+        console.log(`[AISuccessAnalysisService] 勝訴案件數: ${winCount}, 總分析案件數: ${analyzedCaseCount}, 勝訴率: ${estimatedWinRate}%`);
         console.log(`[AISuccessAnalysisService] 將有 ${validCasesForAISummary.length} 件案例用於 AI 摘要和援引分析。`);
-
 
         let keyJudgementPoints = [];
         let commonCitedCases = [];
-        const MIN_CASES_FOR_AI_ANALYSIS = 3; // 最少需要多少勝訴案例才進行AI分析
+        const MIN_CASES_FOR_AI_ANALYSIS = 3;
 
         if (validCasesForAISummary.length >= MIN_CASES_FOR_AI_ANALYSIS) {
             // 1. 提煉裁判要點摘要
             try {
                 console.log(`[AISuccessAnalysisService] 準備為 ${validCasesForAISummary.length} 件勝訴案例生成裁判要點摘要...`);
-                const textsForSummary = validCasesForAISummary.slice(0, 10).map( // 最多取10個案例
+                const textsForSummary = validCasesForAISummary.slice(0, 10).map(
                     c => {
-                        // 優先使用 summary_ai_full，其次是 JFULL 的前1000字，再次是 main_reasons_ai
                         let content = c.summary_ai_full;
-                        if (!content && c.JFULL) content = c.JFULL.substring(0, 1000);
-                        if (!content && c.main_reasons_ai && c.main_reasons_ai.length > 0) content = c.main_reasons_ai.join(' ');
+                        if (!content && c.JFULL) content = c.JFULL.substring(0, 1000); // 限制長度避免超長
+                        if (!content && c.main_reasons_ai && Array.isArray(c.main_reasons_ai) && c.main_reasons_ai.length > 0) content = c.main_reasons_ai.join(' ');
                         return `案件 JID ${c.JID}:\n摘要: ${content || '無詳細內容可供分析'}\n---`;
                     }
                 ).join('\n\n');
 
-                // 根據案件類型調整 Prompt 中的視角描述
-                let perspectiveDescription = "原告勝訴";
-                if (caseTypeSelected === "刑事") perspectiveDescription = "被告獲得有利結果（如無罪、免訴、不受理、輕判等）";
-                else if (caseTypeSelected === "行政") perspectiveDescription = "原告（人民）勝訴（如行政處分被撤銷）";
+                let perspectiveDescriptionForPrompt = "原告勝訴";
+                if (caseTypeSelected === "刑事") perspectiveDescriptionForPrompt = "被告獲得有利結果（如無罪、免訴、不受理、輕判等）";
+                else if (caseTypeSelected === "行政") perspectiveDescriptionForPrompt = "原告（人民）勝訴（如行政處分被撤銷）";
 
-                const summaryPrompt = `你是一位專業的台灣法律AI助手。請基於以下多份相似${caseTypeSelected}案件的「勝訴」判決摘要（分析視角為：${perspectiveDescription}），總結出法院通常支持勝訴方的「3到5個關鍵裁判要點或常見論述模式」。
+                const summaryPrompt = `你是一位專業的台灣法律AI助手。請基於以下多份相似${caseTypeSelected}案件的「勝訴」判決摘要（分析視角為：${perspectiveDescriptionForPrompt}），總結出法院通常支持勝訴方的「3到5個關鍵裁判要點或常見論述模式」。
                 請直接以 JSON 格式的陣列返回，陣列中每個元素是一個字串，代表一個要點。例如：["要點一：...", "要點二：..." ]
                 分析的案情主軸是關於：「${caseSummaryText.substring(0, 150)}...」
                 相關勝訴判決摘要如下：
@@ -252,38 +257,34 @@ export async function analyzeSuccessFactors(caseTypeSelected, caseSummaryText) {
                                 keyJudgementPoints = parsedJson[arrayKey].filter(p => typeof p === 'string' && p.length > 5);
                             }
                         }
-                        // 備用解析：如果JSON解析結果為空，但原始回應看起來像列表
                         if (keyJudgementPoints.length === 0 && (content.includes("\n- ") || content.includes("\n* ") || content.match(/\n\d+\.\s/))) {
-                            keyJudgementPoints = content.split(/\n- |\n\* |\n\d+\.\s/)
+                             keyJudgementPoints = content.split(/\n- |\n\* |\n\d+\.\s/)
                                 .map(s => s.replace(/^- |^\* |^\d+\.\s/, "").trim())
-                                .filter(s => s.length > 10 && !s.toLowerCase().includes("json")); // 過濾掉可能的json標籤
+                                .filter(s => s.length > 10 && !s.toLowerCase().includes("json"));
                         }
-                        // 最後手段：如果還是空的，且原始 content 有效，則整個放入
                         if (keyJudgementPoints.length === 0 && content.trim().length > 10 && !content.trim().startsWith("{") && !content.trim().startsWith("[")) {
-                            const cleanedContent = content.replace(/```json\n|\n```|"/g, "").trim(); // 移除常見的 markdown 和引號
-                            if (cleanedContent.length > 10) keyJudgementPoints = [cleanedContent];
+                            const cleanedContent = content.replace(/```json\n|\n```|"/g, "").trim();
+                             if (cleanedContent.length > 10) keyJudgementPoints = [cleanedContent];
                         }
-                        if (keyJudgementPoints.length === 0) { // 如果上述都失敗
+                        if (keyJudgementPoints.length === 0) {
                             console.warn("[AISuccessAnalysisService] AI裁判要點回應無法有效解析為列表。內容:", content);
                             keyJudgementPoints = ["AI裁判要點分析結果格式需進一步處理。"];
                         }
-
                     } catch (jsonError) {
                         console.error('[AISuccessAnalysisService] 解析AI裁判要點JSON失敗:', jsonError, '原始內容:', content);
-                        const cleanedContent = content.replace(/```json\n|\n```|"/g, "").trim();
-                        if (cleanedContent.length > 10 && !cleanedContent.startsWith("{") && !cleanedContent.startsWith("[")) {
-                            keyJudgementPoints = [cleanedContent];
-                        } else {
+                         const cleanedContent = content.replace(/```json\n|\n```|"/g, "").trim();
+                         if (cleanedContent.length > 10 && !cleanedContent.startsWith("{") && !cleanedContent.startsWith("[")) {
+                             keyJudgementPoints = [cleanedContent];
+                         } else {
                             keyJudgementPoints = ["AI裁判要點分析中，請稍後查看詳細報告（格式解析錯誤）。"];
-                        }
+                         }
                     }
                 } else {
                     keyJudgementPoints = ["AI裁判要點分析暫時無法生成（無有效回應）。"];
                 }
                 console.log(`[AISuccessAnalysisService] 生成的裁判要點:`, keyJudgementPoints);
-
             } catch (aiError) {
-                console.error('[AISuccessAnalysisService] 生成裁判要點摘要失敗:', aiError.response ? JSON.stringify(aiError.response.data, null, 2) : aiError.message);
+                console.error('[AISuccessAnalysisService] 生成裁判要點摘要失敗:', aiError.response ? JSON.stringify(aiError.response.data,null,2) : aiError.message, aiError.stack);
                 keyJudgementPoints = [`AI裁判要點分析時發生錯誤: ${aiError.message}`];
             }
 
@@ -294,7 +295,7 @@ export async function analyzeSuccessFactors(caseTypeSelected, caseSummaryText) {
                 validCasesForAISummary.forEach(caseDoc => {
                     if (caseDoc.citations && Array.isArray(caseDoc.citations)) {
                         caseDoc.citations.forEach(jid => {
-                            if (typeof jid === 'string' && jid.trim() !== "" && jid.length > 5) { // 增加JID長度檢查
+                            if (typeof jid === 'string' && jid.trim() !== "" && jid.length > 5) {
                                 citationCounts[jid.trim()] = (citationCounts[jid.trim()] || 0) + 1;
                             }
                         });
@@ -302,9 +303,9 @@ export async function analyzeSuccessFactors(caseTypeSelected, caseSummaryText) {
                 });
                 const sortedCitations = Object.entries(citationCounts)
                     .sort(([, countA], [, countB]) => countB - countA)
-                    .slice(0, 5); // 取前5個
+                    .slice(0, 5);
                 commonCitedCases = sortedCitations.map(([jid, count]) => {
-                    const citedCaseDetails = similarCases.find(c => c.JID === jid); // 從原始相似案例中找標題
+                    const citedCaseDetails = similarCases.find(c => c.JID === jid);
                     return { jid, title: citedCaseDetails?.JTITLE || jid, count };
                 });
                 console.log(`[AISuccessAnalysisService] 生成的常見援引判例:`, commonCitedCases);
@@ -329,14 +330,26 @@ export async function analyzeSuccessFactors(caseTypeSelected, caseSummaryText) {
         };
 
     } catch (error) {
-        console.error('[AISuccessAnalysisService] ES 搜尋或結果處理失敗:', error.meta ? JSON.stringify(error.meta.body, null, 2) : error);
-        if (error instanceof SyntaxError) {
-            const serviceError = new Error('處理搜尋引擎回應時發生格式錯誤，請稍後再試。');
-            serviceError.statusCode = 500;
-            throw serviceError;
+        console.error('[AISuccessAnalysisService] ES 搜尋或結果處理失敗:', error.meta ? JSON.stringify(error.meta.body, null, 2) : error.message, error.stack);
+        let statusCode = 500;
+        let message = '執行相似案件搜尋時發生未知錯誤。';
+        let details = { internal_code: 'ES_SEARCH_FAILED', originalError: error.message };
+
+        if (error.meta && error.meta.body && error.meta.body.error && error.meta.body.error.type) {
+            // 更具體的 ES 錯誤
+            message = `搜尋引擎錯誤: ${error.meta.body.error.reason || error.meta.body.error.type}`;
+            details.es_error_type = error.meta.body.error.type;
+            details.es_error_reason = error.meta.body.error.reason;
+            if (error.meta.statusCode) statusCode = error.meta.statusCode;
+        } else if (error.statusCode) { // 如果是我們自己拋出的帶 statusCode 的錯誤
+            statusCode = error.statusCode;
+            message = error.message;
+            if(error.details) details = {...details, ...error.details};
         }
-        const serviceError = new Error(error.message || '執行相似案件搜尋時發生錯誤。');
-        serviceError.statusCode = error.statusCode || 500;
+
+        const serviceError = new Error(message);
+        serviceError.statusCode = statusCode;
+        serviceError.details = details;
         throw serviceError;
     }
 }
