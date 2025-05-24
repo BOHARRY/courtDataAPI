@@ -21,7 +21,7 @@ export function buildEsQueryForJudgeCases(judgeName) { // <<--- 補上函數定�
     }
     return {
         term: {
-            "judges.raw": judgeName // 確保 ES mapping 中 judges 字段有 .raw (keyword 類型)
+            "judges.exact": judgeName // 確保 ES mapping 中 judges 字段有 .exact (keyword 類型)
         }
     };
 }

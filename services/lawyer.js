@@ -22,6 +22,7 @@ const ES_INDEX_NAME = 'search-boooook';
 export async function searchLawyerData(lawyerName) {
   // console.log(`[Lawyer Service] Searching and analyzing data for lawyer: ${lawyerName}`);
   try {
+    const lawyerNameExact = lawyerName;
     const esQueryBody = {
       query: {
         bool: {
