@@ -36,17 +36,6 @@ export async function searchLawyerData(lawyerName) {
                   term: { "lawyerperformance.lawyer.exact": lawyerNameExact }
                 }
               }
-            },
-            // 如果還想保留模糊匹配 (例如用戶輸入不完整時)，可以加上對 text 欄位的 match
-            { match: { "lawyers": lawyerName } },
-            { match: { "lawyersdef": lawyerName } },
-            {
-              nested: {
-                path: "lawyerperformance",
-                query: {
-                  match: { "lawyerperformance.lawyer": lawyerName } // 這個 match 可能需要 analyzer 配合
-                }
-              }
             }
           ],
           minimum_should_match: 1
