@@ -22,33 +22,51 @@ const ES_INDEX_NAME = 'search-boooook';
 export async function searchLawyerData(lawyerName) {
   // console.log(`[Lawyer Service] Searching and analyzing data for lawyer: ${lawyerName}`);
   try {
-    const esResult = await esClient.search({
-      index: ES_INDEX_NAME,
-      size: 300, // 獲取足夠案件進行分析
+    const esQueryBody = {
       query: {
         bool: {
-          must: [{
-            bool: {
-              should: [ // 在多個可能的律師欄位中查找
-                { match_phrase: { "lawyers": lawyerName } },
-                { match_phrase: { "lawyers.raw": lawyerName } },
-                { match_phrase: { "lawyersdef": lawyerName } }, // 假設這是辯護律師欄位
-                { match_phrase: { "lawyersdef.raw": lawyerName } },
-                // 可以考慮加入其他欄位，如 'winlawyers', 'loselawyers'，但需注意其準確性
-              ],
-              minimum_should_match: 1
+          should: [
+            { term: { "lawyers.exact": lawyerNameExact } },      // 查主要律師 (精確)
+            { term: { "lawyersdef.exact": lawyerNameExact } },   // 查辯護律師 (精確)
+            {
+              nested: {                                       // 查參與案件的律師
+                path: "lawyerperformance",
+                query: {
+                  term: { "lawyerperformance.lawyer.exact": lawyerNameExact }
+                }
+              }
+            },
+            // 如果還想保留模糊匹配 (例如用戶輸入不完整時)，可以加上對 text 欄位的 match
+            { match: { "lawyers": lawyerName } },
+            { match: { "lawyersdef": lawyerName } },
+            {
+              nested: {
+                path: "lawyerperformance",
+                query: {
+                  match: { "lawyerperformance.lawyer": lawyerName } // 這個 match 可能需要 analyzer 配合
+                }
+              }
             }
-          }]
-          // 可以添加 filter context 排除某些不相關的案件 (如果需要)
+          ],
+          minimum_should_match: 1
         }
-      },
+      }
+    };
+
+    console.log(`[Lawyer Service] Elasticsearch Query for lawyer ${lawyerName}:`, JSON.stringify(esQueryBody.query, null, 2)); // 打印 query 部分
+
+    const esResult = await esClient.search({
+      index: ES_INDEX_NAME,
+      body: esQueryBody, // 將 query 放在 body 下
+      size: 300,
       _source: [ // 明確指定需要的欄位，減少數據傳輸
         "JID", "court", "JTITLE", "JDATE", "JDATE_num", "case_type", "verdict", "verdict_type",
         "cause", "lawyers", "lawyersdef", "JCASE", "lawyerperformance", "is_ruling"
         // 確保所有 analyzeLawyerData 和其輔助函數需要的欄位都在這裡
-      ],
-      // aggs: {} // 如果需要在此階段進行特定於律師的聚合，可以添加
+      ]
     });
+
+
 
     // console.log(`[Lawyer Service] ES search for ${lawyerName} returned ${esResult.hits.hits.length} hits.`);
     // 調用內部輔助函數進行數據分析

@@ -61,6 +61,7 @@ export async function getJudgeAnalytics(judgeName) {
         // --- 從 Elasticsearch 獲取並處理數據 ---
         console.log(`[JudgeService] Fetching cases for judge ${judgeName} from Elasticsearch.`);
         const esQuery = buildEsQueryForJudgeCases(judgeName); // 需要實作此工具函數
+        console.log(`[JudgeService] Elasticsearch Query for judge ${judgeName} (from buildEsQueryForJudgeCases):`, JSON.stringify(esQuery, null, 2)); // <--- 加上這行
         const esResult = await esClient.search({
             index: ES_INDEX_NAME,
             query: esQuery,
@@ -227,47 +228,3 @@ export async function triggerReanalysis(judgeName) {
 
     return { status: "initiated", message: "重新分析已啟動" };
 }
-
-// --- 需要的輔助工具函數 (需要在 utils/judgeAnalysisUtils.js 中實作) ---
-// stub for buildEsQueryForJudgeCases
-// function buildEsQueryForJudgeCases(judgeName) {
-//   console.warn("judgeAnalysisUtils.buildEsQueryForJudgeCases is not yet implemented. Returning match_all for now.");
-//   return { term: { "judges.keyword": judgeName } }; // 假設 judges 欄位有 .keyword
-// }
-
-// stub for aggregateJudgeCaseData
-// function aggregateJudgeCaseData(esHits, judgeName) {
-//   console.warn("judgeAnalysisUtils.aggregateJudgeCaseData is not yet implemented. Returning mock data for now.");
-//   // 這裡需要根據 esHits 內容進行複雜的統計計算
-//   // 返回的結構應符合 Firestore judges 集合中 caseStats, verdictDistribution 等字段
-//   return {
-//     name: judgeName, // 確保返回的數據中包含法官姓名
-//     caseStats: { totalCases: esHits.length, recentCases: esHits.length, caseTypes: [{type: "模擬類型", count: esHits.length, percent: 100}] },
-//     verdictDistribution: [{result: "模擬結果", count: esHits.length, percent: 100}],
-//     legalStats: { legalBasis: [{code: "模擬法條", count: esHits.length}], reasoningStrength: { high: 100, medium: 0, low: 0 }, consistencyScore: 90 },
-//     caseTypeAnalysis: { civil: { count: esHits.length, plaintiffWinRate: 50, defendantWinRate: 50, partialWinRate: 0 } },
-//     representativeCases: esHits.slice(0, 5).map(hit => ({ id: hit._id, title: hit._source.JTITLE, cause: hit._source.case_type, result: hit._source.verdict, year: hit._source.JYEAR, date: hit._source.JDATE }))
-//   };
-// }
-
-// --- 需要的 AI 分析服務 (需要在 services/aiAnalysisService.js 中實作) ---
-// stub for triggerAIAnalysis
-// async function triggerAIAnalysis(judgeName, casesData) {
-//   console.warn(`aiAnalysisService.triggerAIAnalysis is not yet implemented. Simulating AI analysis for ${judgeName}.`);
-//   // 這裡將包含調用 OpenAI API 的邏輯
-//   // 分析完成後，需要更新 Firestore 中對應法官的 traits, tendency, processingStatus, aiProcessedAt
-//   return new Promise(resolve => setTimeout(() => {
-//     const judgeDocRef = admin.firestore().collection(JUDGES_COLLECTION).doc(judgeName);
-//     judgeDocRef.update({
-//       traits: [{text: "模擬特徵 (AI)", icon: "💡", confidence: "高"}],
-//       tendency: { dimensions: [{name: "模擬維度", score: 3, value: "中等", icon: "📊", explanation: "模擬解釋"}], chartData: {labels:["模擬維度"], data:[3]}},
-//       processingStatus: 'complete',
-//       aiProcessedAt: admin.firestore.FieldValue.serverTimestamp()
-//     }).then(resolve).catch(err => {
-//         console.error(`[AI Sim] Error updating Firestore after simulated AI analysis for ${judgeName}:`, err);
-//         // 實際情況下，AI 分析失敗也需要更新 processingStatus
-//         judgeDocRef.update({ processingStatus: 'failed', processingError: `Simulated AI error: ${err.message}` });
-//         resolve(); // 即使更新失敗也 resolve，避免阻塞 triggerAIAnalysis 的 promise chain (如果有的話)
-//     });
-//   }, 5000)); // 模擬耗時
-// }
