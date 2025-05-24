@@ -165,7 +165,7 @@ export async function analyzeSuccessFactors(caseTypeSelected, caseSummaryText) {
 
 
         // 將打印語句移到這裡
-        console.log(`[AISuccessAnalysisService] Elasticsearch KNN Query (to be sent):`, JSON.stringify({ knn: knnQuery, _source: ["JID", "case_type", "verdict_type", "verdict"], size: 10 }, null, 2));
+        // console.log(`[AISuccessAnalysisService] Elasticsearch KNN Query (to be sent):`, JSON.stringify({ knn: knnQuery, _source: ["JID", "case_type", "verdict_type", "verdict"], size: 10 }, null, 2));
 
 
         const esResult = await esClient.search({
