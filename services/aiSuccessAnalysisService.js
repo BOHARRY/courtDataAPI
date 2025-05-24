@@ -157,7 +157,7 @@ export async function analyzeSuccessFactors(caseTypeSelected, caseSummaryText) {
     }
 
     try {
-        console.log(`[AISuccessAnalysisService] 正在從 ES 搜尋相似案件 (主類型: ${esCaseTypeMainKeyword})...`);
+        console.log(`[AISuccessAnalysisService] Elasticsearch KNN Query:`, JSON.stringify({ knn: knnQuery, _source: ["JID", "case_type", "verdict_type", "verdict"], size: 10 }, null, 2));
         const knnQuery = {
             field: "text_embedding",
             query_vector: queryVector,
@@ -197,24 +197,40 @@ export async function analyzeSuccessFactors(caseTypeSelected, caseSummaryText) {
         let analysisPerspective = caseTypeSelected === "刑事" ? "defendant" : "plaintiff";
         console.log(`[AISuccessAnalysisService] 分析視角設定為: ${analysisPerspective} (針對 ${caseTypeSelected} 案件)`);
 
-        for (const caseDoc of similarCases) {
-            const sourceVerdictType = caseDoc.verdict_type; // 直接從 ES _source 取
+        console.log(`\n--- [AISuccessAnalysisService] 遍歷 ${analyzedCaseCount} 件相似案件進行勝訴判斷 ---`);
+        for (let i = 0; i < similarCases.length; i++) {
+            const caseDoc = similarCases[i];
+            const sourceVerdictType = caseDoc.verdict_type; // 可能是字串或陣列
+
+            console.log(`\n[Case ${i+1}] JID: ${caseDoc.JID}`);
+            console.log(`  原始 verdict_type from ES:`, sourceVerdictType);
+            // console.log(`  原始 verdict from ES:`, caseDoc.verdict); // 如果需要也可以打印
+
             const outcome = getStandardizedOutcomeForAnalysis(
                 sourceVerdictType,
-                caseTypeSelected // 這裡傳入的是使用者選擇的主類型 "民事", "刑事", "行政"
-                // getStandardizedOutcomeForAnalysis 內部會處理 sourceVerdictType 可能為陣列的情況
+                caseTypeSelected
             );
 
-            if (outcome.isSubstantiveOutcome && isConsideredWin(outcome.neutralOutcomeCode, caseTypeSelected, analysisPerspective)) {
+            console.log(`  getStandardizedOutcomeForAnalysis -> neutralOutcomeCode: ${outcome.neutralOutcomeCode}`);
+            console.log(`  getStandardizedOutcomeForAnalysis -> description: "${outcome.description}"`);
+            console.log(`  getStandardizedOutcomeForAnalysis -> isSubstantiveOutcome: ${outcome.isSubstantiveOutcome}`);
+
+            const consideredWin = isConsideredWin(outcome.neutralOutcomeCode, caseTypeSelected, analysisPerspective);
+            console.log(`  isConsideredWin (${analysisPerspective} perspective) -> ${consideredWin}`);
+
+            if (outcome.isSubstantiveOutcome && consideredWin) {
                 winCount++;
+                console.log(`  ^^^ 判定為勝訴！ WinCount: ${winCount}`);
                 if (caseDoc.summary_ai_full || (caseDoc.JFULL && caseDoc.JFULL.length > 100) || (caseDoc.main_reasons_ai && caseDoc.main_reasons_ai.length > 0)) {
                     validCasesForAISummary.push(caseDoc);
                 }
             }
         }
+        console.log(`--- [AISuccessAnalysisService] 遍歷結束 ---\n`);
+
 
         const estimatedWinRate = analyzedCaseCount > 0 ? parseFloat(((winCount / analyzedCaseCount) * 100).toFixed(1)) : 0;
-        console.log(`[AISuccessAnalysisService] 勝訴案件數: ${winCount}, 總分析案件數: ${analyzedCaseCount}, 勝訴率: ${estimatedWinRate}%`);
+        console.log(`[AISuccessAnalysisService] 勝訴案件數: ${winCount} (基於 isSubstantiveOutcome 和 isConsideredWin), 總分析案件數: ${analyzedCaseCount}, 勝訴率: ${estimatedWinRate}%`);
         console.log(`[AISuccessAnalysisService] 將有 ${validCasesForAISummary.length} 件案例用於 AI 摘要和援引分析。`);
 
         let keyJudgementPoints = [];
