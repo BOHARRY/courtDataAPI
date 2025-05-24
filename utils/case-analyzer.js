@@ -324,8 +324,8 @@ export function getStandardizedOutcomeForAnalysis(verdictTypeFromES, mainCaseTyp
       safeVerdictType = String(verdictTypeFromES);
     }
   } else {
-      console.warn(`  [getStandardizedOutcomeForAnalysis] verdictTypeFromES is undefined or null. Treating as empty string.`);
-      safeVerdictType = '';
+    console.warn(`  [getStandardizedOutcomeForAnalysis] verdictTypeFromES is undefined or null. Treating as empty string.`);
+    safeVerdictType = '';
   }
 
   let neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.UNKNOWN_NEUTRAL;
@@ -343,8 +343,11 @@ export function getStandardizedOutcomeForAnalysis(verdictTypeFromES, mainCaseTyp
   };
 
   if (mainCaseType === 'civil') {
+    console.log(`  [DEBUG] Starting civil processing for vText: "${vText}"`);
+    console.log(`  [DEBUG] vText length: ${vText.length}`);
+    console.log(`  [DEBUG] vText charCodes:`, Array.from(vText).map(c => c.charCodeAt(0)));
     console.log(`  [getStandardizedOutcomeForAnalysis] Civil - checking keywords in vText: "${vText}"`);
-     if (check(['原告勝訴'])) {
+    if (check(['原告勝訴'])) {
       neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_P_WIN_FULL;
       isSubstantiveOutcome = true;
       console.log(`    Matched: CIVIL_P_WIN_FULL`);
@@ -361,10 +364,10 @@ export function getStandardizedOutcomeForAnalysis(verdictTypeFromES, mainCaseTyp
       isSubstantiveOutcome = true;
       console.log(`    Matched: CIVIL_P_LOSE_FULL (from 全部駁回)`);
     } else if (check(['部分駁回'])) { // ES 返回 "部分駁回"
-        // "部分駁回" 通常意味著有部分請求被支持，部分被駁回，類似部分勝訴
-        neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_P_WIN_PARTIAL; // 暫時歸類為部分勝訴
-        isSubstantiveOutcome = true;
-        console.log(`    Matched: CIVIL_P_WIN_PARTIAL (from 部分駁回)`);
+      // "部分駁回" 通常意味著有部分請求被支持，部分被駁回，類似部分勝訴
+      neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_P_WIN_PARTIAL; // 暫時歸類為部分勝訴
+      isSubstantiveOutcome = true;
+      console.log(`    Matched: CIVIL_P_WIN_PARTIAL (from 部分駁回)`);
     } else if (check(['程序駁回'])) {
       neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.PROCEDURAL_DISMISSAL_GENERIC;
       isSubstantiveOutcome = false; // 程序性結果
@@ -403,7 +406,7 @@ export function getStandardizedOutcomeForAnalysis(verdictTypeFromES, mainCaseTyp
       isSubstantiveOutcome = false;
       console.log(`    Matched: NOT_APPLICABLE_OR_UNKNOWN_NEUTRAL`);
     } else {
-        console.log(`    No civil match for vText: "${vText}"`);
+      console.log(`    No civil match for vText: "${vText}"`);
     }
   } else if (mainCaseType === 'criminal') {
     if (check(['被告無罪'])) {
