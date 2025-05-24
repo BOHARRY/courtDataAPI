@@ -158,7 +158,7 @@ export async function analyzeSuccessFactors(caseTypeSelected, caseSummaryText) {
             filter: [typeFilterQuery] // <--- 使用修正後的 typeFilterQuery
         };
 
-        console.log(`[AISuccessAnalysisService] Elasticsearch KNN Query:`, JSON.stringify({ knn: knnQuery, _source: ["JID", "case_type"], size: 10 }, null, 2));
+       // console.log(`[AISuccessAnalysisService] Elasticsearch KNN Query:`, JSON.stringify({ knn: knnQuery, _source: ["JID", "case_type"], size: 10 }, null, 2));
 
         const esResult = await esClient.search({
             index: ES_INDEX_NAME,
