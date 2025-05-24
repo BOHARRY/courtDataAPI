@@ -30,7 +30,10 @@ async function getEmbeddingForText(text) {
         });
         if (response.data && response.data[0] && response.data[0].embedding) {
             console.log(`[AIEmbedding] 成功獲取文本 embedding。`);
-            return response.data[0].embedding;
+            const embedding = response.data[0].embedding;
+            console.log(`[AIEmbedding] Generated queryVector (first 5 dims): [${embedding.slice(0, 5).join(', ')}, ...]`); // 打印部分向量以確認
+            // console.log(`[AIEmbedding] Full queryVector for testing:`, JSON.stringify(embedding)); // 如果需要完整向量複製
+            return embedding;
         } else {
             console.error('[AIEmbedding] OpenAI embedding API 回應格式不符預期:', response);
             const error = new Error('OpenAI embedding API 回應格式錯誤。');
@@ -146,6 +149,8 @@ export async function analyzeSuccessFactors(caseTypeSelected, caseSummaryText) {
                 // { term: { "is_ruling": false } }
             ]
         };
+
+        console.log(`[AISuccessAnalysisService] Elasticsearch KNN Query Body:`, JSON.stringify({ knn: knnQuery, _source: ["JID", "case_type"], size: 10 }, null, 2)); // 打印簡化版查詢用於測試
 
         const esResult = await esClient.search({
             index: ES_INDEX_NAME,
