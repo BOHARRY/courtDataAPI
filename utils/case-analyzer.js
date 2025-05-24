@@ -306,7 +306,6 @@ export function getDetailedResult(perfVerdictText, mainType, sourceForContext = 
  */
 export function getStandardizedOutcomeForAnalysis(verdictTypeFromES, mainCaseType) {
   let safeVerdictType = '';
-  // --- 詳細日誌記錄 verdictTypeFromES 的初始狀態 ---
   console.log(`[getStandardizedOutcomeForAnalysis] Received verdictTypeFromES: `, verdictTypeFromES, ` (Type: ${typeof verdictTypeFromES}) for mainCaseType: ${mainCaseType}`);
 
   if (verdictTypeFromES !== undefined && verdictTypeFromES !== null) {
@@ -318,29 +317,29 @@ export function getStandardizedOutcomeForAnalysis(verdictTypeFromES, mainCaseTyp
         console.log(`  [getStandardizedOutcomeForAnalysis] verdictTypeFromES was array, using first element: "${safeVerdictType}"`);
       } else {
         console.warn(`  [getStandardizedOutcomeForAnalysis] verdictTypeFromES is an empty array or array of non-strings. Value:`, verdictTypeFromES);
-        safeVerdictType = ''; // 保持空字串
+        safeVerdictType = '';
       }
     } else {
       console.warn(`  [getStandardizedOutcomeForAnalysis] verdictTypeFromES is not a string nor a processable array. Type: ${typeof verdictTypeFromES}, Value:`, verdictTypeFromES, ". Converting to string.");
-      safeVerdictType = String(verdictTypeFromES); // 強制轉換
+      safeVerdictType = String(verdictTypeFromES);
     }
   } else {
-    console.warn(`  [getStandardizedOutcomeForAnalysis] verdictTypeFromES is undefined or null. Treating as empty string.`);
-    safeVerdictType = ''; // 確保是空字串而不是 undefined/null
+      console.warn(`  [getStandardizedOutcomeForAnalysis] verdictTypeFromES is undefined or null. Treating as empty string.`);
+      safeVerdictType = '';
   }
 
   let neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.UNKNOWN_NEUTRAL;
-  let description = safeVerdictType || '結果資訊不足'; // 如果 safeVerdictType 是空字串，這裡 description 會是 '結果資訊不足'
+  let description = safeVerdictType || '結果資訊不足';
   let isSubstantiveOutcome = false;
 
-  const vText = safeVerdictType.toLowerCase();
-  // --- 打印轉換後的 vText ---
-  console.log(`  [getStandardizedOutcomeForAnalysis] Processing vText: "${vText}"`);
+  // --- 關鍵修正：確保 vText 是乾淨的小寫字串 ---
+  const vText = safeVerdictType.trim().toLowerCase(); // <--- 清理前後空格並轉小寫
+  console.log(`  [getStandardizedOutcomeForAnalysis] Processing cleaned vText: "${vText}"`);
 
-
+  // --- check 函數保持不變，但比較的關鍵字也應該是小寫（雖然中文影響不大） ---
   const check = (keywords) => {
-    if (!vText) return false; // 如果 vText 是空字串，直接返回 false
-    return keywords.some(kw => vText.includes(kw.toLowerCase())); // 確保關鍵字也轉為小寫比較
+    if (!vText) return false;
+    return keywords.some(kw => vText.includes(String(kw).toLowerCase())); // 確保 kw 也是字串並轉小寫
   };
 
   if (mainCaseType === 'civil') {
