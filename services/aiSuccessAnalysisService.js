@@ -25,10 +25,18 @@ async function getEmbeddingForText(text) {
         const response = await openai.embeddings.create({
             model: EMBEDDING_MODEL,
             input: text.trim(),
+            dimensions: 1536, // 確保使用正確的維度
         });
         if (response.data && response.data[0] && response.data[0].embedding) {
             const embedding = response.data[0].embedding;
-            console.log(`[AIEmbedding] 成功獲取文本 embedding。 Generated queryVector (first 5 dims): [${embedding.slice(0, 5).join(', ')}, ...]`);
+            console.log(`[AIEmbedding] 成功獲取文本 embedding。 Generated queryVector (維度: ${embedding.length}, 前 5 dims): [${embedding.slice(0, 5).join(', ')}, ...]`); // <--- 更新日誌，檢查維度
+            if (embedding.length !== 1536) { // <--- 增加一個額外檢查
+                console.error(`[AIEmbedding] 嚴重錯誤：OpenAI 返回的 embedding 維度 (${embedding.length}) 與期望的 1536 不符！`);
+                const error = new Error('OpenAI 返回的 embedding 維度與系統配置不符。');
+                error.statusCode = 500;
+                error.details = { internal_code: 'OPENAI_DIMENSION_MISMATCH', expected: 1536, received: embedding.length };
+                throw error;
+            }
             return embedding;
         } else {
             console.error('[AIEmbedding] OpenAI embedding API 回應格式不符預期:', response);
@@ -158,7 +166,7 @@ export async function analyzeSuccessFactors(caseTypeSelected, caseSummaryText) {
             filter: [typeFilterQuery] // <--- 使用修正後的 typeFilterQuery
         };
 
-       // console.log(`[AISuccessAnalysisService] Elasticsearch KNN Query:`, JSON.stringify({ knn: knnQuery, _source: ["JID", "case_type"], size: 10 }, null, 2));
+        // console.log(`[AISuccessAnalysisService] Elasticsearch KNN Query:`, JSON.stringify({ knn: knnQuery, _source: ["JID", "case_type"], size: 10 }, null, 2));
 
         const esResult = await esClient.search({
             index: ES_INDEX_NAME,
@@ -194,7 +202,7 @@ export async function analyzeSuccessFactors(caseTypeSelected, caseSummaryText) {
             const outcome = getStandardizedOutcomeForAnalysis(
                 sourceVerdictType,
                 caseTypeSelected // 這裡傳入的是使用者選擇的主類型 "民事", "刑事", "行政"
-                                 // getStandardizedOutcomeForAnalysis 內部會處理 sourceVerdictType 可能為陣列的情況
+                // getStandardizedOutcomeForAnalysis 內部會處理 sourceVerdictType 可能為陣列的情況
             );
 
             if (outcome.isSubstantiveOutcome && isConsideredWin(outcome.neutralOutcomeCode, caseTypeSelected, analysisPerspective)) {
@@ -258,13 +266,13 @@ export async function analyzeSuccessFactors(caseTypeSelected, caseSummaryText) {
                             }
                         }
                         if (keyJudgementPoints.length === 0 && (content.includes("\n- ") || content.includes("\n* ") || content.match(/\n\d+\.\s/))) {
-                             keyJudgementPoints = content.split(/\n- |\n\* |\n\d+\.\s/)
+                            keyJudgementPoints = content.split(/\n- |\n\* |\n\d+\.\s/)
                                 .map(s => s.replace(/^- |^\* |^\d+\.\s/, "").trim())
                                 .filter(s => s.length > 10 && !s.toLowerCase().includes("json"));
                         }
                         if (keyJudgementPoints.length === 0 && content.trim().length > 10 && !content.trim().startsWith("{") && !content.trim().startsWith("[")) {
                             const cleanedContent = content.replace(/```json\n|\n```|"/g, "").trim();
-                             if (cleanedContent.length > 10) keyJudgementPoints = [cleanedContent];
+                            if (cleanedContent.length > 10) keyJudgementPoints = [cleanedContent];
                         }
                         if (keyJudgementPoints.length === 0) {
                             console.warn("[AISuccessAnalysisService] AI裁判要點回應無法有效解析為列表。內容:", content);
@@ -272,19 +280,19 @@ export async function analyzeSuccessFactors(caseTypeSelected, caseSummaryText) {
                         }
                     } catch (jsonError) {
                         console.error('[AISuccessAnalysisService] 解析AI裁判要點JSON失敗:', jsonError, '原始內容:', content);
-                         const cleanedContent = content.replace(/```json\n|\n```|"/g, "").trim();
-                         if (cleanedContent.length > 10 && !cleanedContent.startsWith("{") && !cleanedContent.startsWith("[")) {
-                             keyJudgementPoints = [cleanedContent];
-                         } else {
+                        const cleanedContent = content.replace(/```json\n|\n```|"/g, "").trim();
+                        if (cleanedContent.length > 10 && !cleanedContent.startsWith("{") && !cleanedContent.startsWith("[")) {
+                            keyJudgementPoints = [cleanedContent];
+                        } else {
                             keyJudgementPoints = ["AI裁判要點分析中，請稍後查看詳細報告（格式解析錯誤）。"];
-                         }
+                        }
                     }
                 } else {
                     keyJudgementPoints = ["AI裁判要點分析暫時無法生成（無有效回應）。"];
                 }
                 console.log(`[AISuccessAnalysisService] 生成的裁判要點:`, keyJudgementPoints);
             } catch (aiError) {
-                console.error('[AISuccessAnalysisService] 生成裁判要點摘要失敗:', aiError.response ? JSON.stringify(aiError.response.data,null,2) : aiError.message, aiError.stack);
+                console.error('[AISuccessAnalysisService] 生成裁判要點摘要失敗:', aiError.response ? JSON.stringify(aiError.response.data, null, 2) : aiError.message, aiError.stack);
                 keyJudgementPoints = [`AI裁判要點分析時發生錯誤: ${aiError.message}`];
             }
 
@@ -344,7 +352,7 @@ export async function analyzeSuccessFactors(caseTypeSelected, caseSummaryText) {
         } else if (error.statusCode) { // 如果是我們自己拋出的帶 statusCode 的錯誤
             statusCode = error.statusCode;
             message = error.message;
-            if(error.details) details = {...details, ...error.details};
+            if (error.details) details = { ...details, ...error.details };
         }
 
         const serviceError = new Error(message);
