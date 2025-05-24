@@ -14,6 +14,8 @@ export const CREDIT_COSTS = {
   JUDGE_PROFILE_STATS: 1,        // (假設) 查詢法官基本資料與統計 (如果有的話)
   JUDGE_AI_ANALYTICS: 3,         // 法官AI分析與統計 (包含AI)
 
+  AI_SUCCESS_ANALYSIS: 5,
+
   // 其他未來可能的功能
   // EXAMPLE_FEATURE_A: 1,
   // EXAMPLE_FEATURE_B: 2,
@@ -36,4 +38,5 @@ export const CREDIT_PURPOSES = {
   PURCHASE_CREDITS_PKG_20: 'purchase_credits_PKG_20', // 範例
   ADMIN_GRANT: 'admin_grant',
   REFUND_ADJUSTMENT: 'refund_adjustment',
+  AI_SUCCESS_ANALYSIS: 'ai_success_analysis',
 };
