@@ -83,81 +83,107 @@ export function getSideFromPerformance(lawyerPerfObject) {
  */
 export function getDetailedResult(perfVerdictText, mainType, sourceForContext = {}, lawyerPerfObject = null) {
   let isSubstantiveRuling = false;
-  let neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.UNKNOWN_NEUTRAL; // 通用未知中性結果
-  let description = perfVerdictText || sourceForContext.verdict || sourceForContext.verdict_type || '結果資訊不足';
-  const pv = (perfVerdictText || "").toLowerCase();
+  let neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.UNKNOWN_NEUTRAL;
+
+  // --- 安全地獲取和轉換輸入文本 ---
+  let safePerfVerdictText = '';
+  if (perfVerdictText !== undefined && perfVerdictText !== null) {
+    if (typeof perfVerdictText === 'string') {
+      safePerfVerdictText = perfVerdictText;
+    } else {
+      console.warn(`[getDetailedResult] perfVerdictText for JID ${sourceForContext.JID || 'N/A'} is not a string. Type: ${typeof perfVerdictText}, Value:`, perfVerdictText, ". Converting to string.");
+      safePerfVerdictText = String(perfVerdictText);
+    }
+  }
+
+  let safeSourceVerdict = '';
+  if (sourceForContext.verdict !== undefined && sourceForContext.verdict !== null) {
+    if (typeof sourceForContext.verdict === 'string') {
+      safeSourceVerdict = sourceForContext.verdict;
+    } else {
+      console.warn(`[getDetailedResult] sourceForContext.verdict for JID ${sourceForContext.JID || 'N/A'} is not a string. Type: ${typeof sourceForContext.verdict}, Value:`, sourceForContext.verdict, ". Converting to string.");
+      safeSourceVerdict = String(sourceForContext.verdict);
+    }
+  }
+
+  let safeSourceVerdictType = '';
+  if (sourceForContext.verdict_type !== undefined && sourceForContext.verdict_type !== null) {
+    if (typeof sourceForContext.verdict_type === 'string') {
+      safeSourceVerdictType = sourceForContext.verdict_type;
+    } else if (Array.isArray(sourceForContext.verdict_type)) {
+      if (sourceForContext.verdict_type.length > 0 && typeof sourceForContext.verdict_type[0] === 'string') {
+        console.log(`[getDetailedResult] sourceForContext.verdict_type for JID ${sourceForContext.JID || 'N/A'} was an array. Using first element: "${sourceForContext.verdict_type[0]}"`);
+        safeSourceVerdictType = sourceForContext.verdict_type[0];
+      } else {
+        console.warn(`[getDetailedResult] sourceForContext.verdict_type for JID ${sourceForContext.JID || 'N/A'} is an empty array or array of non-strings. Value:`, sourceForContext.verdict_type, ". Treating as empty string.");
+        safeSourceVerdictType = '';
+      }
+    } else {
+      console.warn(`[getDetailedResult] sourceForContext.verdict_type for JID ${sourceForContext.JID || 'N/A'} is not a string nor a processable array. Type: ${typeof sourceForContext.verdict_type}, Value:`, sourceForContext.verdict_type, ". Converting to string.");
+      safeSourceVerdictType = String(sourceForContext.verdict_type);
+    }
+  }
+
+  let description = safePerfVerdictText || safeSourceVerdict || safeSourceVerdictType || '結果資訊不足';
+  const pv = safePerfVerdictText.toLowerCase(); // pv 來自律師表現的判決文本
   const sideFromPerf = lawyerPerfObject ? getSideFromPerformance(lawyerPerfObject) : 'unknown';
 
-  const isRulingCase = // 是否為裁定性質
-    sourceForContext.is_ruling === "是" || sourceForContext.is_ruling === true ||
+  const isRulingCase =
+    sourceForContext.is_ruling === "是" || String(sourceForContext.is_ruling).toLowerCase() === 'true' ||
     (sourceForContext.JCASE || '').toLowerCase().includes("裁") ||
-    (sourceForContext.JCASE || '').toLowerCase().includes("抗") || // 抗告也是裁定
-    (sourceForContext.JCASE || '').toLowerCase().includes("聲") || // 聲請通常導致裁定
+    (sourceForContext.JCASE || '').toLowerCase().includes("抗") ||
+    (sourceForContext.JCASE || '').toLowerCase().includes("聲") ||
     (sourceForContext.JTITLE || '').toLowerCase().includes("裁定");
 
-  // 從 lawyerPerfObject 獲取程序性判斷
-  const isProceduralByPerf = lawyerPerfObject ? (lawyerPerfObject.is_procedural === true || String(lawyerPerfObject.is_procedural).toLowerCase() === 'true') : false;
+  const isProceduralByPerf = lawyerPerfObject ? (String(lawyerPerfObject.is_procedural).toLowerCase() === 'true') : false;
 
-  // 第一步：檢查是否有實質性結果的裁定或判決，無論案件類型
+  // --- 開始判斷邏輯 (基於您提供的舊版 getDetailedResult 結構) ---
+
+  // 第一步：基於 perfVerdictText (pv) 的明確勝敗詞彙
   if (pv.includes("完全勝訴") || pv.includes("勝訴") || pv.includes("有理由") || pv.includes("准予") ||
-    pv.includes("被告: 完全勝訴") || pv.includes("原告: 完全勝訴")) {
+      pv.includes("被告: 完全勝訴") || pv.includes("原告: 完全勝訴")) {
     isSubstantiveRuling = true;
-
     if (mainType === 'civil') {
-      if (sideFromPerf === 'plaintiff') {
-        neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_P_WIN_FULL;
-      } else if (sideFromPerf === 'defendant') {
-        neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_D_WIN_FULL;
-      } else {
-        neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.GENERIC_WIN_FULL;
-      }
+      if (sideFromPerf === 'plaintiff') neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_P_WIN_FULL;
+      else if (sideFromPerf === 'defendant') neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_D_WIN_FULL;
+      else neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.GENERIC_WIN_FULL || NEUTRAL_OUTCOME_CODES.UNKNOWN_NEUTRAL; // 確保GENERIC_WIN_FULL存在
     } else if (mainType === 'administrative') {
       neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.ADMIN_WIN_REVOKE_FULL;
-    } else {
-      neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.GENERIC_WIN_FULL;
+    } else { // criminal or other
+      neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.GENERIC_WIN_FULL || NEUTRAL_OUTCOME_CODES.UNKNOWN_NEUTRAL;
     }
   }
   else if (pv.includes("完全敗訴") || pv.includes("敗訴") || pv.includes("無理由") || pv.includes("駁回") ||
-    pv.includes("被告: 完全敗訴") || pv.includes("原告: 完全敗訴")) {
+           pv.includes("被告: 完全敗訴") || pv.includes("原告: 完全敗訴")) {
     isSubstantiveRuling = true;
-
     if (mainType === 'civil') {
-      if (sideFromPerf === 'plaintiff') {
-        neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_P_LOSE_FULL;
-      } else if (sideFromPerf === 'defendant') {
-        neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_D_LOSE_FULL;
-      } else {
-        neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.GENERIC_LOSE_FULL;
-      }
+      if (sideFromPerf === 'plaintiff') neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_P_LOSE_FULL;
+      else if (sideFromPerf === 'defendant') neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_D_LOSE_FULL;
+      else neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.GENERIC_LOSE_FULL || NEUTRAL_OUTCOME_CODES.UNKNOWN_NEUTRAL;
     } else if (mainType === 'administrative') {
       neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.ADMIN_LOSE_DISMISSED;
-    } else {
-      neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.GENERIC_LOSE_FULL;
+    } else { // criminal or other
+      neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.GENERIC_LOSE_FULL || NEUTRAL_OUTCOME_CODES.UNKNOWN_NEUTRAL;
     }
   }
-  // 部分勝訴/敗訴的處理
   else if (pv.includes("部分勝訴") || pv.includes("一部勝訴")) {
     isSubstantiveRuling = true;
-
     if (mainType === 'civil') {
-      if (sideFromPerf === 'plaintiff') {
-        neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_P_WIN_PARTIAL;
-      } else {
-        neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.GENERIC_WIN_PARTIAL;
-      }
+      if (sideFromPerf === 'plaintiff') neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_P_WIN_PARTIAL;
+      else neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.GENERIC_WIN_PARTIAL || NEUTRAL_OUTCOME_CODES.UNKNOWN_NEUTRAL;
     } else if (mainType === 'administrative') {
       neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.ADMIN_WIN_REVOKE_PARTIAL;
-    } else {
-      neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.GENERIC_WIN_PARTIAL;
+    } else { // criminal or other
+      neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.GENERIC_WIN_PARTIAL || NEUTRAL_OUTCOME_CODES.UNKNOWN_NEUTRAL;
     }
   }
 
-  // 第二步：如果還沒設定結果代碼，且確實是程序性案件，才標記為程序性
+  // 第二步：如果基於 pv 未能判斷，且是程序性案件
   if (neutralOutcomeCode === NEUTRAL_OUTCOME_CODES.UNKNOWN_NEUTRAL &&
-    (isProceduralByPerf || pv.includes("程序性裁定") || pv.includes("procedural"))) {
+      (isProceduralByPerf || pv.includes("程序性裁定") || pv.includes("procedural"))) {
     neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.PROCEDURAL_NEUTRAL;
   }
-  // 其他中性結果
+  // 第三步：如果仍未判斷，嘗試從 pv 中識別其他中性結果
   else if (neutralOutcomeCode === NEUTRAL_OUTCOME_CODES.UNKNOWN_NEUTRAL) {
     if (pv.includes("和解") || pv.includes("調解成立")) {
       neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.SETTLEMENT_NEUTRAL;
@@ -166,117 +192,107 @@ export function getDetailedResult(perfVerdictText, mainType, sourceForContext = 
     } else if (pv.includes("n/a") || pv.includes("未明確記載") || pv.includes("不適用")) {
       neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.NOT_APPLICABLE_OR_UNKNOWN_NEUTRAL;
     }
-    // 第三步：詳細案件類型分析（只在前面未設置代碼的情況下執行）
-    else if (perfVerdictText) {
-      if (mainType === 'civil') {
-        // 民事案件結果判斷 (基於律師角度的 perfVerdictText)
-        if (pv.includes("原告: 完全勝訴")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_P_WIN_FULL;
-        else if (pv.includes("原告: 大部分勝訴")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_P_WIN_MAJOR;
-        else if (pv.includes("原告: 部分勝訴")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_P_WIN_PARTIAL;
-        else if (pv.includes("原告: 小部分勝訴")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_P_WIN_MINOR;
-        else if (pv.includes("原告: 完全敗訴")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_P_LOSE_FULL;
-        else if (pv.includes("被告: 完全勝訴")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_D_WIN_FULL;
-        else if (pv.includes("被告: 大部分減免")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_D_MITIGATE_MAJOR;
-        else if (pv.includes("被告: 部分減免")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_D_MITIGATE_PARTIAL;
-        else if (pv.includes("被告: 小部分減免")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_D_MITIGATE_MINOR;
-        else if (pv.includes("被告: 完全敗訴")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_D_LOSE_FULL;
-        else if (isRulingCase && (pv.includes("准許") || pv.includes("准予") || pv.includes("抗告有理由"))) {
-          neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_RULING_GRANTED;
-          isSubstantiveRuling = true;
-        }
-        else if (isRulingCase && (pv.includes("駁回"))) {
-          neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_RULING_DISMISSED;
-          isSubstantiveRuling = true;
-        }
-        // 通用勝敗 (如果律師立場不明確時的兜底)
-        else if (pv.startsWith("完全勝訴")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.GENERIC_WIN_FULL;
-        else if (pv.startsWith("部分勝訴")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.GENERIC_WIN_PARTIAL;
-        else if (pv.startsWith("完全敗訴")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.GENERIC_LOSE_FULL;
-        else neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_UNCATEGORIZED_NEUTRAL;
-      } else if (mainType === 'criminal') {
-        // 刑事案件結果判斷 (通常律師是被告辯護人)
-        if (pv.includes("無罪")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CRIMINAL_ACQUITTED;
-        else if (pv.includes("有罪但顯著減輕") || pv.includes("刑度低於求刑50%以上")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CRIMINAL_GUILTY_SIG_REDUCED;
-        else if (pv.includes("有罪但略微減輕") || pv.includes("刑度低於求刑但未達50%")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CRIMINAL_GUILTY_SLIGHT_REDUCED;
-        else if (pv.includes("緩刑")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CRIMINAL_GUILTY_PROBATION;
-        else if (pv.includes("得易科罰金")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CRIMINAL_GUILTY_FINE_CONVERTIBLE;
-        else if (pv.includes("罰金") && !(pv.includes("有期徒刑") || pv.includes("拘役"))) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CRIMINAL_GUILTY_FINE_ONLY;
-        else if (pv.includes("有罪且加重")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CRIMINAL_GUILTY_AGGRAVATED;
-        else if (pv.includes("有罪且符合預期") || pv.includes("有罪依法量刑") || (pv.includes("有罪") && !pv.includes("減輕") && !pv.includes("緩刑"))) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CRIMINAL_GUILTY_AS_EXPECTED_OR_SENTENCED;
-        else if (isRulingCase && (pv.includes("准予交保") || pv.includes("停止羈押"))) {
-          neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CRIMINAL_RULING_BAIL_GRANTED;
-          isSubstantiveRuling = true;
-        }
-        else if (isRulingCase && (pv.includes("羈押") || pv.includes("駁回交保"))) {
-          neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CRIMINAL_RULING_DETENTION_ORDERED;
-          isSubstantiveRuling = true;
-        }
-        else if ((sourceForContext.verdict_type || '').toLowerCase().includes("免訴")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CRIMINAL_CHARGE_DISMISSED_NO_PROSECUTION;
-        else if ((sourceForContext.verdict_type || '').toLowerCase().includes("不受理")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CRIMINAL_CHARGE_DISMISSED_NOT_ACCEPTED;
-        else neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CRIMINAL_UNCATEGORIZED_NEUTRAL;
-      } else if (mainType === 'administrative') {
-        // 行政案件結果判斷 (通常律師是原告代理人)
-        if (isRulingCase) {
-          if (pv.includes("准予停止執行") || pv.includes("聲請有理由")) {
-            neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.ADMIN_RULING_STAY_GRANTED;
-            isSubstantiveRuling = true;
-          }
-          else if (pv.includes("駁回停止執行") || pv.includes("聲請無理由")) {
-            neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.ADMIN_RULING_STAY_DENIED;
-            isSubstantiveRuling = true;
-          }
-          else neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.ADMIN_RULING_UNCATEGORIZED_NEUTRAL;
-        } else { // 判決
-          if ((pv.includes("撤銷原處分") || pv.includes("訴願決定")) && !(pv.includes("部分") || pv.includes("一部"))) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.ADMIN_WIN_REVOKE_FULL;
-          else if (pv.includes("部分撤銷原處分") || pv.includes("一部撤銷")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.ADMIN_WIN_REVOKE_PARTIAL;
-          else if (pv.includes("駁回訴訟") || pv.includes("訴願駁回") || pv.includes("原告之訴駁回")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.ADMIN_LOSE_DISMISSED;
-          else if (pv.includes("義務訴訟勝訴") || pv.includes("命被告應為")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.ADMIN_WIN_OBLIGATION;
-          else neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.ADMIN_JUDGMENT_UNCATEGORIZED_NEUTRAL;
-        }
-      }
-    }
-    // 兜底邏輯：基於案件本身的 verdict/verdict_type
-    else if (neutralOutcomeCode === NEUTRAL_OUTCOME_CODES.UNKNOWN_NEUTRAL) {
-      const generalVerdict = (sourceForContext.verdict || sourceForContext.verdict_type || "").toLowerCase();
-      if (generalVerdict && generalVerdict !== '結果資訊不足' && generalVerdict !== '結果未明') {
+    // 第四步：如果 pv 有內容但以上都未匹配，嘗試更細緻的 pv 內部判斷 (舊邏輯的核心部分)
+    else if (safePerfVerdictText) { // 確保 perfVerdictText 有效才進入這塊
+        const lcSafeSourceVerdictType = safeSourceVerdictType.toLowerCase(); // 用於刑事案件中參考整體 verdict_type
+
         if (mainType === 'civil') {
-          if (generalVerdict.includes("和解") || generalVerdict.includes("調解")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.SETTLEMENT_NEUTRAL;
-          else if (generalVerdict.includes("全部勝訴") || generalVerdict.includes("原告勝訴") || generalVerdict.includes("被告勝訴")) {
-            neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.GENERIC_WIN_FULL;
-            isSubstantiveRuling = true;
-          }
-          else if (generalVerdict.includes("部分勝訴") || generalVerdict.includes("一部勝訴")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.GENERIC_WIN_PARTIAL;
-          else if (generalVerdict.includes("敗訴") || generalVerdict.includes("駁回") || generalVerdict.includes("原告之訴駁回")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.GENERIC_LOSE_FULL;
+            if (pv.includes("原告: 完全勝訴")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_P_WIN_FULL;
+            else if (pv.includes("原告: 大部分勝訴")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_P_WIN_MAJOR || NEUTRAL_OUTCOME_CODES.CIVIL_P_WIN_PARTIAL;
+            else if (pv.includes("原告: 部分勝訴")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_P_WIN_PARTIAL;
+            else if (pv.includes("原告: 小部分勝訴")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_P_WIN_MINOR || NEUTRAL_OUTCOME_CODES.CIVIL_P_WIN_PARTIAL;
+            else if (pv.includes("原告: 完全敗訴")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_P_LOSE_FULL;
+            else if (pv.includes("被告: 完全勝訴")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_D_WIN_FULL;
+            else if (pv.includes("被告: 大部分減免")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_D_MITIGATE_MAJOR || NEUTRAL_OUTCOME_CODES.CIVIL_D_WIN_FULL; // 假設減免是被告有利
+            else if (pv.includes("被告: 部分減免")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_D_MITIGATE_PARTIAL || NEUTRAL_OUTCOME_CODES.CIVIL_D_WIN_PARTIAL;
+            else if (pv.includes("被告: 小部分減免")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_D_MITIGATE_MINOR || NEUTRAL_OUTCOME_CODES.CIVIL_D_WIN_PARTIAL;
+            else if (pv.includes("被告: 完全敗訴")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_D_LOSE_FULL;
+            else if (isRulingCase && (pv.includes("准許") || pv.includes("准予") || pv.includes("抗告有理由"))) { neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_RULING_GRANTED || NEUTRAL_OUTCOME_CODES.PROCEDURAL_NEUTRAL; isSubstantiveRuling = true; }
+            else if (isRulingCase && (pv.includes("駁回"))) { neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_RULING_DISMISSED || NEUTRAL_OUTCOME_CODES.PROCEDURAL_NEUTRAL; isSubstantiveRuling = true; }
+            else if (pv.startsWith("完全勝訴")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.GENERIC_WIN_FULL || NEUTRAL_OUTCOME_CODES.CIVIL_P_WIN_FULL;
+            else if (pv.startsWith("部分勝訴")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.GENERIC_WIN_PARTIAL || NEUTRAL_OUTCOME_CODES.CIVIL_P_WIN_PARTIAL;
+            else if (pv.startsWith("完全敗訴")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.GENERIC_LOSE_FULL || NEUTRAL_OUTCOME_CODES.CIVIL_P_LOSE_FULL;
+            else neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_UNCATEGORIZED_NEUTRAL;
         } else if (mainType === 'criminal') {
-          if (generalVerdict.includes("無罪")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CRIMINAL_ACQUITTED;
-          else if (generalVerdict.includes("緩刑")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CRIMINAL_GUILTY_PROBATION;
-          else if (generalVerdict.includes("有罪")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CRIMINAL_GUILTY_AS_EXPECTED_OR_SENTENCED;
-          else if (generalVerdict.includes("免訴")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CRIMINAL_CHARGE_DISMISSED_NO_PROSECUTION;
-          else if (generalVerdict.includes("不受理")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CRIMINAL_CHARGE_DISMISSED_NOT_ACCEPTED;
+            if (pv.includes("無罪")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CRIMINAL_ACQUITTED;
+            else if (pv.includes("有罪但顯著減輕") || pv.includes("刑度低於求刑50%以上")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CRIMINAL_GUILTY_SIG_REDUCED || NEUTRAL_OUTCOME_CODES.CRIMINAL_GUILTY_MITIGATED;
+            else if (pv.includes("有罪但略微減輕") || pv.includes("刑度低於求刑但未達50%")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CRIMINAL_GUILTY_SLIGHT_REDUCED || NEUTRAL_OUTCOME_CODES.CRIMINAL_GUILTY_MITIGATED;
+            else if (pv.includes("緩刑")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CRIMINAL_GUILTY_PROBATION;
+            else if (pv.includes("得易科罰金")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CRIMINAL_GUILTY_FINE_CONVERTIBLE;
+            else if (pv.includes("罰金") && !(pv.includes("有期徒刑") || pv.includes("拘役"))) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CRIMINAL_GUILTY_FINE_ONLY;
+            else if (pv.includes("有罪且加重")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CRIMINAL_GUILTY_AGGRAVATED || NEUTRAL_OUTCOME_CODES.CRIMINAL_GUILTY_AS_EXPECTED_OR_SENTENCED;
+            else if (pv.includes("有罪且符合預期") || pv.includes("有罪依法量刑") || (pv.includes("有罪") && !pv.includes("減輕") && !pv.includes("緩刑"))) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CRIMINAL_GUILTY_AS_EXPECTED_OR_SENTENCED;
+            else if (isRulingCase && (pv.includes("准予交保") || pv.includes("停止羈押"))) { neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CRIMINAL_RULING_BAIL_GRANTED || NEUTRAL_OUTCOME_CODES.PROCEDURAL_NEUTRAL; isSubstantiveRuling = true; }
+            else if (isRulingCase && (pv.includes("羈押") || pv.includes("駁回交保"))) { neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CRIMINAL_RULING_DETENTION_ORDERED || NEUTRAL_OUTCOME_CODES.PROCEDURAL_NEUTRAL; isSubstantiveRuling = true; }
+            else if (lcSafeSourceVerdictType.includes("免訴")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CRIMINAL_CHARGE_DISMISSED_NO_PROSECUTION;
+            else if (lcSafeSourceVerdictType.includes("不受理")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CRIMINAL_CHARGE_DISMISSED_NOT_ACCEPTED;
+            else neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CRIMINAL_UNCATEGORIZED_NEUTRAL;
         } else if (mainType === 'administrative') {
-          if (generalVerdict.includes("勝訴") || generalVerdict.includes("撤銷")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.ADMIN_WIN_REVOKE_FULL;
-          else if (generalVerdict.includes("敗訴") || generalVerdict.includes("駁回")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.ADMIN_LOSE_DISMISSED;
+            if (isRulingCase) {
+              if (pv.includes("准予停止執行") || pv.includes("聲請有理由")) { neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.ADMIN_RULING_STAY_GRANTED || NEUTRAL_OUTCOME_CODES.PROCEDURAL_NEUTRAL; isSubstantiveRuling = true; }
+              else if (pv.includes("駁回停止執行") || pv.includes("聲請無理由")) { neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.ADMIN_RULING_STAY_DENIED || NEUTRAL_OUTCOME_CODES.PROCEDURAL_NEUTRAL; isSubstantiveRuling = true; }
+              else neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.ADMIN_RULING_UNCATEGORIZED_NEUTRAL;
+            } else { // 判決
+              if ((pv.includes("撤銷原處分") || pv.includes("訴願決定")) && !(pv.includes("部分") || pv.includes("一部"))) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.ADMIN_WIN_REVOKE_FULL;
+              else if (pv.includes("部分撤銷原處分") || pv.includes("一部撤銷")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.ADMIN_WIN_REVOKE_PARTIAL;
+              else if (pv.includes("駁回訴訟") || pv.includes("訴願駁回") || pv.includes("原告之訴駁回")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.ADMIN_LOSE_DISMISSED;
+              else if (pv.includes("義務訴訟勝訴") || pv.includes("命被告應為")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.ADMIN_WIN_OBLIGATION;
+              else neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.ADMIN_JUDGMENT_UNCATEGORIZED_NEUTRAL;
+            }
+        }
+    }
+    // 第五步：如果以上所有基於 pv 的判斷都未得出結果，則使用 generalVerdict (來自 source.verdict 或 source.verdict_type)
+    else if (neutralOutcomeCode === NEUTRAL_OUTCOME_CODES.UNKNOWN_NEUTRAL) {
+      const generalVerdict = (safeSourceVerdict || safeSourceVerdictType || "").toLowerCase();
+      if (generalVerdict && generalVerdict !== '結果資訊不足' && generalVerdict !== '結果未明') { // 確保 generalVerdict 是有效字串
+        if (mainType === 'civil') {
+            if (generalVerdict.includes("和解") || generalVerdict.includes("調解")) neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.SETTLEMENT_NEUTRAL;
+            else if (generalVerdict.includes("全部勝訴") || generalVerdict.includes("原告勝訴")) { neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_P_WIN_FULL; isSubstantiveRuling = true; }
+            else if (generalVerdict.includes("被告勝訴")) { neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_D_WIN_FULL; isSubstantiveRuling = true; } // 新增對被告勝訴的判斷
+            else if (generalVerdict.includes("部分勝訴") || generalVerdict.includes("一部勝訴")) { neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_P_WIN_PARTIAL; isSubstantiveRuling = true; }
+            else if (generalVerdict.includes("敗訴") || generalVerdict.includes("駁回") || generalVerdict.includes("原告之訴駁回")) { neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_P_LOSE_FULL; isSubstantiveRuling = true; }
+            else if (generalVerdict.includes("程序駁回")) { neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.PROCEDURAL_DISMISSAL_GENERIC;}
+            else if (generalVerdict.includes("管轄權移送")) { neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.PROCEDURAL_NEUTRAL;}
+            // ... 其他基於 generalVerdict 的民事判斷
+            else { neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_UNCATEGORIZED_NEUTRAL; }
+
+        } else if (mainType === 'criminal') {
+            if (generalVerdict.includes("無罪")) { neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CRIMINAL_ACQUITTED; isSubstantiveRuling = true; }
+            else if (generalVerdict.includes("緩刑")) { neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CRIMINAL_GUILTY_PROBATION; isSubstantiveRuling = true; }
+            else if (generalVerdict.includes("有罪")) { neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CRIMINAL_GUILTY_AS_EXPECTED_OR_SENTENCED; isSubstantiveRuling = true; } // 兜底有罪
+            else if (generalVerdict.includes("免訴")) { neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CRIMINAL_CHARGE_DISMISSED_NO_PROSECUTION; isSubstantiveRuling = true; }
+            else if (generalVerdict.includes("不受理")) { neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CRIMINAL_CHARGE_DISMISSED_NOT_ACCEPTED; isSubstantiveRuling = true; }
+            else if (generalVerdict.includes("管轄權移送")) { neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.PROCEDURAL_NEUTRAL; }
+            // ... 其他基於 generalVerdict 的刑事判斷
+            else { neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CRIMINAL_UNCATEGORIZED_NEUTRAL; }
+
+        } else if (mainType === 'administrative') {
+            if (generalVerdict.includes("勝訴") || generalVerdict.includes("撤銷原處分") || generalVerdict.includes("訴願決定撤銷")) { neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.ADMIN_WIN_REVOKE_FULL; isSubstantiveRuling = true; }
+            else if (generalVerdict.includes("敗訴") || generalVerdict.includes("駁回訴訟") || generalVerdict.includes("訴願駁回")) { neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.ADMIN_LOSE_DISMISSED; isSubstantiveRuling = true; }
+            else if (generalVerdict.includes("程序駁回")) { neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.PROCEDURAL_DISMISSAL_GENERIC; }
+            // ... 其他基於 generalVerdict 的行政判斷
+            else { neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.ADMIN_JUDGMENT_UNCATEGORIZED_NEUTRAL; }
         }
       }
     }
+  } // 結束第三步的大 else if (neutralOutcomeCode === NEUTRAL_OUTCOME_CODES.UNKNOWN_NEUTRAL)
+
+  // 更新 description (確保使用安全的字串版本)
+  if (String(description).trim() === '' || String(description) === '結果未明' || String(description) === '結果資訊不足') {
+    description = safePerfVerdictText || safeSourceVerdict || safeSourceVerdictType || '結果資訊不足';
+    if (String(description).trim() === '') description = '結果資訊不足';
   }
 
-  // 更新 description，如果原始 perfVerdictText 為空或不足
-  if (!description || description.trim() === '' || description === '結果未明' || description === '結果資訊不足') {
-    description = sourceForContext.verdict || sourceForContext.verdict_type || '結果資訊不足';
-    if (!description || description.trim() === '') description = '結果資訊不足';
-  }
-
-  // 最終檢查並修正 description
-  if (neutralOutcomeCode.endsWith('_UNCATEGORIZED_NEUTRAL') || neutralOutcomeCode === NEUTRAL_OUTCOME_CODES.UNKNOWN_NEUTRAL) {
-    if (description === '結果資訊不足' && perfVerdictText) { // 如果 perfVerdictText 有內容但未被分類
-      description = perfVerdictText; // 使用原始 perfVerdictText 作為描述
+  // 如果最終 neutralOutcomeCode 還是 UNKNOWN 或 UNCATEGORIZED，且 description 不足，但 perfVerdictText 有內容
+  if (typeof neutralOutcomeCode === 'string' && (neutralOutcomeCode.endsWith('_UNCATEGORIZED_NEUTRAL') || neutralOutcomeCode === NEUTRAL_OUTCOME_CODES.UNKNOWN_NEUTRAL)) {
+    if (description === '結果資訊不足' && safePerfVerdictText) {
+      description = safePerfVerdictText;
     }
   }
 
   return {
     neutralOutcomeCode,
-    description,
+    description: String(description), // 確保最終返回的是字串
     isSubstantiveRuling
   };
 }
