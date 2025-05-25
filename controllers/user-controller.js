@@ -83,3 +83,21 @@ export async function getCreditTransactionHistoryController(req, res, next) {
     next(error); // 交給全局錯誤處理器
   }
 }
+
+export async function getAiAnalysisHistoryController(req, res, next) {
+    try {
+        const userId = req.user.uid;
+        const limitParam = req.query.limit ? parseInt(req.query.limit, 10) : 10;
+
+        if (isNaN(limitParam) || limitParam <= 0 || limitParam > 50) { // 增加上限限制
+            return res.status(400).json({ status: 'failed', message: '無效的 limit 參數 (必須介於 1-50)。' });
+        }
+
+        const history = await userService.getAiAnalysisHistory(userId, limitParam);
+        res.status(200).json(history);
+    } catch (error) {
+        console.error('[UserController] Error in getAiAnalysisHistoryController:', error);
+        next(error); // 可以考慮返回一個標準的錯誤 JSON
+        res.status(500).json({ status: 'failed', message: error.message || '獲取歷史記錄時發生內部錯誤。'});
+    }
+}

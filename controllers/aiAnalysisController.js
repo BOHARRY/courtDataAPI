@@ -4,6 +4,7 @@ import * as aiSuccessAnalysisService from '../services/aiSuccessAnalysisService.
 export async function analyzeSuccessFactorsController(req, res, next) {
     try {
         const { case_type_selected, case_summary_text } = req.body;
+        const userId = req.user.uid;    // 從請求中獲取用戶ID，假設中間件已經將用戶信息添加到 req.user
 
         if (!case_type_selected || !case_summary_text) {
             return res.status(400).json({
@@ -26,7 +27,9 @@ export async function analyzeSuccessFactorsController(req, res, next) {
             });
         }
 
+        // --- MODIFICATION: 傳遞 userId ---
         const analysisResult = await aiSuccessAnalysisService.analyzeSuccessFactors(
+            userId, // <--- 新增 userId 參數
             case_type_selected,
             case_summary_text
         );

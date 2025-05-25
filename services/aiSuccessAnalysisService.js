@@ -5,6 +5,7 @@ import { OPENAI_API_KEY, OPENAI_MODEL_NAME_EMBEDDING, OPENAI_MODEL_NAME_CHAT } f
 import { formatEsResponse } from '../utils/response-formatter.js';
 import { getStandardizedOutcomeForAnalysis } from '../utils/case-analyzer.js';
 import { NEUTRAL_OUTCOME_CODES } from '../utils/constants.js';
+import admin from 'firebase-admin';
 
 const openai = new OpenAI({
     apiKey: OPENAI_API_KEY,
@@ -109,7 +110,7 @@ function isConsideredWin(neutralOutcomeCode, caseTypeSelected, userPerspective =
     return false;
 }
 
-export async function analyzeSuccessFactors(caseTypeSelected, caseSummaryText) {
+export async function analyzeSuccessFactors(userId, caseTypeSelected, caseSummaryText) {
     console.log(`[AISuccessAnalysisService] 開始分析 - 案件類型: ${caseTypeSelected}, 摘要長度: ${caseSummaryText.length}`);
 
     let queryVector;
@@ -157,7 +158,43 @@ export async function analyzeSuccessFactors(caseTypeSelected, caseSummaryText) {
         console.log(`[AISuccessAnalysisService] 找到 ${analyzedCaseCount} 件相似案件。`);
 
         if (analyzedCaseCount < 1) {
-            return { /* ... (insufficient_data 返回結構不變) ... */ };
+            const insufficientResult = {
+                status: 'insufficient_data',
+                analyzedCaseCount: analyzedCaseCount,
+                estimatedWinRate: null,
+                monetaryStats: null,
+                verdictDistribution: {},
+                strategyInsights: null,
+                keyJudgementPoints: [`找到的相似${caseTypeSelected}案件數量過少 (${analyzedCaseCount}件)，無法進行深入分析。`],
+                commonCitedCases: [],
+                message: `找到的相似${caseTypeSelected}案件數量過少 (${analyzedCaseCount}件)，無法進行有效分析。請嘗試提供更詳細的案情描述或檢查案件類型選擇。`
+            };
+             // --- MODIFICATION START: 儲存 "insufficient_data" 結果到歷史 ---
+             if (userId) { // 確保 userId 存在才儲存
+                 try {
+                     const historyColRef = admin.firestore().collection('users').doc(userId).collection('aiAnalysisHistory');
+                     const historyDocData = {
+                         caseTypeSelected: caseTypeSelected,
+                         caseSummaryText: caseSummaryText, // 儲存完整摘要
+                         analysisDate: admin.firestore.FieldValue.serverTimestamp(),
+                         status: insufficientResult.status,
+                         analyzedCaseCount: insufficientResult.analyzedCaseCount,
+                         estimatedWinRate: insufficientResult.estimatedWinRate,
+                         monetaryStats: insufficientResult.monetaryStats,
+                         verdictDistribution: insufficientResult.verdictDistribution,
+                         strategyInsights: insufficientResult.strategyInsights,
+                         keyJudgementPoints: insufficientResult.keyJudgementPoints,
+                         commonCitedCases: insufficientResult.commonCitedCases,
+                         message: insufficientResult.message,
+                     };
+                     await historyColRef.add(historyDocData);
+                     console.log(`[AISuccessAnalysisService] "insufficient_data" 結果已儲存至歷史紀錄，用戶: ${userId}`);
+                 } catch (saveError) {
+                     console.error(`[AISuccessAnalysisService] 儲存 "insufficient_data" AI 分析歷史紀錄失敗，用戶: ${userId}:`, saveError);
+                 }
+             }
+             // --- MODIFICATION END ---
+            return insufficientResult;
         }
 
         // ... (monetaryAnalysis, verdictDetails, lawyerComments, winCount, validCasesForAISummary 的初始化和遍歷填充邏輯保持不變，
@@ -406,17 +443,47 @@ export async function analyzeSuccessFactors(caseTypeSelected, caseSummaryText) {
             console.log(`[AISuccessAnalysisService] ${reason}，不進行AI要點和援引判例上下文分析。`);
         }
 
-        return {
+        const analysisResult = { // <--- 這是最終要返回並儲存的物件
             status: 'complete',
             analyzedCaseCount,
             estimatedWinRate,
             monetaryStats,
-            verdictDistribution: verdictDetails, 
+            verdictDistribution: verdictDetails,
             strategyInsights,
             keyJudgementPoints,
-            commonCitedCases: commonCitedCasesWithContext, // <--- 返回帶有上下文的新結構
+            commonCitedCases: commonCitedCasesWithContext,
             message: `AI分析完成。共分析 ${analyzedCaseCount} 件相似案件。`
         };
+
+         // --- MODIFICATION START: 儲存成功的分析結果到歷史 ---
+        if (userId) { // 確保 userId 存在才儲存
+            try {
+                const historyColRef = admin.firestore().collection('users').doc(userId).collection('aiAnalysisHistory');
+                const historyDocData = {
+                    caseTypeSelected: caseTypeSelected,
+                    caseSummaryText: caseSummaryText, // 儲存完整摘要
+                    analysisDate: admin.firestore.FieldValue.serverTimestamp(),
+                    // 直接複製 analysisResult 的所有內容
+                    status: analysisResult.status,
+                    analyzedCaseCount: analysisResult.analyzedCaseCount,
+                    estimatedWinRate: analysisResult.estimatedWinRate,
+                    monetaryStats: analysisResult.monetaryStats,
+                    verdictDistribution: analysisResult.verdictDistribution,
+                    strategyInsights: analysisResult.strategyInsights,
+                    keyJudgementPoints: analysisResult.keyJudgementPoints,
+                    commonCitedCases: analysisResult.commonCitedCases,
+                    message: analysisResult.message,
+                };
+                const docRef = await historyColRef.add(historyDocData);
+                console.log(`[AISuccessAnalysisService] AI 分析結果已儲存至歷史紀錄，文檔 ID: ${docRef.id}，用戶: ${userId}`);
+            } catch (saveError) {
+                console.error(`[AISuccessAnalysisService] 儲存 AI 分析歷史紀錄失敗，用戶: ${userId}:`, saveError);
+                // 這裡不應該拋出錯誤阻斷主 API 的返回，只記錄錯誤即可
+            }
+        }
+        // --- MODIFICATION END ---
+
+        return analysisResult;
 
     } catch (error) {
         // ... (錯誤處理邏輯保持不變) ...

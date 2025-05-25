@@ -2,6 +2,62 @@
 import admin from 'firebase-admin';
 import { plans as backendPlansData } from '../config/plansData.js'; // 引入方案配置
 
+/**
+ * 獲取用戶的 AI 勝訴案由分析歷史記錄
+ * @param {string} userId 用戶 UID
+ * @param {number} recordLimit 要獲取的記錄數量
+ * @returns {Promise<Array<object>>} 歷史記錄陣列
+ */
+export async function getAiAnalysisHistory(userId, recordLimit = 10) {
+    if (!userId) {
+        console.error("[UserService] getAiAnalysisHistory: userId is required.");
+        return [];
+    }
+    try {
+        const historyColRef = admin.firestore()
+                                    .collection('users')
+                                    .doc(userId)
+                                    .collection('aiAnalysisHistory');
+        
+        const querySnapshot = await historyColRef
+                                        .orderBy('analysisDate', 'desc')
+                                        .limit(recordLimit)
+                                        .get();
+
+        const historyRecords = [];
+        querySnapshot.forEach(doc => {
+            const data = doc.data();
+            // 確保 analysisDate 存在且是 Firestore Timestamp 才轉換
+            const analysisDateISO = data.analysisDate && typeof data.analysisDate.toDate === 'function' 
+                                    ? data.analysisDate.toDate().toISOString() 
+                                    : null;
+            historyRecords.push({
+                id: doc.id,
+                caseTypeSelected: data.caseTypeSelected || "未知類型",
+                caseSummaryText: data.caseSummaryText || "摘要內容缺失",
+                analysisDate: analysisDateISO,
+                analysisResult: { // 確保所有期望的 analysisResult 欄位都存在，給予預設值
+                    status: data.status || 'unknown',
+                    analyzedCaseCount: data.analyzedCaseCount || 0,
+                    estimatedWinRate: data.estimatedWinRate === undefined ? null : data.estimatedWinRate,
+                    monetaryStats: data.monetaryStats || null,
+                    verdictDistribution: data.verdictDistribution || {},
+                    strategyInsights: data.strategyInsights || null,
+                    keyJudgementPoints: data.keyJudgementPoints || [],
+                    commonCitedCases: data.commonCitedCases || [],
+                    message: data.message || "分析訊息缺失"
+                }
+            });
+        });
+        console.log(`[UserService] Fetched ${historyRecords.length} AI analysis history records for user ${userId}.`);
+        return historyRecords;
+    } catch (error) {
+        console.error(`[UserService] Error fetching AI analysis history for user ${userId}:`, error);
+        throw new Error(`無法獲取AI分析歷史紀錄: ${error.message}`); // 拋出更具體的錯誤
+    }
+}
+
+
 
 /**
  * 添加一條律師搜尋歷史記錄到使用者的 Firestore 文件中。
