@@ -3,7 +3,7 @@ import esClient from '../config/elasticsearch.js';
 import { OpenAI } from 'openai';
 import { OPENAI_API_KEY, OPENAI_MODEL_NAME_EMBEDDING, OPENAI_MODEL_NAME_CHAT } from '../config/environment.js';
 import { formatEsResponse } from '../utils/response-formatter.js';
-import { getStandardizedOutcomeForAnalysis } from '../utils/case-analyzer.js'; // 假設此函數已更新並能處理 verdict_type 陣列
+import { getStandardizedOutcomeForAnalysis } from '../utils/case-analyzer.js';
 import { NEUTRAL_OUTCOME_CODES } from '../utils/constants.js';
 
 const openai = new OpenAI({
@@ -11,9 +11,10 @@ const openai = new OpenAI({
 });
 const ES_INDEX_NAME = 'search-boooook';
 const EMBEDDING_MODEL = OPENAI_MODEL_NAME_EMBEDDING || 'text-embedding-3-large';
-const CHAT_MODEL = OPENAI_MODEL_NAME_CHAT || 'gpt-4.1'; // 與您 README.md 中一致
+const CHAT_MODEL = OPENAI_MODEL_NAME_CHAT || 'gpt-4.1';
 
 async function getEmbeddingForText(text) {
+    // ... (此函數保持不變，您已確認其運作正常) ...
     if (!text || typeof text !== 'string' || text.trim().length === 0) {
         const error = new Error('輸入文本不能為空。');
         error.statusCode = 400; // Bad Request
@@ -25,12 +26,12 @@ async function getEmbeddingForText(text) {
         const response = await openai.embeddings.create({
             model: EMBEDDING_MODEL,
             input: text.trim(),
-            dimensions: 1536, // 確保使用正確的維度
+            dimensions: 1536, 
         });
         if (response.data && response.data[0] && response.data[0].embedding) {
             const embedding = response.data[0].embedding;
-            console.log(`[AIEmbedding] 成功獲取文本 embedding。 Generated queryVector (維度: ${embedding.length}, 前 5 dims): [${embedding.slice(0, 5).join(', ')}, ...]`); // <--- 更新日誌，檢查維度
-            if (embedding.length !== 1536) { // <--- 增加一個額外檢查
+            console.log(`[AIEmbedding] 成功獲取文本 embedding。 Generated queryVector (維度: ${embedding.length}, 前 5 dims): [${embedding.slice(0, 5).join(', ')}, ...]`);
+            if (embedding.length !== 1536) { 
                 console.error(`[AIEmbedding] 嚴重錯誤：OpenAI 返回的 embedding 維度 (${embedding.length}) 與期望的 1536 不符！`);
                 const error = new Error('OpenAI 返回的 embedding 維度與系統配置不符。');
                 error.statusCode = 500;
@@ -41,7 +42,7 @@ async function getEmbeddingForText(text) {
         } else {
             console.error('[AIEmbedding] OpenAI embedding API 回應格式不符預期:', response);
             const error = new Error('OpenAI embedding API 回應格式錯誤。');
-            error.statusCode = 502; // Bad Gateway
+            error.statusCode = 502; 
             error.details = { internal_code: 'OPENAI_EMBEDDING_BAD_RESPONSE' };
             throw error;
         }
@@ -55,7 +56,7 @@ async function getEmbeddingForText(text) {
 }
 
 function isConsideredWin(neutralOutcomeCode, caseTypeSelected, userPerspective = "plaintiff") {
-    // ... (這裡使用您最新確認過的 isConsideredWin 函數邏輯)
+    // ... (此函數保持不變，基於之前的討論，其邏輯是正確的) ...
     if (!neutralOutcomeCode) return false;
     if (caseTypeSelected === "民事") {
         if (userPerspective === "plaintiff") {
@@ -120,30 +121,14 @@ export async function analyzeSuccessFactors(caseTypeSelected, caseSummaryText) {
     }
 
     let typeFilterQuery;
-    const esCaseTypeMainKeyword = caseTypeSelected;
+    const esCaseTypeMainKeyword = caseTypeSelected; // 假設 caseTypeSelected 直接對應 ES 的主要類型關鍵字
 
     if (esCaseTypeMainKeyword === "民事") {
-        typeFilterQuery = {
-            bool: {
-                should: [
-                    { prefix: { "case_type": "民事" } },
-                    { prefix: { "case_type": "家事" } }
-                ],
-                minimum_should_match: 1
-            }
-        };
+        typeFilterQuery = { bool: { should: [{ prefix: { "case_type": "民事" } }, { prefix: { "case_type": "家事" } }], minimum_should_match: 1 } };
     } else if (esCaseTypeMainKeyword === "刑事") {
         typeFilterQuery = { prefix: { "case_type": "刑事" } };
     } else if (esCaseTypeMainKeyword === "行政") {
-        typeFilterQuery = {
-            bool: {
-                should: [
-                    { wildcard: { "case_type": "*行政*" } },
-                    { wildcard: { "case_type": "*訴願*" } }
-                ],
-                minimum_should_match: 1
-            }
-        };
+        typeFilterQuery = { bool: { should: [{ wildcard: { "case_type": "*行政*" } }, { wildcard: { "case_type": "*訴願*" } }], minimum_should_match: 1 } };
     } else {
         console.warn(`[AISuccessAnalysisService] 未知的案件主類型: ${esCaseTypeMainKeyword}，將不進行案件類型篩選。`);
         typeFilterQuery = { match_all: {} };
@@ -151,90 +136,63 @@ export async function analyzeSuccessFactors(caseTypeSelected, caseSummaryText) {
 
     try {
         console.log(`[AISuccessAnalysisService] 正在從 ES 搜尋相似案件 (主類型: ${esCaseTypeMainKeyword})...`);
-
-        const knnQuery = { // <--- knnQuery 定義
-            field: "text_embedding",
-            query_vector: queryVector,
-            k: 50,
-            num_candidates: 100,
-            filter: typeFilterQuery ? [typeFilterQuery] : undefined // 只有當 typeFilterQuery 有效時才加入 filter
-        };
-        // 如果 typeFilterQuery 是 {match_all:{}}，filter 可能是 [ {match_all:{}} ]，這通常是允許的
-        // 但如果希望在 match_all 時不傳 filter，可以這樣:
-        // filter: (typeFilterQuery && Object.keys(typeFilterQuery)[0] !== 'match_all') ? [typeFilterQuery] : undefined
-
-
-        // 將打印語句移到這裡
-        // console.log(`[AISuccessAnalysisService] Elasticsearch KNN Query (to be sent):`, JSON.stringify({ knn: knnQuery, _source: ["JID", "case_type", "verdict_type", "verdict"], size: 10 }, null, 2));
-
-
+        const knnQuery = { field: "text_embedding", query_vector: queryVector, k: 50, num_candidates: 100, filter: typeFilterQuery ? [typeFilterQuery] : undefined };
+        
         const esResult = await esClient.search({
             index: ES_INDEX_NAME,
             knn: knnQuery,
-            _source: ["JID", "verdict_type", "summary_ai_full", "JFULL", "citations", "main_reasons_ai", "JTITLE", "case_type", "verdict"],
-            size: 30
+            _source: [ // 確保請求了 lawyerperformance 及其內部所需欄位
+                "JID", "verdict_type", "summary_ai_full", "JFULL", "citations", 
+                "main_reasons_ai", "JTITLE", "case_type", "verdict", "lawyerperformance" // <--- 確保 lawyerperformance 在 _source 中
+            ],
+            size: 30 
         });
 
-        // ... (後續的 formattedResponse, similarCases, analyzedCaseCount, 遍歷和 AI 分析邏輯不變) ...
         const formattedResponse = formatEsResponse(esResult, 30);
         const similarCases = formattedResponse.hits;
         const analyzedCaseCount = similarCases.length;
 
         console.log(`[AISuccessAnalysisService] 找到 ${analyzedCaseCount} 件相似案件。`);
 
-        if (analyzedCaseCount < 1) {
+        if (analyzedCaseCount < 1) { // 可以考慮提高這個下限，例如 analyzedCaseCount < 5
             return {
                 status: 'insufficient_data',
                 analyzedCaseCount: analyzedCaseCount,
                 estimatedWinRate: null,
-                keyJudgementPoints: [],
+                monetaryStats: null,         // --- MODIFICATION: 確保初始返回 null ---
+                verdictDistribution: {},     // --- MODIFICATION: 確保初始返回空對象 ---
+                strategyInsights: null,      // --- MODIFICATION: 確保初始返回 null ---
+                keyJudgementPoints: [`找到的相似${caseTypeSelected}案件數量過少 (${analyzedCaseCount}件)，無法進行深入分析。`],
                 commonCitedCases: [],
                 message: `找到的相似${caseTypeSelected}案件數量過少 (${analyzedCaseCount}件)，無法進行有效分析。請嘗試提供更詳細的案情描述或檢查案件類型選擇。`
             };
         }
 
-        // 🔥 新增：金額分析變數
-        const monetaryAnalysis = {
-            cases: [],
-            totalClaimed: 0,
-            totalGranted: 0,
-            percentageDistribution: {
-                '0-20%': 0,
-                '21-40%': 0,
-                '41-60%': 0,
-                '61-80%': 0,
-                '81-100%': 0
-            }
-        };
-
-        // 🔥 新增：判決細節分析
-        const verdictDetails = {
-            '完全勝訴': 0,
-            '大部分勝訴': 0,
-            '部分勝訴': 0,
-            '小部分勝訴': 0,
-            '完全敗訴': 0,
-            '和解': 0,
-            '其他': 0
-        };
-
-        // 🔥 新增：收集律師策略評論
-        const lawyerComments = {
-            highSuccess: [], // percentage_awarded > 60
-            lowSuccess: []   // percentage_awarded < 30
-        };
+        const monetaryAnalysis = { cases: [], totalClaimed: 0, totalGranted: 0, percentageDistribution: { '0-20%': 0, '21-40%': 0, '41-60%': 0, '61-80%': 0, '81-100%': 0 } };
+        const verdictDetails = { '完全勝訴': 0, '大部分勝訴': 0, '部分勝訴': 0, '小部分勝訴': 0, '完全敗訴': 0, '和解': 0, '其他': 0 };
+        const lawyerComments = { highSuccess: [], lowSuccess: [] };
 
         let winCount = 0;
         const validCasesForAISummary = [];
         let analysisPerspective = caseTypeSelected === "刑事" ? "defendant" : "plaintiff";
+        
         console.log(`[AISuccessAnalysisService] 分析視角設定為: ${analysisPerspective} (針對 ${caseTypeSelected} 案件)`);
+        console.log(`\n--- [AISuccessAnalysisService] 遍歷 ${analyzedCaseCount} 件相似案件進行詳細分析 ---`);
 
-        console.log(`\n--- [AISuccessAnalysisService] 遍歷 ${analyzedCaseCount} 件相似案件進行勝訴判斷 ---`);
         for (let i = 0; i < similarCases.length; i++) {
             const caseDoc = similarCases[i];
-            const sourceVerdictType = caseDoc.verdict_type;
+            // --- MODIFICATION START: 增加對 caseDoc 和 caseDoc.lawyerperformance 的日誌 ---
+            // console.log(`[AISuccessAnalysisService] Processing caseDoc ${i + 1}/${analyzedCaseCount}, JID: ${caseDoc.JID}`);
+            // if (!caseDoc.lawyerperformance) {
+            //     console.log(`  [DEBUG] JID: ${caseDoc.JID} - lawyerperformance 欄位不存在或為 undefined。`);
+            // } else if (!Array.isArray(caseDoc.lawyerperformance)) {
+            //     console.log(`  [DEBUG] JID: ${caseDoc.JID} - lawyerperformance 欄位不是一個陣列。實際類型: ${typeof caseDoc.lawyerperformance}, 內容:`, caseDoc.lawyerperformance);
+            // } else if (caseDoc.lawyerperformance.length === 0) {
+            //     console.log(`  [DEBUG] JID: ${caseDoc.JID} - lawyerperformance 陣列為空。`);
+            // }
+            // --- MODIFICATION END ---
 
-            // 原有的勝訴判斷邏輯保持
+            const sourceVerdictType = caseDoc.verdict_type;
             const outcome = getStandardizedOutcomeForAnalysis(sourceVerdictType, caseTypeSelected);
             const consideredWin = isConsideredWin(outcome.neutralOutcomeCode, caseTypeSelected, analysisPerspective);
 
@@ -245,157 +203,208 @@ export async function analyzeSuccessFactors(caseTypeSelected, caseSummaryText) {
                 }
             }
 
-            // 🔥 新增：分析 lawyerperformance 數據
             if (caseDoc.lawyerperformance && Array.isArray(caseDoc.lawyerperformance)) {
-                caseDoc.lawyerperformance.forEach(lp => {
-                    if (lp.side === 'plaintiff' && caseTypeSelected === '民事') {
-                        // 分析金額數據
-                        if (lp.claim_type === 'monetary' &&
-                            !isNaN(parseFloat(lp.claim_amount)) &&
-                            !isNaN(parseFloat(lp.granted_amount))) {
+                caseDoc.lawyerperformance.forEach((lp, lpIndex) => {
+                    // --- MODIFICATION START: 增加對每個 lp 的詳細日誌 ---
+                    // console.log(`  [DEBUG] JID: ${caseDoc.JID}, lawyerperformance[${lpIndex}]:`, JSON.stringify(lp));
+                    // --- MODIFICATION END ---
 
-                            const claimed = parseFloat(lp.claim_amount);
-                            const granted = parseFloat(lp.granted_amount);
-                            const percentage = parseFloat(lp.percentage_awarded) || ((granted / claimed) * 100);
+                    if (lp && typeof lp === 'object' && lp.side === 'plaintiff' && caseTypeSelected === '民事') { // 確保 lp 是物件
+                        // --- MODIFICATION START: 金額分析邏輯增強 ---
+                        const claimAmountStr = String(lp.claim_amount || '0').trim();
+                        const grantedAmountStr = String(lp.granted_amount || '0').trim();
+                        const percentageAwardedStr = String(lp.percentage_awarded || '0').trim();
 
-                            monetaryAnalysis.cases.push({
-                                claimed,
-                                granted,
-                                percentage,
-                                jid: caseDoc.JID
-                            });
+                        const claimed = parseFloat(claimAmountStr);
+                        const granted = parseFloat(grantedAmountStr);
+                        
+                        // console.log(`    [Monetary DEBUG] JID: ${caseDoc.JID}, lp.side: ${lp.side}, lp.claim_type: ${lp.claim_type}, claim_amount_str: "${claimAmountStr}", granted_amount_str: "${grantedAmountStr}", percentage_awarded_str: "${percentageAwardedStr}"`);
 
+                        if (lp.claim_type === 'monetary' && !isNaN(claimed) && !isNaN(granted)) {
+                            // console.log(`      [Monetary DEBUG] Valid monetary case found. Claimed: ${claimed}, Granted: ${granted}`);
+                            let percentage = 0;
+                            if (!isNaN(parseFloat(percentageAwardedStr)) && parseFloat(percentageAwardedStr) >= 0 && parseFloat(percentageAwardedStr) <= 1000 ) { // 假設 percentage_awarded 比較可信，且範圍合理
+                                percentage = parseFloat(percentageAwardedStr);
+                            } else if (claimed > 0) {
+                                percentage = Math.max(0, Math.min(100, (granted / claimed) * 100)); // 確保在 0-100 之間
+                            } else if (granted > 0) { // 如果請求金額為0但判准金額大於0，視為100% (雖然罕見)
+                                percentage = 100;
+                            }
+                            // console.log(`      [Monetary DEBUG] Calculated Percentage: ${percentage}`);
+
+
+                            monetaryAnalysis.cases.push({ claimed, granted, percentage: parseFloat(percentage.toFixed(1)), jid: caseDoc.JID });
                             monetaryAnalysis.totalClaimed += claimed;
                             monetaryAnalysis.totalGranted += granted;
 
-                            // 分類到百分比區間
                             if (percentage <= 20) monetaryAnalysis.percentageDistribution['0-20%']++;
                             else if (percentage <= 40) monetaryAnalysis.percentageDistribution['21-40%']++;
                             else if (percentage <= 60) monetaryAnalysis.percentageDistribution['41-60%']++;
                             else if (percentage <= 80) monetaryAnalysis.percentageDistribution['61-80%']++;
                             else monetaryAnalysis.percentageDistribution['81-100%']++;
+                        } else {
+                            // console.log(`      [Monetary DEBUG] Skipped: claim_type not 'monetary' or amounts are NaN.`);
                         }
+                        // --- MODIFICATION END ---
 
-                        // 分析判決細節
-                        if (lp.verdict) {
-                            const verdictText = lp.verdict.toLowerCase();
-                            if (verdictText.includes('完全勝訴')) verdictDetails['完全勝訴']++;
-                            else if (verdictText.includes('大部分勝訴')) verdictDetails['大部分勝訴']++;
-                            else if (verdictText.includes('部分勝訴') && !verdictText.includes('小部分')) verdictDetails['部分勝訴']++;
-                            else if (verdictText.includes('小部分勝訴')) verdictDetails['小部分勝訴']++;
-                            else if (verdictText.includes('完全敗訴')) verdictDetails['完全敗訴']++;
-                            else if (verdictText.includes('和解')) verdictDetails['和解']++;
-                            else verdictDetails['其他']++;
-                        }
-
-                        // 收集律師評論
-                        if (lp.comment && lp.percentage_awarded !== undefined) {
-                            const pctAwarded = parseFloat(lp.percentage_awarded);
-                            if (pctAwarded > 60) {
-                                lawyerComments.highSuccess.push({
-                                    comment: lp.comment,
-                                    percentage: pctAwarded,
-                                    jid: caseDoc.JID
-                                });
-                            } else if (pctAwarded < 30) {
-                                lawyerComments.lowSuccess.push({
-                                    comment: lp.comment,
-                                    percentage: pctAwarded,
-                                    jid: caseDoc.JID
-                                });
+                        // --- MODIFICATION START: 判決細節分析邏輯修正 ---
+                        if (lp.verdict && typeof lp.verdict === 'string') {
+                            let actualVerdict = lp.verdict.toLowerCase().trim();
+                            // 嘗試去除 "原告:" 或 "被告:" 前綴
+                            if (actualVerdict.startsWith('原告:') || actualVerdict.startsWith('被告:')) {
+                                actualVerdict = actualVerdict.substring(actualVerdict.indexOf(':') + 1).trim();
                             }
+                            // console.log(`    [Verdict DEBUG] JID: ${caseDoc.JID}, Original lp.verdict: "${lp.verdict}", Processed actualVerdict: "${actualVerdict}"`);
+
+                            if (actualVerdict.includes('完全勝訴')) verdictDetails['完全勝訴']++;
+                            else if (actualVerdict.includes('大部分勝訴')) verdictDetails['大部分勝訴']++;
+                            else if (actualVerdict.includes('部分勝訴') && !actualVerdict.includes('小部分')) verdictDetails['部分勝訴']++;
+                            else if (actualVerdict.includes('小部分勝訴')) verdictDetails['小部分勝訴']++;
+                            else if (actualVerdict.includes('完全敗訴')) verdictDetails['完全敗訴']++;
+                            else if (actualVerdict.includes('和解')) verdictDetails['和解']++;
+                            else if (actualVerdict) verdictDetails['其他']++; // 如果有文本但未匹配，計入其他
+                        } else {
+                            // console.log(`    [Verdict DEBUG] JID: ${caseDoc.JID}, lp.verdict is missing or not a string.`);
                         }
+                        // --- MODIFICATION END ---
+
+                        // --- MODIFICATION START: 收集律師策略評論邏輯增強 ---
+                        if (lp.comment && typeof lp.comment === 'string' && lp.comment.trim() !== "" && lp.percentage_awarded !== undefined) {
+                            const pctAwarded = parseFloat(String(lp.percentage_awarded).trim()); // 確保是數字
+                            if (!isNaN(pctAwarded)) {
+                                // console.log(`    [Comment DEBUG] JID: ${caseDoc.JID}, pctAwarded: ${pctAwarded}, comment: "${lp.comment.substring(0,30)}..."`);
+                                if (pctAwarded > 60) {
+                                    lawyerComments.highSuccess.push({ comment: lp.comment, percentage: pctAwarded, jid: caseDoc.JID });
+                                } else if (pctAwarded < 30 && pctAwarded >= 0) { // 確保 percentage_awarded 不為負
+                                    lawyerComments.lowSuccess.push({ comment: lp.comment, percentage: pctAwarded, jid: caseDoc.JID });
+                                }
+                            } else {
+                                // console.log(`    [Comment DEBUG] JID: ${caseDoc.JID}, pctAwarded is NaN. Original: ${lp.percentage_awarded}`);
+                            }
+                        } else {
+                            // console.log(`    [Comment DEBUG] JID: ${caseDoc.JID}, comment or percentage_awarded is missing/invalid.`);
+                        }
+                        // --- MODIFICATION END ---
                     }
                 });
             }
         }
         console.log(`--- [AISuccessAnalysisService] 遍歷結束 ---\n`);
+        // --- MODIFICATION START: 打印統計結果 ---
+        console.log('[AISuccessAnalysisService] Monetary Analysis Cases Collected:', monetaryAnalysis.cases.length);
+        console.log('[AISuccessAnalysisService] Verdict Details Collected:', JSON.stringify(verdictDetails, null, 2));
+        console.log('[AISuccessAnalysisService] Lawyer Comments Collected - High Success:', lawyerComments.highSuccess.length, ', Low Success:', lawyerComments.lowSuccess.length);
+        // --- MODIFICATION END ---
+
 
         const estimatedWinRate = analyzedCaseCount > 0 ? parseFloat(((winCount / analyzedCaseCount) * 100).toFixed(1)) : 0;
-        console.log(`[AISuccessAnalysisService] 勝訴案件數: ${winCount} (基於 isSubstantiveOutcome 和 isConsideredWin), 總分析案件數: ${analyzedCaseCount}, 勝訴率: ${estimatedWinRate}%`);
+        console.log(`[AISuccessAnalysisService] 勝訴案件數: ${winCount}, 總分析案件數: ${analyzedCaseCount}, 勝訴率: ${estimatedWinRate}%`);
         console.log(`[AISuccessAnalysisService] 將有 ${validCasesForAISummary.length} 件案例用於 AI 摘要和援引分析。`);
 
-        // 🔥 新增：計算金額統計數據
         let monetaryStats = null;
-        if (monetaryAnalysis.cases.length > 0) {
-            const sortedByPercentage = monetaryAnalysis.cases.sort((a, b) => a.percentage - b.percentage);
-            const avgClaimed = Math.round(monetaryAnalysis.totalClaimed / monetaryAnalysis.cases.length);
-            const avgGranted = Math.round(monetaryAnalysis.totalGranted / monetaryAnalysis.cases.length);
-            const avgPercentage = parseFloat(((avgGranted / avgClaimed) * 100).toFixed(1));
+        if (monetaryAnalysis.cases.length > 0) { // 確保有案例才計算
+            const totalValidCasesForMonetary = monetaryAnalysis.cases.length;
+            const avgClaimed = totalValidCasesForMonetary > 0 ? Math.round(monetaryAnalysis.totalClaimed / totalValidCasesForMonetary) : 0;
+            const avgGranted = totalValidCasesForMonetary > 0 ? Math.round(monetaryAnalysis.totalGranted / totalValidCasesForMonetary) : 0;
+            // --- MODIFICATION: 修正 avgPercentage 計算，基於收集到的 percentage 值計算平均 ---
+            const sumOfPercentages = monetaryAnalysis.cases.reduce((sum, item) => sum + item.percentage, 0);
+            const avgPercentage = totalValidCasesForMonetary > 0 ? parseFloat((sumOfPercentages / totalValidCasesForMonetary).toFixed(1)) : 0;
 
-            // 計算四分位數
-            const getQuartile = (arr, q) => {
+
+            const sortedPercentages = monetaryAnalysis.cases.map(c => c.percentage).sort((a, b) => a - b);
+            const getQuartileValue = (arr, q) => {
+                if (!arr || arr.length === 0) return 0;
                 const pos = (arr.length - 1) * q;
                 const base = Math.floor(pos);
                 const rest = pos - base;
                 if (arr[base + 1] !== undefined) {
-                    return arr[base].percentage + rest * (arr[base + 1].percentage - arr[base].percentage);
+                    return arr[base] + rest * (arr[base + 1] - arr[base]);
                 } else {
-                    return arr[base].percentage;
+                    return arr[base];
                 }
             };
-
             monetaryStats = {
                 avgClaimedAmount: avgClaimed,
                 avgGrantedAmount: avgGranted,
-                avgPercentageAwarded: avgPercentage,
+                avgPercentageAwarded: avgPercentage, // 使用修正後的平均百分比
                 distribution: monetaryAnalysis.percentageDistribution,
                 quartiles: {
-                    q1: parseFloat(getQuartile(sortedByPercentage, 0.25).toFixed(1)),
-                    median: parseFloat(getQuartile(sortedByPercentage, 0.5).toFixed(1)),
-                    q3: parseFloat(getQuartile(sortedByPercentage, 0.75).toFixed(1))
+                    q1: parseFloat(getQuartileValue(sortedPercentages, 0.25).toFixed(1)) || 0,
+                    median: parseFloat(getQuartileValue(sortedPercentages, 0.5).toFixed(1)) || 0,
+                    q3: parseFloat(getQuartileValue(sortedPercentages, 0.75).toFixed(1)) || 0
                 },
-                totalCases: monetaryAnalysis.cases.length
+                totalCases: totalValidCasesForMonetary // 使用實際參與金額統計的案件數
             };
+            console.log("[AISuccessAnalysisService] Calculated monetaryStats:", JSON.stringify(monetaryStats, null, 2));
+        } else {
+            console.log("[AISuccessAnalysisService] No valid cases for monetary stats calculation.");
         }
 
-        // 🔥 新增：生成律師策略洞察
+
         let strategyInsights = null;
-        if (lawyerComments.highSuccess.length >= 2 || lawyerComments.lowSuccess.length >= 2) {
-            try {
-                const strategyPrompt = `你是一位專業的台灣法律AI助手。請分析以下${caseTypeSelected}案件中，律師表現的評論，找出成功和失敗的關鍵因素。
+        // --- MODIFICATION START: 調整策略洞察的條件，並在無足夠評論時提供提示 ---
+        if (lawyerComments.highSuccess.length >= 1 || lawyerComments.lowSuccess.length >= 1) { // 條件放寬到至少有1條評論
+            if (lawyerComments.highSuccess.length < 1 && lawyerComments.lowSuccess.length < 1) { // 再次檢查，雖然上面已經判斷過
+                 strategyInsights = { keyInsight: "相似案件中律師評論數據不足，無法生成深入的策略洞察。" };
+            } else {
+                try {
+                    const winningCommentsText = lawyerComments.highSuccess.length > 0 ? lawyerComments.highSuccess.slice(0, 5).map(c => `- ${c.comment} (獲准${c.percentage.toFixed(0)}%)`).join('\n') : "無足夠高獲准案件評論可供分析。";
+                    const losingCommentsText = lawyerComments.lowSuccess.length > 0 ? lawyerComments.lowSuccess.slice(0, 5).map(c => `- ${c.comment} (獲准${c.percentage.toFixed(0)}%)`).join('\n') : "無足夠低獲准案件評論可供分析。";
 
-                高獲准案件（獲准>60%）的律師表現評論：
-                ${lawyerComments.highSuccess.slice(0, 5).map(c => `- ${c.comment} (獲准${c.percentage}%)`).join('\n')}
+                    const strategyPrompt = `你是一位專業的台灣法律AI助手。請分析以下相似${caseTypeSelected}案件中，原告律師表現的評論，找出可能的成功因素和風險點。
 
-                低獲准案件（獲准<30%）的律師表現評論：
-                ${lawyerComments.lowSuccess.slice(0, 5).map(c => `- ${c.comment} (獲准${c.percentage}%)`).join('\n')}
+                    高獲准案件（請求金額獲准比例 > 60%）的律師表現評論：
+                    ${winningCommentsText}
 
-                請總結出：
-                1. 三個最關鍵的致勝策略（從高獲准案件中提取）
-                2. 三個最常見的失敗原因（從低獲准案件中提取）
-                3. 一個關鍵洞察或建議
+                    低獲准案件（請求金額獲准比例 < 30%）的律師表現評論：
+                    ${losingCommentsText}
 
-                請以 JSON 格式回應：
-                {
-                "winningStrategies": ["策略1", "策略2", "策略3"],
-                "losingReasons": ["原因1", "原因2", "原因3"],
-                "keyInsight": "關鍵洞察"
-                }`;
+                    請總結出（如果資訊不足，請說明資訊不足）：
+                    1. 一到三個可能的致勝策略或常見有利因素（主要從高獲准案件中提取，若無則說明）
+                    2. 一到三個可能的風險點或常見不利因素（主要從低獲准案件中提取，若無則說明）
+                    3. 一個綜合性的關鍵洞察或給使用者的建議 (若無特定洞察，可提供通用建議)
 
-                const strategyResponse = await openai.chat.completions.create({
-                    model: CHAT_MODEL,
-                    messages: [{ role: 'user', content: strategyPrompt }],
-                    temperature: 0.3,
-                    response_format: { type: "json_object" }
-                });
+                    請以 JSON 格式回應：
+                    {
+                    "winningStrategies": ["策略1", ...],
+                    "losingReasons": ["原因1", ...],
+                    "keyInsight": "關鍵洞察或建議"
+                    }`;
+                    console.log("[AISuccessAnalysisService] Strategy Prompt (partial):", strategyPrompt.substring(0, 300) + "...");
 
-                if (strategyResponse.choices?.[0]?.message?.content) {
-                    strategyInsights = JSON.parse(strategyResponse.choices[0].message.content);
+                    const strategyResponse = await openai.chat.completions.create({
+                        model: CHAT_MODEL,
+                        messages: [{ role: 'user', content: strategyPrompt }],
+                        temperature: 0.4, // 稍微提高一點彈性
+                        response_format: { type: "json_object" }
+                    });
+
+                    if (strategyResponse.choices?.[0]?.message?.content) {
+                        console.log("[AISuccessAnalysisService] OpenAI Strategy Response:", strategyResponse.choices[0].message.content);
+                        strategyInsights = JSON.parse(strategyResponse.choices[0].message.content);
+                    } else {
+                        strategyInsights = { keyInsight: "AI策略洞察生成失敗，無有效回應。" };
+                    }
+                } catch (error) {
+                    console.error('[AISuccessAnalysisService] 生成策略洞察失敗:', error.message);
+                    strategyInsights = { keyInsight: `AI策略洞察生成時發生錯誤: ${error.message.substring(0,100)}...` };
                 }
-            } catch (error) {
-                console.error('[AISuccessAnalysisService] 生成策略洞察失敗:', error);
             }
+        } else {
+            strategyInsights = { keyInsight: "相似案件中律師評論數量不足，無法生成策略洞察。" };
+            console.log("[AISuccessAnalysisService] Not enough lawyer comments to generate strategy insights.");
         }
+        // --- MODIFICATION END ---
+        console.log("[AISuccessAnalysisService] Generated strategyInsights:", JSON.stringify(strategyInsights, null, 2));
 
         let keyJudgementPoints = [];
         let commonCitedCases = [];
-        const MIN_CASES_FOR_AI_ANALYSIS = 3;
+        const MIN_CASES_FOR_AI_POINT_ANALYSIS = 3; // 與之前的 MIN_CASES_FOR_AI_ANALYSIS 保持一致
 
-        if (validCasesForAISummary.length >= MIN_CASES_FOR_AI_ANALYSIS) {
-            // ... (AI 摘要和援引判例的 try/catch 邏輯) ...
+        if (validCasesForAISummary.length >= MIN_CASES_FOR_AI_POINT_ANALYSIS) {
             try {
-                console.log(`[AISuccessAnalysisService] 準備為 ${validCasesForAISummary.length} 件勝訴案例生成裁判要點摘要...`);
+                // ... (裁判要點的 OpenAI 調用邏輯，這部分在上次日誌中看是正常的，保持不變) ...
+                 console.log(`[AISuccessAnalysisService] 準備為 ${validCasesForAISummary.length} 件勝訴案例生成裁判要點摘要...`);
                 const textsForSummary = validCasesForAISummary.slice(0, 10).map(
                     c => {
                         let content = c.summary_ai_full;
@@ -428,7 +437,10 @@ export async function analyzeSuccessFactors(caseTypeSelected, caseSummaryText) {
                     console.log(`[AISuccessAnalysisService] OpenAI 裁判要點回應: ${content}`);
                     try {
                         const parsedJson = JSON.parse(content);
-                        if (Array.isArray(parsedJson)) {
+                        // --- MODIFICATION START: 優先嘗試解析 parsedJson.result ---
+                        if (parsedJson && parsedJson.result && Array.isArray(parsedJson.result)) {
+                            keyJudgementPoints = parsedJson.result.filter(p => typeof p === 'string' && p.length > 5);
+                        } else if (Array.isArray(parsedJson)) { // 保持原有備用邏輯
                             keyJudgementPoints = parsedJson.filter(p => typeof p === 'string' && p.length > 5);
                         } else if (typeof parsedJson === 'object' && parsedJson !== null) {
                             const arrayKey = Object.keys(parsedJson).find(k => Array.isArray(parsedJson[k]));
@@ -436,6 +448,7 @@ export async function analyzeSuccessFactors(caseTypeSelected, caseSummaryText) {
                                 keyJudgementPoints = parsedJson[arrayKey].filter(p => typeof p === 'string' && p.length > 5);
                             }
                         }
+                        // --- MODIFICATION END ---
                         if (keyJudgementPoints.length === 0 && (content.includes("\n- ") || content.includes("\n* ") || content.match(/\n\d+\.\s/))) {
                             keyJudgementPoints = content.split(/\n- |\n\* |\n\d+\.\s/)
                                 .map(s => s.replace(/^- |^\* |^\d+\.\s/, "").trim())
@@ -461,19 +474,20 @@ export async function analyzeSuccessFactors(caseTypeSelected, caseSummaryText) {
                 } else {
                     keyJudgementPoints = ["AI裁判要點分析暫時無法生成（無有效回應）。"];
                 }
-                console.log(`[AISuccessAnalysisService] 生成的裁判要點:`, keyJudgementPoints);
             } catch (aiError) {
                 console.error('[AISuccessAnalysisService] 生成裁判要點摘要失敗:', aiError.response ? JSON.stringify(aiError.response.data, null, 2) : aiError.message, aiError.stack);
-                keyJudgementPoints = [`AI裁判要點分析時發生錯誤: ${aiError.message}`];
+                keyJudgementPoints = [`AI裁判要點分析時發生錯誤: ${aiError.message.substring(0,100)}...`];
             }
+            console.log(`[AISuccessAnalysisService] 生成的裁判要點:`, JSON.stringify(keyJudgementPoints, null, 2));
 
             try {
+                // ... (常見援引判例的邏輯，這部分在上次日誌中看是正常的，保持不變) ...
                 console.log(`[AISuccessAnalysisService] 開始分析 ${validCasesForAISummary.length} 件勝訴案例的常見援引判例...`);
                 const citationCounts = {};
                 validCasesForAISummary.forEach(caseDoc => {
                     if (caseDoc.citations && Array.isArray(caseDoc.citations)) {
                         caseDoc.citations.forEach(jid => {
-                            if (typeof jid === 'string' && jid.trim() !== "" && jid.length > 5) {
+                            if (typeof jid === 'string' && jid.trim() !== "" && jid.length > 5) { // 增加長度檢查
                                 citationCounts[jid.trim()] = (citationCounts[jid.trim()] || 0) + 1;
                             }
                         });
@@ -481,21 +495,21 @@ export async function analyzeSuccessFactors(caseTypeSelected, caseSummaryText) {
                 });
                 const sortedCitations = Object.entries(citationCounts)
                     .sort(([, countA], [, countB]) => countB - countA)
-                    .slice(0, 5);
+                    .slice(0, 5); // 取前5個
                 commonCitedCases = sortedCitations.map(([jid, count]) => {
-                    const citedCaseDetails = similarCases.find(c => c.JID === jid);
+                    const citedCaseDetails = similarCases.find(c => c.JID === jid); // 從已獲取的 similarCases 找標題
                     return { jid, title: citedCaseDetails?.JTITLE || jid, count };
                 });
-                console.log(`[AISuccessAnalysisService] 生成的常見援引判例:`, commonCitedCases);
             } catch (citationError) {
                 console.error('[AISuccessAnalysisService] 分析常見援引判例失敗:', citationError);
-                commonCitedCases = [{ jid: "ERROR_ANALYZING_CITATIONS", title: "分析常見援引判例時發生錯誤。" }];
+                commonCitedCases = [{ jid: "ERROR_ANALYZING_CITATIONS", title: `分析常見援引判例時發生錯誤: ${citationError.message.substring(0,50)}...`, count: 0 }];
             }
+             console.log(`[AISuccessAnalysisService] 生成的常見援引判例:`, JSON.stringify(commonCitedCases, null, 2));
 
         } else {
-            const reason = analyzedCaseCount < 5 ? "相似案件數量過少" : `符合勝訴標準且內容充足的案例 (${validCasesForAISummary.length}) 不足 ${MIN_CASES_FOR_AI_ANALYSIS} 件`;
+            const reason = analyzedCaseCount < 5 ? "相似案件數量過少" : `符合勝訴標準且內容充足的案例 (${validCasesForAISummary.length}) 不足 ${MIN_CASES_FOR_AI_POINT_ANALYSIS} 件`;
             keyJudgementPoints = [`${reason}，AI裁判要點分析無法進行。`];
-            commonCitedCases = [];
+            commonCitedCases = [{ jid: "NO_ENOUGH_CASES", title: `${reason}，無法分析常見援引判例。`, count: 0 }];
             console.log(`[AISuccessAnalysisService] ${reason}，不進行AI要點和援引判例分析。`);
         }
 
@@ -503,9 +517,9 @@ export async function analyzeSuccessFactors(caseTypeSelected, caseSummaryText) {
             status: 'complete',
             analyzedCaseCount,
             estimatedWinRate,
-            monetaryStats,          // 新增
-            verdictDistribution: verdictDetails,  // 新增
-            strategyInsights,       // 新增
+            monetaryStats,
+            verdictDistribution: verdictDetails, // 使用更新後的 verdictDetails
+            strategyInsights,
             keyJudgementPoints,
             commonCitedCases,
             message: `AI分析完成。共分析 ${analyzedCaseCount} 件相似案件。`
@@ -526,11 +540,7 @@ export async function analyzeSuccessFactors(caseTypeSelected, caseSummaryText) {
             statusCode = error.statusCode;
             message = error.message;
             if (error.details) details = { ...details, ...error.details };
-        } else if (error instanceof ReferenceError) { // 捕獲 ReferenceError
-            message = `程式內部參考錯誤: ${error.message}`;
-            details.internal_code = 'REFERENCE_ERROR';
         }
-
 
         const serviceError = new Error(message);
         serviceError.statusCode = statusCode;
