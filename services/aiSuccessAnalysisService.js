@@ -332,36 +332,32 @@ export async function analyzeSuccessFactors(caseTypeSelected, caseSummaryText) {
 
                 // 步驟 2: 為每個高頻判例收集其在 validCasesForAISummary 中的引用上下文
                 commonCitedCasesWithContext = sortedHighFreqCitations.map(([highFreqCitedJid, count]) => {
-                    const citingContexts = [];
-                    // 再次遍歷 validCasesForAISummary (這些是與用戶輸入相似且勝訴的案件)
+                    const citingContextsCollected = []; // 使用新變數名以區分
                     validCasesForAISummary.forEach(citingCaseDoc => {
                         if (citingCaseDoc.citation_analysis && Array.isArray(citingCaseDoc.citation_analysis)) {
-                            // 在該相似案件的 citation_analysis 中查找是否有引用 highFreqCitedJid 的記錄
                             const matchedCitationEntry = citingCaseDoc.citation_analysis.find(
                                 entry => entry && typeof entry.citation === 'string' && entry.citation.trim() === highFreqCitedJid
                             );
 
-                            if (matchedCitationEntry && matchedCitationEntry.occurrences && Array.isArray(matchedCitationEntry.occurrences)) {
-                                // 如果找到了，就將這個相似案件的JID、標題和所有引用上下文段落加入
-                                citingContexts.push({
+                            if (matchedCitationEntry && matchedCitationEntry.occurrences && Array.isArray(matchedCitationEntry.occurrences) && matchedCitationEntry.occurrences.length > 0) {
+                                citingContextsCollected.push({
                                     sourceCaseJid: citingCaseDoc.JID,
-                                    sourceCaseJtitle: citingCaseDoc.JTITLE || citingCaseDoc.JID, // JTITLE 可能為空
+                                    sourceCaseJtitle: citingCaseDoc.JTITLE || citingCaseDoc.JID,
                                     contexts: matchedCitationEntry.occurrences.map(occ => ({
                                         paragraph: occ.paragraph || "上下文段落缺失",
                                         location: occ.location || "位置未知"
-                                    })).slice(0, 2) // 為避免數據過多，每個案件最多取前2個上下文
+                                    })).slice(0, 2) // 每個引用源案件，最多取前2個上下文段落
                                 });
                             }
                         }
                     });
-                    // 從 similarCases (而不是 validCasesForAISummary) 中查找高頻判例的標題，如果找不到就用JID
                     const highFreqCitedCaseDetails = similarCases.find(c => c.JID === highFreqCitedJid);
 
                     return {
                         jid: highFreqCitedJid,
                         title: highFreqCitedCaseDetails?.JTITLE || highFreqCitedJid,
-                        count: count,
-                        citingContexts: citingContextsCollected
+                        count: count, // 這是總的被引用次數
+                        citingContexts: citingContextsCollected // 返回所有收集到的上下文
                     };
                 });
 
