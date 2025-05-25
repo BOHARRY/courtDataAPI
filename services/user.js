@@ -45,6 +45,7 @@ export async function getAiAnalysisHistory(userId, recordLimit = 10) {
                     strategyInsights: data.strategyInsights || null,
                     keyJudgementPoints: data.keyJudgementPoints || [],
                     commonCitedCases: data.commonCitedCases || [],
+                    displayedSimilarCases: data.displayedSimilarCases || [],
                     message: data.message || "分析訊息缺失"
                 }
             });

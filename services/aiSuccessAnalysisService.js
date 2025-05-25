@@ -576,6 +576,7 @@ export async function analyzeSuccessFactors(userId, caseTypeSelected, caseSummar
                     strategyInsights: analysisResult.strategyInsights,
                     keyJudgementPoints: analysisResult.keyJudgementPoints,
                     commonCitedCases: analysisResult.commonCitedCases,
+                    displayedSimilarCases: analysisResult.displayedSimilarCases,
                     message: analysisResult.message,
                 };
                 const docRef = await historyColRef.add(historyDocData);
