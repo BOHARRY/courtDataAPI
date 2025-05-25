@@ -3,7 +3,6 @@ import esClient from '../config/elasticsearch.js';
 import { OpenAI } from 'openai';
 import { OPENAI_API_KEY, OPENAI_MODEL_NAME_EMBEDDING, OPENAI_MODEL_NAME_CHAT } from '../config/environment.js';
 import { formatEsResponse } from '../utils/response-formatter.js';
-import { getStandardizedOutcomeForAnalysis } from '../utils/case-analyzer.js';
 import { NEUTRAL_OUTCOME_CODES } from '../utils/constants.js';
 import { getStandardizedOutcomeForAnalysis, getMainType } from '../utils/case-analyzer.js';
 import admin from 'firebase-admin';
