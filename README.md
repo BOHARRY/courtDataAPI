@@ -51,7 +51,7 @@ Boooook 是一個司法資訊檢索與分析平台，後端採用 Node.js + Expr
 │   ├── credit.js             # 點數管理
 │   ├── judgment.js           # 判決書詳情
 │   ├── user.js               # 使用者管理
-│   ├── aiAnalysisService.js  # 法官AI特徵分析
+│   ├── aiAnalysisService.js  # 案件AI特徵分析
 │   ├── judgeService.js       # 法官分析與聚合
 │   └── complaintService.js   # 民眾申訴處理
 ├── utils/                    # 工具函式
@@ -131,6 +131,98 @@ Boooook 是一個司法資訊檢索與分析平台，後端採用 Node.js + Expr
 npm install
 ```
 
+### AI 勝訴關鍵分析 API 輸入/輸出格式
+
+- 路由：`POST /api/ai-analysis/success-factors`
+- 需授權（JWT/Firebase Token）
+
+#### Request Body 範例
+```json
+{
+  "case_type_selected": "民事",
+  "case_summary_text": "原告主張被告於2022年1月1日借款新台幣10萬元，至今未償還..."
+}
+```
+
+#### 成功回傳
+- 內容為 analysisResult 物件，詳見下方「AI 勝訴關鍵分析結果結構」。
+
+#### 失敗回傳範例
+```json
+{
+  "status": "failed",
+  "message": "缺少必要參數：case_type_selected 和 case_summary_text 為必填。",
+  "details": { "internal_code": "EMPTY_INPUT_TEXT" }
+}
+```
+- 可能錯誤原因：缺少參數、案件類型錯誤、摘要過短、OpenAI 服務錯誤等。
+### 訂閱方案資料結構
+
+```json
+{
+  "free": { "name": "免費", "creditsPerMonth": 0 },
+  "basic": { "name": "基本", "creditsPerMonth": 250 },
+  "advanced": { "name": "進階", "creditsPerMonth": 2500 },
+  "premium_plus": { "name": "尊榮客製版", "creditsPerMonth": 5000 }
+}
+```
+- 方案資料定義於 [`config/plansData.js`](config/plansData.js)。
+- 每個方案包含名稱（name）與每月贈送點數（creditsPerMonth），可依需求擴充更多權益欄位。
+### AI 勝訴關鍵分析結果結構（analysisResult）
+
+```json
+{
+  "status": "complete",
+  "analyzedCaseCount": 30,
+  "estimatedWinRate": 56.7,
+  "monetaryStats": {
+    "avgClaimedAmount": 100000,
+    "avgGrantedAmount": 80000,
+    "avgPercentageAwarded": 80.0,
+    "distribution": { "0-20%": 2, "21-40%": 3, "41-60%": 5, "61-80%": 10, "81-100%": 10 },
+    "quartiles": { "q1": 40.0, "median": 70.0, "q3": 90.0 },
+    "totalCases": 30
+  },
+  "verdictDistribution": {
+    "完全勝訴": 10,
+    "大部分勝訴": 5,
+    "部分勝訴": 8,
+    "小部分勝訴": 2,
+    "完全敗訴": 3,
+    "和解": 2,
+    "其他": 0
+  },
+  "strategyInsights": {
+    "winningStrategies": ["策略1", "策略2"],
+    "losingReasons": ["原因1", "原因2"],
+    "keyInsight": "綜合建議"
+  },
+  "keyJudgementPoints": [
+    "要點1",
+    "要點2"
+  ],
+  "commonCitedCases": [
+    {
+      "jid": "裁判JID",
+      "title": "裁判標題",
+      "count": 5,
+      "citingContexts": [
+        {
+          "sourceCaseJid": "來源案件JID",
+          "sourceCaseJtitle": "來源案件標題",
+          "contexts": [
+            { "paragraph": "引用段落內容", "location": "段落位置" }
+          ]
+        }
+      ]
+    }
+  ],
+  "message": "AI分析完成。共分析 30 件相似案件。"
+}
+```
+
+- embedding：本分析服務使用 OpenAI text-embedding-3-large，維度 1536，欄位為 text_embedding（Elasticsearch mapping 已備註）。
+- analysisResult 物件為 AI 勝訴關鍵分析的完整回傳格式，所有欄位皆有明確意義，請參考上方範例與註解。
 ### 設定環境變數
 建立 `.env`，範例如下：
 ```
@@ -257,6 +349,14 @@ node index.js
 #### caseTypeAnalysis
 ```json
 {
+### 判決書代理存取（judgmentProxy）
+
+- 路由："/api/judgment-proxy"、"/proxy/*"
+- 功能：代理司法官網判決書、靜態資源、AJAX、術語解釋等，處理跨域、資源重寫與 CORS，供前端安全存取外部司法資料。
+- 回傳型態：依原始資源格式（HTML、JSON、圖片、字型等）動態轉發，無固定資料結構。
+- 典型用途：前端嵌入判決書全文、載入術語解釋、取得原始 PDF/圖片等。
+
+如需擴充代理規則，請參考 [`routes/judgmentProxy.js`](routes/judgmentProxy.js)。
   "civil": {
     "count": 60,
     "plaintiffClaimFullySupportedRate": 0.5,
@@ -268,6 +368,25 @@ node index.js
     "averageClaimAmount": 100000,
     "averageGrantedAmount": 80000,
     "overallGrantedToClaimRatio": 80
+### 點數消耗與用途對照表
+
+| 功能/用途                      | 常數名稱                  | 點數消耗 |
+|-------------------------------|--------------------------|---------|
+| 判決書搜尋                    | SEARCH_JUDGEMENT         | 1       |
+| 查看判決書詳情                | VIEW_JUDGEMENT_DETAIL    | 1       |
+| 查詢律師基本資料與案件列表    | LAWYER_PROFILE_BASIC     | 1       |
+| 查詢律師案件分布              | LAWYER_CASES_DISTRIBUTION| 1       |
+| 查詢律師AI優劣勢分析          | LAWYER_AI_ANALYSIS       | 2       |
+| 法官AI分析與統計              | JUDGE_AI_ANALYTICS       | 3       |
+| AI勝訴關鍵分析                | AI_SUCCESS_ANALYSIS      | 5       |
+| 註冊獎勵                      | SIGNUP_BONUS             | +N      |
+| 訂閱每月點數（基本/進階）     | SUBSCRIPTION_MONTHLY_GRANT_BASIC / ADVANCED | +N |
+| 購買點數包                    | PURCHASE_CREDITS_PKG_20  | +N      |
+| 管理員補發                    | ADMIN_GRANT              | +N      |
+| 退款/調整                     | REFUND_ADJUSTMENT        | ±N      |
+
+- 以上設定詳見 [`config/creditCosts.js`](config/creditCosts.js)。
+- CREDIT_COSTS 代表各功能消耗點數，CREDIT_PURPOSES 代表點數異動用途，請於開發新功能時參考並維護此設定。
   }
 }
 ```

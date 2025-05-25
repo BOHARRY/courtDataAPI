@@ -5,6 +5,7 @@ import { OPENAI_API_KEY, OPENAI_MODEL_NAME_EMBEDDING, OPENAI_MODEL_NAME_CHAT } f
 import { formatEsResponse } from '../utils/response-formatter.js';
 import { getStandardizedOutcomeForAnalysis } from '../utils/case-analyzer.js';
 import { NEUTRAL_OUTCOME_CODES } from '../utils/constants.js';
+import { getStandardizedOutcomeForAnalysis, getMainType } from '../utils/case-analyzer.js';
 import admin from 'firebase-admin';
 
 const openai = new OpenAI({
@@ -143,10 +144,14 @@ export async function analyzeSuccessFactors(userId, caseTypeSelected, caseSummar
             index: ES_INDEX_NAME,
             knn: knnQuery,
             _source: [ 
-                "JID", "verdict_type", "summary_ai_full", "JFULL", 
-                "citations", // 原始的、本文檔引用的判例列表
-                "citation_analysis", // <-- 新增的、預處理好的引用上下文
-                "main_reasons_ai", "JTITLE", "case_type", "verdict", "lawyerperformance"
+                "JID", "JTITLE", "JDATE", "court", "judges", // 基本案件資訊
+                "case_type", "verdict_type", "verdict",      // 判決結果相關
+                "summary_ai",             // AI 生成摘要
+                "main_reasons_ai",                           // AI 主要理由 (用於標籤)
+                "lawyerperformance",                         // 律師表現 (用於金額、勝敗細節、策略洞察)
+                "citations",                                 // 本文檔引用的判例
+                "citation_analysis",                         // 預處理的引用上下文
+                "JFULL"                                      // 全文 (備用，或給 AI 分析裁判要點時使用)
             ],
             size: 30 
         });
@@ -426,7 +431,7 @@ export async function analyzeSuccessFactors(userId, caseTypeSelected, caseSummar
                     citingContexts: [] 
                 }];
             }
-            console.log(`[AISuccessAnalysisService] 生成的帶上下文的常見援引判例:`, JSON.stringify(commonCitedCasesWithContext, null, 2));
+            // console.log(`[AISuccessAnalysisService] 生成的帶上下文的常見援引判例:`, JSON.stringify(commonCitedCasesWithContext, null, 2));
             // --- MODIFICATION END ---
 
         } else {
@@ -443,15 +448,68 @@ export async function analyzeSuccessFactors(userId, caseTypeSelected, caseSummar
             console.log(`[AISuccessAnalysisService] ${reason}，不進行AI要點和援引判例上下文分析。`);
         }
 
-        const analysisResult = { // <--- 這是最終要返回並儲存的物件
+        // --- MODIFICATION START: 準備 displayedSimilarCases ---
+        const displayedSimilarCases = similarCases.map(caseDoc => {
+            // 處理 case_type (可能是字串或陣列)
+            let displayCaseType = "未知類型";
+            if (Array.isArray(caseDoc.case_type) && caseDoc.case_type.length > 0) {
+                displayCaseType = caseDoc.case_type.join(', ');
+            } else if (typeof caseDoc.case_type === 'string') {
+                displayCaseType = caseDoc.case_type;
+            }
+
+            // 處理 judges (可能是字串或陣列，只取第一個)
+            let displayJudge = "未知法官";
+            if (Array.isArray(caseDoc.judges) && caseDoc.judges.length > 0) {
+                displayJudge = caseDoc.judges[0];
+            } else if (typeof caseDoc.judges === 'string') {
+                displayJudge = caseDoc.judges;
+            }
+            
+            // 處理 verdict_type (可能是字串或陣列) -> 使用 getStandardizedOutcomeForAnalysis 獲取更佳描述
+            const standardizedOutcome = getStandardizedOutcomeForAnalysis(caseDoc.verdict_type, getMainType(caseDoc)); // getMainType 需要 caseDoc
+            const displayVerdict = standardizedOutcome.description || "結果未明";
+
+            // 處理 main_reasons_ai (取第一個字串並分割，最多5個標籤)
+            let displayReasonTags = [];
+            if (Array.isArray(caseDoc.main_reasons_ai) && caseDoc.main_reasons_ai.length > 0 && typeof caseDoc.main_reasons_ai[0] === 'string') {
+                displayReasonTags = caseDoc.main_reasons_ai[0].split(/[,、，\s]+/).map(tag => tag.trim()).filter(tag => tag).slice(0, 5);
+            }
+
+            // 處理 summary_ai (優先用 summary_ai，其次截斷 summary_ai_full)
+            let displaySummary = "暫無摘要";
+            if (caseDoc.summary_ai && typeof caseDoc.summary_ai === 'string' && caseDoc.summary_ai.trim() !== "") {
+                displaySummary = caseDoc.summary_ai.substring(0, 120) + (caseDoc.summary_ai.length > 120 ? "..." : "");
+            } else if (caseDoc.summary_ai_full && typeof caseDoc.summary_ai_full === 'string' && caseDoc.summary_ai_full.trim() !== "") {
+                displaySummary = caseDoc.summary_ai_full.substring(0, 120) + (caseDoc.summary_ai_full.length > 120 ? "..." : "");
+            }
+
+
+            return {
+                JID: caseDoc.JID,
+                JTITLE: caseDoc.JTITLE || "標題未知",
+                case_type_display: displayCaseType, // 前端卡片用這個
+                court: caseDoc.court || "法院未知",
+                judge_display: displayJudge,        // 前端卡片用這個
+                JDATE: caseDoc.JDATE || "日期未知",
+                verdict_display: displayVerdict,    // 前端卡片用這個
+                summary_display: displaySummary,    // 前端卡片用這個
+                reason_tags_display: displayReasonTags // 前端卡片用這個
+            };
+        });
+        console.log(`[AISuccessAnalysisService] Prepared ${displayedSimilarCases.length} cases for display.`);
+        // --- MODIFICATION END ---
+
+        const analysisResult = {
             status: 'complete',
             analyzedCaseCount,
             estimatedWinRate,
             monetaryStats,
-            verdictDistribution: verdictDetails,
+            verdictDistribution: verdictDetails, 
             strategyInsights,
             keyJudgementPoints,
-            commonCitedCases: commonCitedCasesWithContext,
+            commonCitedCases: commonCitedCasesWithContext, 
+            displayedSimilarCases: displayedSimilarCases, // <--- 新增此欄位
             message: `AI分析完成。共分析 ${analyzedCaseCount} 件相似案件。`
         };
 

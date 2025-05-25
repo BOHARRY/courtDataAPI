@@ -306,7 +306,7 @@ export function getDetailedResult(perfVerdictText, mainType, sourceForContext = 
  */
 export function getStandardizedOutcomeForAnalysis(verdictTypeFromES, mainCaseType) {
   let safeVerdictType = '';
-  console.log(`[getStandardizedOutcomeForAnalysis] Received verdictTypeFromES: `, verdictTypeFromES, ` (Type: ${typeof verdictTypeFromES}) for mainCaseType: ${mainCaseType}`);
+  //console.log(`[getStandardizedOutcomeForAnalysis] Received verdictTypeFromES: `, verdictTypeFromES, ` (Type: ${typeof verdictTypeFromES}) for mainCaseType: ${mainCaseType}`);
 
   if (verdictTypeFromES !== undefined && verdictTypeFromES !== null) {
     if (typeof verdictTypeFromES === 'string') {
@@ -344,10 +344,10 @@ export function getStandardizedOutcomeForAnalysis(verdictTypeFromES, mainCaseTyp
 
   // *** 修正：使用中文進行比較 ***
   if (mainCaseType === '民事') {  // ✅ 改為中文比較
-    console.log(`  [DEBUG] Starting civil processing for vText: "${vText}"`);
-    console.log(`  [DEBUG] vText length: ${vText.length}`);
-    console.log(`  [DEBUG] vText charCodes:`, Array.from(vText).map(c => c.charCodeAt(0)));
-    console.log(`  [getStandardizedOutcomeForAnalysis] Civil - checking keywords in vText: "${vText}"`);
+    //console.log(`  [DEBUG] Starting civil processing for vText: "${vText}"`);
+    //console.log(`  [DEBUG] vText length: ${vText.length}`);
+    //console.log(`  [DEBUG] vText charCodes:`, Array.from(vText).map(c => c.charCodeAt(0)));
+    //console.log(`  [getStandardizedOutcomeForAnalysis] Civil - checking keywords in vText: "${vText}"`);
 
     if (check(['原告勝訴'])) {
       neutralOutcomeCode = NEUTRAL_OUTCOME_CODES.CIVIL_P_WIN_FULL;
