@@ -122,7 +122,7 @@ export async function analyzeSuccessFactors(userId, caseTypeSelected, caseSummar
     }
 
     let typeFilterQuery;
-    const esCaseTypeMainKeyword = caseTypeSelected; 
+    const esCaseTypeMainKeyword = caseTypeSelected;
 
     if (esCaseTypeMainKeyword === "民事") {
         typeFilterQuery = { bool: { should: [{ prefix: { "case_type": "民事" } }, { prefix: { "case_type": "家事" } }], minimum_should_match: 1 } };
@@ -138,11 +138,11 @@ export async function analyzeSuccessFactors(userId, caseTypeSelected, caseSummar
     try {
         console.log(`[AISuccessAnalysisService] 正在從 ES 搜尋相似案件 (主類型: ${esCaseTypeMainKeyword})...`);
         const knnQuery = { field: "text_embedding", query_vector: queryVector, k: 50, num_candidates: 100, filter: typeFilterQuery ? [typeFilterQuery] : undefined };
-        
+
         const esResult = await esClient.search({
             index: ES_INDEX_NAME,
             knn: knnQuery,
-            _source: [ 
+            _source: [
                 "JID", "JTITLE", "JDATE", "court", "judges", // 基本案件資訊
                 "case_type", "verdict_type", "verdict",      // 判決結果相關
                 "summary_ai",             // AI 生成摘要
@@ -152,7 +152,7 @@ export async function analyzeSuccessFactors(userId, caseTypeSelected, caseSummar
                 "citation_analysis",                         // 預處理的引用上下文
                 "JFULL"                                      // 全文 (備用，或給 AI 分析裁判要點時使用)
             ],
-            size: 30 
+            size: 30
         });
 
         const formattedResponse = formatEsResponse(esResult, 30);
@@ -173,31 +173,31 @@ export async function analyzeSuccessFactors(userId, caseTypeSelected, caseSummar
                 commonCitedCases: [],
                 message: `找到的相似${caseTypeSelected}案件數量過少 (${analyzedCaseCount}件)，無法進行有效分析。請嘗試提供更詳細的案情描述或檢查案件類型選擇。`
             };
-             // --- MODIFICATION START: 儲存 "insufficient_data" 結果到歷史 ---
-             if (userId) { // 確保 userId 存在才儲存
-                 try {
-                     const historyColRef = admin.firestore().collection('users').doc(userId).collection('aiAnalysisHistory');
-                     const historyDocData = {
-                         caseTypeSelected: caseTypeSelected,
-                         caseSummaryText: caseSummaryText, // 儲存完整摘要
-                         analysisDate: admin.firestore.FieldValue.serverTimestamp(),
-                         status: insufficientResult.status,
-                         analyzedCaseCount: insufficientResult.analyzedCaseCount,
-                         estimatedWinRate: insufficientResult.estimatedWinRate,
-                         monetaryStats: insufficientResult.monetaryStats,
-                         verdictDistribution: insufficientResult.verdictDistribution,
-                         strategyInsights: insufficientResult.strategyInsights,
-                         keyJudgementPoints: insufficientResult.keyJudgementPoints,
-                         commonCitedCases: insufficientResult.commonCitedCases,
-                         message: insufficientResult.message,
-                     };
-                     await historyColRef.add(historyDocData);
-                     console.log(`[AISuccessAnalysisService] "insufficient_data" 結果已儲存至歷史紀錄，用戶: ${userId}`);
-                 } catch (saveError) {
-                     console.error(`[AISuccessAnalysisService] 儲存 "insufficient_data" AI 分析歷史紀錄失敗，用戶: ${userId}:`, saveError);
-                 }
-             }
-             // --- MODIFICATION END ---
+            // --- MODIFICATION START: 儲存 "insufficient_data" 結果到歷史 ---
+            if (userId) { // 確保 userId 存在才儲存
+                try {
+                    const historyColRef = admin.firestore().collection('users').doc(userId).collection('aiAnalysisHistory');
+                    const historyDocData = {
+                        caseTypeSelected: caseTypeSelected,
+                        caseSummaryText: caseSummaryText, // 儲存完整摘要
+                        analysisDate: admin.firestore.FieldValue.serverTimestamp(),
+                        status: insufficientResult.status,
+                        analyzedCaseCount: insufficientResult.analyzedCaseCount,
+                        estimatedWinRate: insufficientResult.estimatedWinRate,
+                        monetaryStats: insufficientResult.monetaryStats,
+                        verdictDistribution: insufficientResult.verdictDistribution,
+                        strategyInsights: insufficientResult.strategyInsights,
+                        keyJudgementPoints: insufficientResult.keyJudgementPoints,
+                        commonCitedCases: insufficientResult.commonCitedCases,
+                        message: insufficientResult.message,
+                    };
+                    await historyColRef.add(historyDocData);
+                    console.log(`[AISuccessAnalysisService] "insufficient_data" 結果已儲存至歷史紀錄，用戶: ${userId}`);
+                } catch (saveError) {
+                    console.error(`[AISuccessAnalysisService] 儲存 "insufficient_data" AI 分析歷史紀錄失敗，用戶: ${userId}:`, saveError);
+                }
+            }
+            // --- MODIFICATION END ---
             return insufficientResult;
         }
 
@@ -287,8 +287,8 @@ export async function analyzeSuccessFactors(userId, caseTypeSelected, caseSummar
             const sumOfPercentages = monetaryAnalysis.cases.reduce((sum, item) => sum + item.percentage, 0);
             const avgPercentage = totalValidCasesForMonetary > 0 ? parseFloat((sumOfPercentages / totalValidCasesForMonetary).toFixed(1)) : 0;
             const sortedPercentages = monetaryAnalysis.cases.map(c => c.percentage).sort((a, b) => a - b);
-            const getQuartileValue = (arr, q) => { /* ... */ return arr.length > 0 ? (arr[Math.floor((arr.length-1)*q)] + arr[Math.ceil((arr.length-1)*q)])/2 : 0;}; // 簡化版
-             monetaryStats = {
+            const getQuartileValue = (arr, q) => { /* ... */ return arr.length > 0 ? (arr[Math.floor((arr.length - 1) * q)] + arr[Math.ceil((arr.length - 1) * q)]) / 2 : 0; }; // 簡化版
+            monetaryStats = {
                 avgClaimedAmount: avgClaimed, avgGrantedAmount: avgGranted, avgPercentageAwarded: avgPercentage,
                 distribution: monetaryAnalysis.percentageDistribution,
                 quartiles: {
@@ -301,10 +301,10 @@ export async function analyzeSuccessFactors(userId, caseTypeSelected, caseSummar
         }
         let strategyInsights = null;
         if (lawyerComments.highSuccess.length >= 1 || lawyerComments.lowSuccess.length >= 1) {
-             if (lawyerComments.highSuccess.length < 1 && lawyerComments.lowSuccess.length < 1) {
-                 strategyInsights = { keyInsight: "相似案件中律師評論數據不足，無法生成深入的策略洞察。" };
-             } else {
-                try { /* ... OpenAI call for strategy ... */ 
+            if (lawyerComments.highSuccess.length < 1 && lawyerComments.lowSuccess.length < 1) {
+                strategyInsights = { keyInsight: "相似案件中律師評論數據不足，無法生成深入的策略洞察。" };
+            } else {
+                try { /* ... OpenAI call for strategy ... */
                     const winningCommentsText = lawyerComments.highSuccess.length > 0 ? lawyerComments.highSuccess.slice(0, 5).map(c => `- ${c.comment} (獲准${c.percentage.toFixed(0)}%)`).join('\n') : "無足夠高獲准案件評論可供分析。";
                     const losingCommentsText = lawyerComments.lowSuccess.length > 0 ? lawyerComments.lowSuccess.slice(0, 5).map(c => `- ${c.comment} (獲准${c.percentage.toFixed(0)}%)`).join('\n') : "無足夠低獲准案件評論可供分析。";
                     const strategyPrompt = `你是一位專業的台灣法律AI助手。請分析以下相似${caseTypeSelected}案件中，原告律師表現的評論，找出可能的成功因素和風險點。
@@ -326,18 +326,18 @@ export async function analyzeSuccessFactors(userId, caseTypeSelected, caseSummar
                       "losingReasons": ["原因1", "原因2", "原因3"],
                       "keyInsight": "關鍵洞察或建議"
                     }
-                    請直接輸出 JSON 物件。`; 
-                    const strategyResponse = await openai.chat.completions.create({model: CHAT_MODEL, messages: [{ role: 'user', content: strategyPrompt }], temperature: 0.4, response_format: { type: "json_object" }});
+                    請直接輸出 JSON 物件。`;
+                    const strategyResponse = await openai.chat.completions.create({ model: CHAT_MODEL, messages: [{ role: 'user', content: strategyPrompt }], temperature: 0.4, response_format: { type: "json_object" } });
                     if (strategyResponse.choices?.[0]?.message?.content) { strategyInsights = JSON.parse(strategyResponse.choices[0].message.content); }
                     else { strategyInsights = { keyInsight: "AI策略洞察生成失敗，無有效回應。" }; }
-                } catch (error) { strategyInsights = { keyInsight: `AI策略洞察生成時發生錯誤: ${error.message.substring(0,100)}...` };}
-             }
+                } catch (error) { strategyInsights = { keyInsight: `AI策略洞察生成時發生錯誤: ${error.message.substring(0, 100)}...` }; }
+            }
         } else { strategyInsights = { keyInsight: "相似案件中律師評論數量不足，無法生成策略洞察。" }; }
 
 
         let keyJudgementPoints = [];
         // --- MODIFICATION START: commonCitedCases 的生成邏輯將被大幅修改 ---
-        let commonCitedCasesWithContext = []; 
+        let commonCitedCasesWithContext = [];
         // --- MODIFICATION END ---
         const MIN_CASES_FOR_AI_POINT_ANALYSIS = 3;
 
@@ -346,24 +346,70 @@ export async function analyzeSuccessFactors(userId, caseTypeSelected, caseSummar
                 // ... (裁判要點的 OpenAI 調用邏輯保持不變) ...
                 console.log(`[AISuccessAnalysisService] 準備為 ${validCasesForAISummary.length} 件勝訴案例生成裁判要點摘要...`);
                 // ... (此處代碼與您上次修改後的版本相同，用於生成 keyJudgementPoints)
-                const textsForSummary = validCasesForAISummary.slice(0, 10).map(c => `案件 JID ${c.JID}:\n摘要: ${c.summary_ai_full || (c.JFULL && c.JFULL.substring(0,1000)) || (c.main_reasons_ai && Array.isArray(c.main_reasons_ai) && c.main_reasons_ai.join(' ')) || '無詳細內容可供分析'}\n---`).join('\n\n');
+                const textsForSummary = validCasesForAISummary.slice(0, 10).map(c => `案件 JID ${c.JID}:\n摘要: ${c.summary_ai_full || (c.JFULL && c.JFULL.substring(0, 1000)) || (c.main_reasons_ai && Array.isArray(c.main_reasons_ai) && c.main_reasons_ai.join(' ')) || '無詳細內容可供分析'}\n---`).join('\n\n');
                 let perspectiveDescriptionForPrompt = "原告勝訴"; /* ... */
                 const summaryPrompt = `你是一位專業的台灣法律AI助手...請直接以 JSON 格式的陣列返回...分析的案情主軸是關於：「${caseSummaryText.substring(0, 150)}...」相關勝訴判決摘要如下：\n${textsForSummary}`;
-                const summaryResponse = await openai.chat.completions.create({ model: CHAT_MODEL, messages: [{ role: 'user', content: summaryPrompt }], temperature: 0.3, response_format: { type: "json_object" }});
-                if (summaryResponse.choices?.[0]?.message?.content) {
+                const summaryResponse = await openai.chat.completions.create({ model: CHAT_MODEL, messages: [{ role: 'user', content: summaryPrompt }], temperature: 0.3, response_format: { type: "json_object" } });
+                if (summaryResponse.choices && summaryResponse.choices[0] && summaryResponse.choices[0].message.content) {
                     const content = summaryResponse.choices[0].message.content;
+                    console.log(`[AISuccessAnalysisService] OpenAI 裁判要點回應: ${content}`);
                     try {
                         const parsedJson = JSON.parse(content);
-                        if (parsedJson?.result && Array.isArray(parsedJson.result)) keyJudgementPoints = parsedJson.result.filter(p => typeof p === 'string' && p.length > 5);
-                        else if (Array.isArray(parsedJson)) keyJudgementPoints = parsedJson.filter(p => typeof p === 'string' && p.length > 5);
-                        /* ... 其他備用解析邏輯 ... */
-                        if(keyJudgementPoints.length === 0) keyJudgementPoints = ["AI裁判要點分析結果格式需進一步處理或無有效內容。"];
-                    } catch (e) { keyJudgementPoints = ["AI裁判要點分析中，請稍後查看詳細報告（格式解析錯誤）。"];}
-                } else { keyJudgementPoints = ["AI裁判要點分析暫時無法生成（無有效回應）。"];}
+                        let extractedPoints = []; // 用於儲存提取到的要點
 
+                        if (parsedJson && parsedJson.result && Array.isArray(parsedJson.result)) {
+                            extractedPoints = parsedJson.result.filter(p => typeof p === 'string' && p.trim().length > 5);
+                        } else if (Array.isArray(parsedJson)) {
+                            extractedPoints = parsedJson.filter(p => typeof p === 'string' && p.trim().length > 5);
+                        } else if (typeof parsedJson === 'object' && parsedJson !== null) {
+                            for (const key in parsedJson) {
+                                if (Array.isArray(parsedJson[key]) && parsedJson[key].every(item => typeof item === 'string')) {
+                                    extractedPoints = parsedJson[key].filter(p => p.trim().length > 5);
+                                    if (extractedPoints.length > 0) break; // 找到第一個符合條件的就跳出
+                                }
+                            }
+                        }
+
+                        // 如果通過 JSON 解析沒有得到有效要點，再嘗試從原始 content 中按行分割 (作為備用)
+                        if (extractedPoints.length === 0 && (content.includes("\n- ") || content.includes("\n* ") || content.match(/\n\d+\.\s/))) {
+                            extractedPoints = content.split(/\n- |\n\* |\n\d+\.\s/)
+                                .map(s => s.replace(/^- |^\* |^\d+\.\s/, "").trim())
+                                .filter(s => s.length > 10 && !s.toLowerCase().includes("json") && !s.toLowerCase().includes("error")); // 增加過濾
+                        }
+
+                        // 如果還是沒有，並且原始 content 不像 JSON，則將整個 content 作為一個要點（如果它足夠長且不像錯誤訊息）
+                        if (extractedPoints.length === 0 && content.trim().length > 10 && !content.trim().startsWith("{") && !content.trim().startsWith("[")) {
+                            const cleanedContent = content.replace(/```json\n|\n```|"/g, "").trim();
+                            if (cleanedContent.length > 10 && !cleanedContent.toLowerCase().includes("error") && !cleanedContent.toLowerCase().includes("sorry")) {
+                                extractedPoints = [cleanedContent];
+                            }
+                        }
+
+                        // --- MODIFICATION: 賦值給 keyJudgementPoints ---
+                        if (extractedPoints.length > 0) {
+                            keyJudgementPoints = extractedPoints;
+                        } else {
+                            // 如果所有嘗試都失敗了，才給出提示信息
+                            console.warn("[AISuccessAnalysisService] AI裁判要點回應無法有效解析為列表或內容不足。原始內容:", content);
+                            keyJudgementPoints = ["AI分析的裁判要點暫時無法整理，請稍後再試或調整輸入。"];
+                        }
+
+                    } catch (jsonError) {
+                        console.error('[AISuccessAnalysisService] 解析AI裁判要點JSON失敗:', jsonError, '原始內容:', content);
+                        // 如果 JSON 解析失敗，但 content 本身看起來不像錯誤訊息，可以嘗試直接使用
+                        const cleanedContent = content.replace(/```json\n|\n```|"/g, "").trim();
+                        if (cleanedContent.length > 10 && !cleanedContent.toLowerCase().includes("error") && !cleanedContent.toLowerCase().includes("sorry") && !cleanedContent.startsWith("{") && !cleanedContent.startsWith("[")) {
+                            keyJudgementPoints = [cleanedContent];
+                        } else {
+                            keyJudgementPoints = ["AI裁判要點分析時發生格式解析錯誤，請檢查AI模型的回應。"];
+                        }
+                    }
+                } else {
+                    keyJudgementPoints = ["AI裁判要點分析暫時無法生成（從AI模型獲取無效回應）。"];
+                }
             } catch (aiError) {
                 console.error('[AISuccessAnalysisService] 生成裁判要點摘要失敗:', aiError.message);
-                keyJudgementPoints = [`AI裁判要點分析時發生錯誤: ${aiError.message.substring(0,100)}...`];
+                keyJudgementPoints = [`AI裁判要點分析時發生錯誤: ${aiError.message.substring(0, 100)}...`];
             }
             console.log(`[AISuccessAnalysisService] 生成的裁判要點:`, JSON.stringify(keyJudgementPoints, null, 2));
 
@@ -371,7 +417,7 @@ export async function analyzeSuccessFactors(userId, caseTypeSelected, caseSummar
             try {
                 console.log(`[AISuccessAnalysisService] 開始分析 ${validCasesForAISummary.length} 件勝訴案例的常見援引判例 (利用 citation_analysis)...`);
                 const citationFrequencyMap = new Map(); // <K, V> = <citedJid, count>
-                
+
                 // 步驟 1: 統計 validCasesForAISummary 中所有被引用判例的頻次
                 validCasesForAISummary.forEach(caseDoc => {
                     if (caseDoc.citations && Array.isArray(caseDoc.citations)) {
@@ -423,11 +469,11 @@ export async function analyzeSuccessFactors(userId, caseTypeSelected, caseSummar
 
             } catch (citationError) {
                 console.error('[AISuccessAnalysisService] 分析常見援引判例 (含上下文) 失敗:', citationError);
-                commonCitedCasesWithContext = [{ 
-                    jid: "ERROR_ANALYZING_CONTEXTUAL_CITATIONS", 
-                    title: `分析援引判例上下文時發生錯誤: ${citationError.message.substring(0,50)}...`, 
+                commonCitedCasesWithContext = [{
+                    jid: "ERROR_ANALYZING_CONTEXTUAL_CITATIONS",
+                    title: `分析援引判例上下文時發生錯誤: ${citationError.message.substring(0, 50)}...`,
                     count: 0,
-                    citingContexts: [] 
+                    citingContexts: []
                 }];
             }
             // console.log(`[AISuccessAnalysisService] 生成的帶上下文的常見援引判例:`, JSON.stringify(commonCitedCasesWithContext, null, 2));
@@ -437,11 +483,11 @@ export async function analyzeSuccessFactors(userId, caseTypeSelected, caseSummar
             const reason = analyzedCaseCount < 5 ? "相似案件數量過少" : `符合勝訴標準且內容充足的案例 (${validCasesForAISummary.length}) 不足 ${MIN_CASES_FOR_AI_POINT_ANALYSIS} 件`;
             keyJudgementPoints = [`${reason}，AI裁判要點分析無法進行。`];
             // --- MODIFICATION START: commonCitedCases 的回落信息也調整 ---
-            commonCitedCasesWithContext = [{ 
-                jid: "NO_ENOUGH_CASES_FOR_CONTEXT", 
-                title: `${reason}，無法分析常見援引判例上下文。`, 
+            commonCitedCasesWithContext = [{
+                jid: "NO_ENOUGH_CASES_FOR_CONTEXT",
+                title: `${reason}，無法分析常見援引判例上下文。`,
                 count: 0,
-                citingContexts: [] 
+                citingContexts: []
             }];
             // --- MODIFICATION END ---
             console.log(`[AISuccessAnalysisService] ${reason}，不進行AI要點和援引判例上下文分析。`);
@@ -464,7 +510,7 @@ export async function analyzeSuccessFactors(userId, caseTypeSelected, caseSummar
             } else if (typeof caseDoc.judges === 'string') {
                 displayJudge = caseDoc.judges;
             }
-            
+
             // 處理 verdict_type (可能是字串或陣列) -> 使用 getStandardizedOutcomeForAnalysis 獲取更佳描述
             const standardizedOutcome = getStandardizedOutcomeForAnalysis(caseDoc.verdict_type, getMainType(caseDoc)); // getMainType 需要 caseDoc
             const displayVerdict = standardizedOutcome.description || "結果未明";
@@ -491,6 +537,7 @@ export async function analyzeSuccessFactors(userId, caseTypeSelected, caseSummar
                 court: caseDoc.court || "法院未知",
                 judge_display: displayJudge,        // 前端卡片用這個
                 JDATE: caseDoc.JDATE || "日期未知",
+                neutralOutcomeCode: standardizedOutcome.neutralOutcomeCode || NEUTRAL_OUTCOME_CODES.UNKNOWN_NEUTRAL, // 前端卡片用這個
                 verdict_display: displayVerdict,    // 前端卡片用這個
                 summary_display: displaySummary,    // 前端卡片用這個
                 reason_tags_display: displayReasonTags // 前端卡片用這個
@@ -504,15 +551,15 @@ export async function analyzeSuccessFactors(userId, caseTypeSelected, caseSummar
             analyzedCaseCount,
             estimatedWinRate,
             monetaryStats,
-            verdictDistribution: verdictDetails, 
+            verdictDistribution: verdictDetails,
             strategyInsights,
             keyJudgementPoints,
-            commonCitedCases: commonCitedCasesWithContext, 
+            commonCitedCases: commonCitedCasesWithContext,
             displayedSimilarCases: displayedSimilarCases, // <--- 新增此欄位
             message: `AI分析完成。共分析 ${analyzedCaseCount} 件相似案件。`
         };
 
-         // --- MODIFICATION START: 儲存成功的分析結果到歷史 ---
+        // --- MODIFICATION START: 儲存成功的分析結果到歷史 ---
         if (userId) { // 確保 userId 存在才儲存
             try {
                 const historyColRef = admin.firestore().collection('users').doc(userId).collection('aiAnalysisHistory');
