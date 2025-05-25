@@ -361,7 +361,7 @@ export async function analyzeSuccessFactors(caseTypeSelected, caseSummaryText) {
                         jid: highFreqCitedJid,
                         title: highFreqCitedCaseDetails?.JTITLE || highFreqCitedJid,
                         count: count,
-                        //citingContexts: citingContexts.slice(0, 3) // 最多展示3個引用了此高頻判例的相似案件的上下文
+                        citingContexts: citingContextsCollected
                     };
                 });
 
