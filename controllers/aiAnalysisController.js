@@ -26,12 +26,14 @@ export async function analyzeSuccessFactorsController(req, res, next) {
             });
         }
 
-        // 調用服務層進行分析
         const analysisResult = await aiSuccessAnalysisService.analyzeSuccessFactors(
             case_type_selected,
             case_summary_text
         );
 
+        // 在回應之前打印結果
+        console.log('AI Success Analysis Result:', JSON.stringify(analysisResult, null, 2));
+        
         res.status(200).json(analysisResult);
 
     } catch (error) {
