@@ -266,7 +266,26 @@ export async function analyzeSuccessFactors(caseTypeSelected, caseSummaryText) {
                 try { /* ... OpenAI call for strategy ... */ 
                     const winningCommentsText = lawyerComments.highSuccess.length > 0 ? lawyerComments.highSuccess.slice(0, 5).map(c => `- ${c.comment} (獲准${c.percentage.toFixed(0)}%)`).join('\n') : "無足夠高獲准案件評論可供分析。";
                     const losingCommentsText = lawyerComments.lowSuccess.length > 0 ? lawyerComments.lowSuccess.slice(0, 5).map(c => `- ${c.comment} (獲准${c.percentage.toFixed(0)}%)`).join('\n') : "無足夠低獲准案件評論可供分析。";
-                    const strategyPrompt = `你是一位專業的台灣法律AI助手。請分析以下相似${caseTypeSelected}案件中，原告律師表現的評論，找出可能的成功因素和風險點...\n高獲准案件...\n${winningCommentsText}\n低獲准案件...\n${losingCommentsText}\n請總結出...\n{\n"winningStrategies": [],\n"losingReasons": [],\n"keyInsight": ""\n}`;
+                    const strategyPrompt = `你是一位專業的台灣法律AI助手。請分析以下相似${caseTypeSelected}案件中，原告律師表現的評論，找出可能的成功因素和風險點。
+
+                    高獲准案件（請求金額獲准比例 > 60%）的律師表現評論：
+                    ${winningCommentsText}
+
+                    低獲准案件（請求金額獲准比例 < 30%）的律師表現評論：
+                    ${losingCommentsText}
+
+                    請總結出（如果資訊不足，請說明資訊不足）：
+                    1. 一到三個可能的致勝策略或常見有利因素（主要從高獲准案件中提取，若無則說明）
+                    2. 一到三個可能的風險點或常見不利因素（主要從低獲准案件中提取，若無則說明）
+                    3. 一個綜合性的關鍵洞察或給使用者的建議 (若無特定洞察，可提供通用建議)
+
+                    請確保你的回應是嚴格的 JSON 格式，例如：
+                    {
+                      "winningStrategies": ["策略1", "策略2", "策略3"],
+                      "losingReasons": ["原因1", "原因2", "原因3"],
+                      "keyInsight": "關鍵洞察或建議"
+                    }
+                    請直接輸出 JSON 物件。`; 
                     const strategyResponse = await openai.chat.completions.create({model: CHAT_MODEL, messages: [{ role: 'user', content: strategyPrompt }], temperature: 0.4, response_format: { type: "json_object" }});
                     if (strategyResponse.choices?.[0]?.message?.content) { strategyInsights = JSON.parse(strategyResponse.choices[0].message.content); }
                     else { strategyInsights = { keyInsight: "AI策略洞察生成失敗，無有效回應。" }; }
