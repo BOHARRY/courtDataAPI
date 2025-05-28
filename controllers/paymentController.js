@@ -519,3 +519,17 @@ export async function handleDefaultNotifyController(req, res, next) {
         return res.status(200).send('SUCCESS_RECEIVED_UNKNOWN_AT_DEFAULT');
     }
 }
+
+export async function handleGeneralNotifyController(req, res, next) {
+    console.log('[PaymentController] Received General Notify Request (via /notify/general):', req.body);
+    if (req.body.TradeInfo && req.body.TradeSha) {
+        console.warn('[General Notify] Detected MPG-like notification at /general. Forwarding.');
+        return handleMpgNotifyController(req, res, next);
+    } else if (req.body.Period) {
+        console.warn('[General Notify] Detected Period-like notification at /general. Forwarding.');
+        return handlePeriodNotifyController(req, res, next);
+    } else {
+        console.warn('[General Notify] Received unknown format at /general:', req.body);
+        return res.status(200).send('SUCCESS_RECEIVED_UNKNOWN_AT_GENERAL');
+    }
+}
