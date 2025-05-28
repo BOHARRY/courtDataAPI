@@ -10,4 +10,6 @@ const router = express.Router();
 router.get('/commerce', getCommerceConfigController);
 // 如果需要驗證： router.get('/commerce', verifyToken, getCommerceConfigController);
 
+router.get('/subscription-products', getSubscriptionProductsController);
+
 export default router;
