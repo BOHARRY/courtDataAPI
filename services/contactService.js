@@ -4,7 +4,8 @@ import nodemailer from 'nodemailer';
 import {
     GMAIL_APP_USER, // 您需要在 environment.js 或 .env 中配置這些
     GMAIL_APP_PASSWORD,
-    CONTACT_FORM_RECIPIENT_EMAIL // 收件人郵箱，例如 "investors@lawsowl.com" 或您的郵箱
+    CONTACT_FORM_RECIPIENT_EMAIL, // 收件人郵箱，例如 "investors@lawsowl.com" 或您的郵箱
+    FIREBASE_STORAGE_BUCKET_NAME
 } from '../config/environment.js'; // 假設您會在這裡定義 Gmail 相關環境變數
 
 
@@ -19,6 +20,12 @@ export async function handleSubmitContactForm(formData, file) {
     const db = admin.firestore();
     const storage = admin.storage();
     const bucket = storage.bucket(FIREBASE_STORAGE_BUCKET_NAME); // <--- 確保 FIREBASE_STORAGE_BUCKET_NAME 已定義
+
+    if (!FIREBASE_STORAGE_BUCKET_NAME) {
+        console.error('[contactService] CRITICAL: FIREBASE_STORAGE_BUCKET_NAME is undefined or empty within handleSubmitContactForm!');
+        throw new Error('伺服器存儲配置錯誤，無法處理附件。');
+    }
+    onsole.log('FIREBASE_STORAGE_BUCKET_NAME in contactService:', FIREBASE_STORAGE_BUCKET_NAME);
 
     let attachmentUrl = null;
     let attachmentFileName = null;
