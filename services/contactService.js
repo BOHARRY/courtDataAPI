@@ -97,15 +97,16 @@ export async function handleSubmitContactForm(formData, file) {
                 stream.end(file.buffer); // 從 multer 的 memoryStorage 獲取 buffer
             });
 
-            // 獲取公開的下載 URL (確保您的 Storage 規則允許讀取)
-            // 為了簡化，這裡假設直接獲取簽名 URL 或拼接 URL (取決於您的 bucket 權限)
-            // 更安全的方式是生成一個有時效性的簽名 URL
-            // const [url] = await fileUpload.getSignedUrl({ action: 'read', expires: '03-09-2491' }); // 一個很長的過期時間
-            // attachmentUrl = url;
-            // 或者，如果 bucket 是公開可讀的 (不推薦用於敏感附件)
-            attachmentUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(filePath)}?alt=media`;
-            attachmentFileName = file.originalname;
-            console.log(`檔案已上傳至 Firebase Storage: ${attachmentUrl}`);
+            // --- 生成簽名 URL ---
+            const expiresDate = new Date();
+            expiresDate.setDate(expiresDate.getDate() + 90); // 設置簽名 URL 7 天後過期
+
+            const [signedUrl] = await fileUpload.getSignedUrl({
+                action: 'read',
+                expires: expiresDate.toISOString().substring(0, 10) // 格式 YYYY-MM-DD
+            });
+            attachmentUrl = signedUrl;
+            // --- 結束生成簽名 URL ---
         }
 
         // 2. 將表單數據和附件資訊保存到 Firestore
