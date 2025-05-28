@@ -183,6 +183,7 @@ export async function initiateCheckoutController(req, res, next) {
             });
         } else {
             const mpgParams = {
+                MerchantID: NEWEBPAY_MERCHANT_ID,
                 RespondType: 'JSON', TimeStamp: timeStamp, Version: '2.2',
                 MerchantOrderNo: merchantOrderNo, Amt: amount, ItemDesc: itemDescription,
                 Email: payerEmail, LoginType: 0,
