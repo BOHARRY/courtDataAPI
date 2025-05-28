@@ -9,9 +9,9 @@ const router = express.Router();
 
 // 更新資料庫統計資訊 (管理員)
 router.put(
-  '/database-stats',
+  '/database-stats', // <--- 這裡定義的是相對於 '/platform-status' 的路徑
   verifyToken,
-  verifyAdmin, // <--- 使用佔位符，之後替換為真實的 verifyAdmin
+  verifyAdmin,
   updateDatabaseStatsController
 );
 

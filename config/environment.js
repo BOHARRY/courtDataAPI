@@ -11,6 +11,10 @@ export const FIREBASE_SERVICE_ACCOUNT_KEY_JSON = process.env.FIREBASE_SERVICE_AC
 export const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 export const OPENAI_MODEL_NAME_EMBEDDING = 'text-embedding-3-large';
 export const OPENAI_MODEL_NAME_CHAT = 'gpt-4.1';
+export const GMAIL_APP_USER = process.env.GMAIL_APP_USER;
+export const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD;
+export const CONTACT_FORM_RECIPIENT_EMAIL = process.env.CONTACT_FORM_RECIPIENT_EMAIL;
+export const FIREBASE_STORAGE_BUCKET_NAME = process.env.FIREBASE_STORAGE_BUCKET_NAME;
 
 // 檢查必要的環境變數是否存在
 if (!ES_URL) {
@@ -36,4 +40,11 @@ if (!OPENAI_MODEL_NAME_EMBEDDING) {
 }
 if (!OPENAI_MODEL_NAME_CHAT) {
   console.warn("WARNING: OPENAI_MODEL_NAME_CHAT environment variable is not set. Defaulting in service.");
+}
+
+if (!GMAIL_APP_USER || !GMAIL_APP_PASSWORD || !CONTACT_FORM_RECIPIENT_EMAIL) {
+  console.warn("WARNING: Gmail configuration for contact form is not complete. Email notifications may not work.");
+}
+if (!FIREBASE_STORAGE_BUCKET_NAME) {
+    console.warn("WARNING: FIREBASE_STORAGE_BUCKET_NAME is not set. File attachments for contact form will fail.");
 }
