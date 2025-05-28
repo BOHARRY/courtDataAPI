@@ -8,7 +8,43 @@ import {
     FIREBASE_STORAGE_BUCKET_NAME
 } from '../config/environment.js'; // 假設您會在這裡定義 Gmail 相關環境變數
 
+/**
+ * 嘗試解碼可能被錯誤編碼的檔名。
+ * 瀏覽器有時會將 UTF-8 檔名錯誤地按 ISO-8859-1 解釋後再進行百分比編碼。
+ * 或者 multer 可能以 ISO-8859-1 來解讀 UTF-8 bytes。
+ * @param {string} filename
+ * @returns {string}
+ */
+function decodeFilename(filename) {
+    try {
+        // 嘗試標準的 UTF-8 解碼 (如果它是正確的百分比編碼)
+        // 但 multer 的 originalname 通常不是百分比編碼的 URL 字符串
+        // const decoded = decodeURIComponent(filename);
+        // return Buffer.from(decoded, 'latin1').toString('utf8'); // 如果 decodeURIComponent 後是 latin1
 
+        // 一個常見的修復是假設 multer 將 UTF-8 字節流錯誤地解釋為 ISO-8859-1 (Latin-1)
+        // 所以我們將其轉回字節流，然後再用 UTF-8 解碼
+        const buffer = Buffer.from(filename, 'latin1');
+        const utf8Decoded = buffer.toString('utf8');
+
+        // 檢查解碼後的結果是否仍然包含看起來像亂碼的替換字符 (�)
+        // 如果原始字節流本來就不是有效的 UTF-8，那麼 toString('utf8') 可能會產生 �
+        // 這種情況下，可能原始檔名就是這樣，或者需要更複雜的檢測
+        if (utf8Decoded.includes('\uFFFD')) {
+            // 如果解碼結果包含 Unicode 替換字符，可能原始就是 UTF-8 或其他編碼
+            // 這裡可以嘗試 decodeURIComponent，雖然 multer 的 originalname 通常不是 URL 編碼的
+            try {
+                return decodeURIComponent(escape(filename)); // 一個舊的技巧，但可能有效
+            } catch (e) {
+                return utf8Decoded; // 如果 decodeURIComponent 也失敗，則返回之前的 utf8 解碼結果
+            }
+        }
+        return utf8Decoded;
+    } catch (e) {
+        console.warn(`解碼檔名 "${filename}" 失敗，返回原始檔名。錯誤: ${e.message}`);
+        return filename; // 如果解碼失敗，返回原始檔名
+    }
+}
 
 /**
  * 處理聯繫表單的提交。
@@ -33,13 +69,21 @@ export async function handleSubmitContactForm(formData, file) {
     try {
         // 1. 如果有附件，先上傳到 Firebase Storage
         if (file) {
-            const uniqueFileName = `${Date.now()}_${file.originalname.replace(/\s+/g, '_')}`;
-            const filePath = `contact_attachments/${formData.userId || 'anonymous'}/${uniqueFileName}`;
+            // --- 在這裡解碼檔名 ---
+            const originalDecodedName = decodeFilename(file.originalname);
+            attachmentFileName = originalDecodedName; // 用於郵件和 Firestore
+            // --- 結束解碼 ---
+
+            const safeStorageFileName = `${Date.now()}_${originalDecodedName.replace(/\s+/g, '_').replace(/[^\w.-]/g, '')}`;
+            const filePath = `contact_attachments/${formData.userId || 'anonymous'}/${safeStorageFileName}`;
             const fileUpload = bucket.file(filePath);
+
 
             const stream = fileUpload.createWriteStream({
                 metadata: {
                     contentType: file.mimetype,
+                    // 可以嘗試在這裡設定 contentDisposition，提示瀏覽器下載時使用 UTF-8 檔名
+                    contentDisposition: `attachment; filename*=UTF-8''${encodeURIComponent(originalDecodedName)}`
                 },
                 resumable: false,
             });
@@ -68,9 +112,9 @@ export async function handleSubmitContactForm(formData, file) {
         const submission = {
             ...formData,
             submittedAt: admin.firestore.FieldValue.serverTimestamp(),
-            status: 'new', // 初始狀態
-            ...(attachmentUrl && { attachmentUrl }), // 如果有附件 URL，則添加
-            ...(attachmentFileName && { attachmentFileName }), // 如果有附件檔名，則添加
+            status: 'new',
+            ...(attachmentUrl && { attachmentUrl }),
+            ...(attachmentFileName && { attachmentFileName }), // <--- 儲存解碼後的檔名
         };
         const docRef = await db.collection('contact_submissions').add(submission);
         console.log('聯繫表單已保存到 Firestore，ID:', docRef.id);
