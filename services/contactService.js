@@ -125,7 +125,8 @@ async function sendContactNotificationEmail(submissionData, attachmentInfo) {
         htmlBody += `<p><strong>附件：</strong> <a href="${attachmentInfo.url}" target="_blank">${attachmentInfo.name || '點此查看附件'}</a></p>`;
     }
 
-    htmlBody += `<hr><p>提交時間：${new Date(submissionData.submittedAt?.toDate() || Date.now()).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' })}</p>`;
+    const submissionTime = new Date(); // 獲取當前伺服器時間
+    htmlBody += `<hr><p>提交時間 (約)：${submissionTime.toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' })}</p>`;
     if (submissionData.userId) {
         htmlBody += `<p>用戶 UID (如果已登入)：${submissionData.userId}</p>`;
     }
