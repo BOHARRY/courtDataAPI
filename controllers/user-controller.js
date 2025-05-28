@@ -101,3 +101,40 @@ export async function getAiAnalysisHistoryController(req, res, next) {
         res.status(500).json({ status: 'failed', message: error.message || '獲取歷史記錄時發生內部錯誤。'});
     }
 }
+
+/**
+ * 取消待降級請求的控制器
+ */
+export async function cancelPendingDowngradeController(req, res, next) {
+  try {
+    const userId = req.user.uid;
+    console.log(`[UserController] User ${userId} requesting to cancel pending downgrade`);
+    
+    const result = await userService.cancelPendingDowngrade(userId);
+    
+    if (result.success) {
+      res.status(200).json(result);
+    } else {
+      res.status(400).json(result);
+    }
+  } catch (error) {
+    console.error('[UserController] Error in cancelPendingDowngradeController:', error);
+    next(error); // 交給錯誤處理中間件
+  }
+}
+
+/**
+ * 獲取使用者訂閱狀態詳細資訊的控制器
+ */
+export async function getUserSubscriptionStatusController(req, res, next) {
+  try {
+    const userId = req.user.uid;
+    console.log(`[UserController] Getting subscription status for user ${userId}`);
+    
+    const status = await userService.getUserSubscriptionStatus(userId);
+    res.status(200).json(status);
+  } catch (error) {
+    console.error('[UserController] Error in getUserSubscriptionStatusController:', error);
+    next(error); // 交給錯誤處理中間件
+  }
+}

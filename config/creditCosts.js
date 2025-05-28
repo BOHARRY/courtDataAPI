@@ -39,4 +39,7 @@ export const CREDIT_PURPOSES = {
   ADMIN_GRANT: 'admin_grant',
   REFUND_ADJUSTMENT: 'refund_adjustment',
   AI_SUCCESS_ANALYSIS: 'ai_success_analysis',
+  PURCHASE_CREDITS_PKG_PREFIX: 'purchase_credit_package_', // 前綴，後面會跟 package_id
+  SUBSCRIPTION_GRANT_PREFIX: 'subscription_grant_', // 前綴，後面會跟 plan_id
+  SUBSCRIPTION_RENEWAL_GRANT: 'subscription_renewal_grant_', // 前綴，後面會跟 plan_id
 };

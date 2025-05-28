@@ -4,7 +4,9 @@ import {
     getLawyerSearchHistoryController,
     getCreditTransactionHistoryController,
     updateUserSubscriptionController,
-    getAiAnalysisHistoryController
+    getAiAnalysisHistoryController,
+    cancelPendingDowngradeController,
+    getUserSubscriptionStatusController
 } from '../controllers/user-controller.js';
 import { verifyToken } from '../middleware/auth.js';
 
@@ -22,6 +24,12 @@ router.post('/update-subscription', verifyToken, updateUserSubscriptionControlle
 
 // 新增：獲取 AI 勝訴案由分析歷史 (GET /api/users/ai-analysis-history)
 router.get('/ai-analysis-history', verifyToken, getAiAnalysisHistoryController);
+
+// 新增：獲取訂閱狀態詳細資訊 (GET /api/users/subscription-status)
+router.get('/subscription-status', verifyToken, getUserSubscriptionStatusController);
+
+// 新增：取消待降級請求 (POST /api/users/cancel-downgrade)
+router.post('/cancel-downgrade', verifyToken, cancelPendingDowngradeController);
 
 // 未來可以添加其他用戶相關路由，例如獲取用戶資料、更新用戶資料等
 // router.get('/profile', verifyToken, getUserProfileController);

@@ -16,6 +16,13 @@ export const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD;
 export const CONTACT_FORM_RECIPIENT_EMAIL = process.env.CONTACT_FORM_RECIPIENT_EMAIL;
 export const FIREBASE_STORAGE_BUCKET_NAME = process.env.FIREBASE_STORAGE_BUCKET_NAME;
 
+export const NEWEBPAY_MERCHANT_ID = process.env.NEWEBPAY_MERCHANT_ID;
+export const NEWEBPAY_HASH_KEY = process.env.NEWEBPAY_HASH_KEY;
+export const NEWEBPAY_HASH_IV = process.env.NEWEBPAY_HASH_IV;
+export const NEWEBPAY_MPG_URL = process.env.NEWEBPAY_MPG_URL || 'https://ccore.newebpay.com/MPG/mpg_gateway';
+export const NEWEBPAY_PERIOD_URL = process.env.NEWEBPAY_PERIOD_URL || 'https://ccore.newebpay.com/MPG/period';
+export const APP_BASE_URL = process.env.APP_BASE_URL || 'http://localhost:3000'; // 前端基礎 URL
+
 // 檢查必要的環境變數是否存在
 if (!ES_URL) {
   console.error("FATAL ERROR: ES_URL environment variable is not set.");
