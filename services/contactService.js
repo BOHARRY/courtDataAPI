@@ -25,7 +25,7 @@ export async function handleSubmitContactForm(formData, file) {
         console.error('[contactService] CRITICAL: FIREBASE_STORAGE_BUCKET_NAME is undefined or empty within handleSubmitContactForm!');
         throw new Error('伺服器存儲配置錯誤，無法處理附件。');
     }
-    onsole.log('FIREBASE_STORAGE_BUCKET_NAME in contactService:', FIREBASE_STORAGE_BUCKET_NAME);
+    console.log('FIREBASE_STORAGE_BUCKET_NAME in contactService:', FIREBASE_STORAGE_BUCKET_NAME);
 
     let attachmentUrl = null;
     let attachmentFileName = null;
