@@ -176,18 +176,15 @@ export async function initiateCheckoutController(req, res, next) {
 
             const newebpayArgs = newebpayService.preparePeriodCreateArgs(periodParams);
             console.log(`[Checkout] Preparing Period payment for ${merchantOrderNo}:`, periodParams);
-            
             res.status(200).json({
-                ...baseResponse,
+                paymentMethod: 'Period',
                 paymentGatewayUrl: NEWEBPAY_PERIOD_URL,
-                merchantID: NEWEBPAY_MERCHANT_ID,
+                // **修正點：確保前端知道這個是給藍新表單用的 MerchantID_**
+                // 藍新手冊中 POST 的欄位名是 MerchantID_ (帶底線)
+                // 而我們從環境變數讀取的是 NEWEBPAY_MERCHANT_ID (不帶底線)
+                // 所以這裡直接傳遞正確的商店代號值，前端的 submitToNewebpay 會用這個值和正確的 key 'MerchantID_'
+                newebpayMerchantID: NEWEBPAY_MERCHANT_ID, // 傳遞商店代號的值
                 postData: newebpayArgs.PostData_,
-                periodDetails: {
-                    periodType: finalPeriodApiParams.PeriodType,
-                    periodPoint: finalPeriodApiParams.PeriodPoint,
-                    periodTimes: finalPeriodApiParams.PeriodTimes,
-                    periodStartType: finalPeriodApiParams.PeriodStartType
-                }
             });
 
         } else {
@@ -211,9 +208,9 @@ export async function initiateCheckoutController(req, res, next) {
             console.log(`[Checkout] Preparing MPG payment for ${merchantOrderNo}:`, mpgParams);
             
             res.status(200).json({
-                ...baseResponse,
+                paymentMethod: 'MPG',
                 paymentGatewayUrl: NEWEBPAY_MPG_URL,
-                merchantID: newebpayArgs.MerchantID,
+                merchantID: newebpayArgs.MerchantID, // MPG 用 MerchantID
                 tradeInfo: newebpayArgs.TradeInfo,
                 tradeSha: newebpayArgs.TradeSha,
                 version: newebpayArgs.Version,
