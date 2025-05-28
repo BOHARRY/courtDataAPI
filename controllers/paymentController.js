@@ -164,7 +164,11 @@ export async function initiateCheckoutController(req, res, next) {
                 ...finalPeriodApiParams
             };
             const newebpayArgs = newebpayService.preparePeriodCreateArgs(periodParams);
-            console.log(`[Checkout] Preparing Period payment for ${merchantOrderNo}:`, periodParams);
+            // --- DEBUG LOG ---
+            console.log(`[DEBUG Checkout - Period] MerchantID being sent to NewebPay (should be in postData but for form it's MerchantID_): ${NEWEBPAY_MERCHANT_ID}`);
+            console.log(`[DEBUG Checkout - Period] Full periodParams before encryption: `, periodParams);
+            console.log(`[DEBUG Checkout - Period] Encrypted PostData_ to be sent to frontend: ${newebpayArgs.PostData_}`);
+            // --- END DEBUG LOG ---
             res.status(200).json({
                 ...baseResponse, paymentMethod: 'Period',
                 paymentGatewayUrl: NEWEBPAY_PERIOD_URL,
@@ -187,7 +191,12 @@ export async function initiateCheckoutController(req, res, next) {
                 ClientBackURL: `${APP_BASE_URL}/payment-cancel`, CREDIT: 1,
             };
             const newebpayArgs = newebpayService.prepareMpgTradeArgs(mpgParams, NEWEBPAY_MERCHANT_ID);
-            console.log(`[Checkout] Preparing MPG payment for ${merchantOrderNo}:`, mpgParams);
+             // --- DEBUG LOG ---
+            console.log(`[DEBUG Checkout - MPG] MerchantID to be sent to frontend (for form field 'MerchantID'): ${newebpayArgs.MerchantID}`);
+            console.log(`[DEBUG Checkout - MPG] Full mpgParams before encryption (inside TradeInfo): `, mpgParams);
+            console.log(`[DEBUG Checkout - MPG] Encrypted TradeInfo to be sent to frontend: ${newebpayArgs.TradeInfo}`);
+            console.log(`[DEBUG Checkout - MPG] TradeSha to be sent to frontend: ${newebpayArgs.TradeSha}`);
+            // --- END DEBUG LOG ---
             res.status(200).json({
                 ...baseResponse, paymentMethod: 'MPG',
                 paymentGatewayUrl: NEWEBPAY_MPG_URL,
