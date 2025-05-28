@@ -4,8 +4,10 @@ import dotenv from 'dotenv';
 // 在所有其他 import 之前載入環境變數
 dotenv.config();
 
-import app from './config/express.js';
 import { initializeFirebase } from './config/firebase.js';
+initializeFirebase();
+
+import app from './config/express.js';
 import { checkElasticsearchConnection } from './config/elasticsearch.js';
 import { PORT } from './config/environment.js';
 
@@ -14,7 +16,6 @@ import { PORT } from './config/environment.js';
 async function startServer() {
   try {
     // 初始化 Firebase Admin SDK
-    initializeFirebase();
     
     // 檢查 Elasticsearch 連接
     const esConnected = await checkElasticsearchConnection();
