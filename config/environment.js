@@ -23,6 +23,8 @@ export const NEWEBPAY_MPG_URL = process.env.NEWEBPAY_MPG_URL || 'https://ccore.n
 export const NEWEBPAY_PERIOD_URL = process.env.NEWEBPAY_PERIOD_URL || 'https://ccore.newebpay.com/MPG/period';
 export const APP_BASE_URL = process.env.APP_BASE_URL || 'http://localhost:3000'; // 前端基礎 URL
 
+export const BACKEND_API_URL = process.env.BACKEND_API_URL;
+
 // 檢查必要的環境變數是否存在
 if (!ES_URL) {
   console.error("FATAL ERROR: ES_URL environment variable is not set.");
@@ -54,4 +56,9 @@ if (!GMAIL_APP_USER || !GMAIL_APP_PASSWORD || !CONTACT_FORM_RECIPIENT_EMAIL) {
 }
 if (!FIREBASE_STORAGE_BUCKET_NAME) {
     console.warn("WARNING: FIREBASE_STORAGE_BUCKET_NAME is not set. File attachments for contact form will fail.");
+}
+
+// 新增藍新金流相關的警告
+if (!NEWEBPAY_MERCHANT_ID || !NEWEBPAY_HASH_KEY || !NEWEBPAY_HASH_IV) {
+    console.warn("WARNING: Newebpay configuration is incomplete. Payment functions will not work.");
 }
