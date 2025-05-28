@@ -591,3 +591,46 @@ export async function handlePeriodReturnController(req, res, next) {
 
     return res.redirect(`${APP_BASE_URL}/payment-result?${queryParams}`);
 }
+
+export async function handleGeneralNotifyController(req, res, next) {
+    console.log('[PaymentController] Received General Notify Request:', req.body);
+    // 藍新 MPG 和 Period 的通知格式不同
+    // MPG 通知包含 TradeInfo, TradeSha
+    // Period 通知包含 Period
+    if (req.body.TradeInfo && req.body.TradeSha) {
+        console.log('[General Notify] Detected MPG-like notification, forwarding to handleMpgNotifyController.');
+        return handleMpgNotifyController(req, res, next);
+    } else if (req.body.Period) {
+        console.log('[General Notify] Detected Period-like notification, forwarding to handlePeriodNotifyController.');
+        return handlePeriodNotifyController(req, res, next);
+    } else {
+        console.error('[General Notify] Unknown notification format received:', req.body);
+        return res.status(400).send('Unknown notification format.');
+    }
+}
+
+/**
+ * 處理藍新後台設定的備用/通用 NotifyURL。
+ * 此函數主要用於記錄接收到的通知，並回應 SUCCESS，不處理實際業務邏輯，
+ * 業務邏輯依賴 API 參數中指定的精確 NotifyURL。
+ */
+export async function handleDefaultNotifyController(req, res, next) {
+    console.log('[PaymentController] 不該被調用 Received Default/Fallback Notify Request:', req.body);
+    // 在這裡，您可以選擇是否嘗試根據 req.body 的內容轉發到 mpg 或 period 處理器
+    // 但更簡單的做法是，如果這個 URL 被調用了，說明 API 中指定的 NotifyURL 可能有問題
+    // 所以主要目的是記錄下來，並告知藍新已收到。
+    // 警告：如果 API 中動態指定的 NotifyURL 正常工作，這個端點理論上不應被頻繁調用。
+    // 如果它被調用了，您需要檢查 initiateCheckoutController 中 NotifyURL 的組裝。
+
+    if (req.body.TradeInfo && req.body.TradeSha) {
+        console.warn('[Default Notify] Detected MPG-like notification at default handler. API-specified NotifyURL might be failing. Forwarding for processing attempt.');
+        return handleMpgNotifyController(req, res, next); // 嘗試轉發
+    } else if (req.body.Period) {
+        console.warn('[Default Notify] Detected Period-like notification at default handler. API-specified NotifyURL might be failing. Forwarding for processing attempt.');
+        return handlePeriodNotifyController(req, res, next); // 嘗試轉發
+    } else {
+        console.warn('[Default Notify] Received unknown format notification at default handler:', req.body);
+        // 仍然回應 SUCCESS 以避免藍新重試，但您需要查看日誌
+        return res.status(200).send('SUCCESS_RECEIVED_UNKNOWN_AT_DEFAULT');
+    }
+}
