@@ -79,7 +79,7 @@ export async function checkAndDeductUserCreditsInTransaction(transaction, userDo
  * @param {object} [logDetails={ description: '' }] - 用於記錄此次積分變動的額外信息。
  * @returns {Promise<{currentCredits: number, newCredits: number}>}
  */
-export async function addUserCreditsInTransaction(transaction, userDocRef, userId, amount, purpose, logDetails = { description: '' }) {
+export async function addUserCreditsInTransaction(transaction, userDocRef, userId, amount, purpose, logDetails = { description: '' }, userSnapshot) {
   if (amount <= 0) {
     console.error(`[Credit Service] Amount to add must be a positive number. Received: ${amount}`);
     const error = new Error('Amount to add must be a positive number.');
@@ -87,15 +87,14 @@ export async function addUserCreditsInTransaction(transaction, userDocRef, userI
     throw error;
   }
 
-  const userDoc = await transaction.get(userDocRef);
-  if (!userDoc.exists) {
-    console.error(`[Credit Service] User document not found for UID: ${userId} when trying to add credits.`);
-    const error = new Error('User data not found.');
-    error.statusCode = 404;
-    throw error;
+  //const userDoc = await transaction.get(userDocRef);
+  if (!userSnapshot || !userSnapshot.exists) { // 使用傳入的 snapshot
+    console.error(`[Credit Service TX] User document snapshot not provided or does not exist for UID: ${userId}`);
+    throw new Error('User data not found (from snapshot).');
   }
 
-  const userData = userDoc.data();
+  const userData = userSnapshot.data(); // 從 snapshot 獲取數據
+
   const currentCredits = userData.credits || 0;
   const newCredits = currentCredits + amount;
 

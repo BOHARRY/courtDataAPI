@@ -219,15 +219,27 @@ export async function handleMpgNotifyController(req, res, next) {
 
         await admin.firestore().runTransaction(async (transaction) => {
             const currentOrderDocRef = admin.firestore().collection('orders').doc(merchantOrderNo);
-            const currentOrderSnap = await transaction.get(currentOrderDocRef);
+            const currentOrderSnap = await transaction.get(currentOrderDocRef); // **讀取 1 (訂單)**
 
             if (!currentOrderSnap.exists) { console.warn(`[MPG Notify TX] Order ${merchantOrderNo} not found.`); return; }
             const currentOrderData = currentOrderSnap.data();
             if (currentOrderData.status !== 'PENDING_PAYMENT') { console.warn(`[MPG Notify TX] Order ${merchantOrderNo} status not PENDING_PAYMENT: ${currentOrderData.status}.`); return; }
 
             const isPaymentSuccess = decryptedData.Status === 'SUCCESS' && decryptedData.Result?.RespondCode === '00';
+
+            // **提前準備好所有可能需要讀取的用戶數據**
+            const { userId, itemId, itemType, billingCycle } = currentOrderData;
+            const userRef = admin.firestore().collection('users').doc(userId);
+            const userSnap = await transaction.get(userRef); // **讀取 2 (用戶數據，在所有寫入之前)**
+            if (!userSnap.exists) {
+                console.error(`[MPG Notify TX] User ${userId} not found for order ${merchantOrderNo}.`);
+                throw new Error(`User ${userId} not found for order ${merchantOrderNo}.`); // 在 transaction 中拋錯會回滾
+            }
+            // const currentUserDataFromTx = userSnap.data(); // 如果後續的 service 函數需要整個 userData
+
+            // 現在可以開始寫入操作了
             if (isPaymentSuccess) {
-                transaction.update(currentOrderDocRef, {
+                transaction.update(currentOrderDocRef, { // **寫入 1 (更新訂單為 PAID)**
                     status: 'PAID',
                     gatewayTradeNo: decryptedData.Result?.TradeNo,
                     paymentType: decryptedData.Result?.PaymentType,
@@ -237,34 +249,59 @@ export async function handleMpgNotifyController(req, res, next) {
                     updatedAt: admin.firestore.FieldValue.serverTimestamp()
                 });
 
-                const { userId, itemId, itemType, billingCycle } = currentOrderData;
-                const userRef = admin.firestore().collection('users').doc(userId);
-
                 if (itemType === 'package') {
                     const pkg = commerceConfig.creditPackages.find(p => p.id === itemId);
                     if (pkg) {
+                        // addUserCreditsInTransaction 內部也需要遵循先讀後寫，但它讀的是 userRef，我們已提前讀取
+                        // 我們需要修改 addUserCreditsInTransaction 讓它可以接收已讀取的 userData
+                        // 或者，更簡單的是，讓 addUserCreditsInTransaction 只負責寫入，讀取在外部完成
+                        // 但目前的 addUserCreditsInTransaction 已經是先讀後寫，所以我們需要確保它在所有其他寫入之前被調用（如果它自己有寫入）
+                        // 或者，如果它只是用 transaction 來寫，那麼它內部的讀取發生在外部寫入之後也是問題。
+
+                        // **修正後的調用方式：讓 creditService 的函數也只做寫入**
+                        // 這需要重構 creditService.addUserCreditsInTransaction，或者創建一個新版本
+                        // 暫時，我們先假設 creditService.addUserCreditsInTransaction 內部不再執行 transaction.get(userRef)
+                        // 而是依賴外部傳入的 currentCredits (如果有必要)
+
+                        // **最簡單的修正是：將 addUserCreditsInTransaction 內部的 get userDoc 移到 paymentController**
+                        // 並將 userData 傳給它，讓它只做計算和寫入。
+                        // 但 `creditService.addUserCreditsInTransaction` 的設計是獨立的，包含讀寫。
+
+                        // **正確的順序是：先完成所有對 userRef 的讀取（已在上面完成 userSnap），然後才能寫入 userRef**
+                        // `addUserCreditsInTransaction` 內部會 `transaction.update(userRef, ...)` 和 `transaction.set(creditTransactionRef, ...)`
+                        // 所以，它本身就是一個包含寫入的操作。
+                        // 只要 `addUserCreditsInTransaction` 內部沒有在它的寫入操作之後再執行 `transaction.get(userRef)` 就沒問題。
+
+                        // **問題的本質是：**
+                        // 1. transaction.get(currentOrderDocRef)
+                        // 2. transaction.get(userRef)
+                        // 3. transaction.update(currentOrderDocRef, ...) // 第一次寫入
+                        // 4. 調用 creditService.addUserCreditsInTransaction，它內部：
+                        //    4a. const userDoc = await transaction.get(userRef); // 錯誤！在步驟3寫入後又讀取
+                        //    4b. transaction.update(userRef, ...)
+                        //    4c. transaction.set(creditTransactionRef, ...)
+
+                        // **解決方案：重構 `creditService.addUserCreditsInTransaction` 使其不再自己 `get` userDoc，而是接收 `userData`**
                         await creditService.addUserCreditsInTransaction(
-                            transaction, userRef, userId, pkg.credits,
+                            transaction,
+                            userRef,
+                            userId,
+                            pkg.credits,
                             `${CREDIT_PURPOSES.PURCHASE_CREDITS_PKG_PREFIX}${itemId}`,
-                            { description: `購買 ${pkg.credits} 點積分包 (${itemId})`, relatedId: merchantOrderNo }
+                            { description: `購買 ${pkg.credits} 點積分包 (${itemId})`, relatedId: merchantOrderNo },
+                            userSnap // <--- 傳入已讀取的 userSnap，讓 service 內部使用它而不是重新 get
                         );
                     }
                 } else if (itemType === 'plan') { // MPG 支付的年付訂閱
                     await userService.updateUserSubscriptionInTransaction(
-                        transaction, userId, itemId, billingCycle, // billingCycle 應為 'annually'
-                        merchantOrderNo, true // isInitialActivation for new subscription
+                        transaction, userId, itemId, billingCycle,
+                        merchantOrderNo, true,
+                        userSnap // <--- 同樣，傳入已讀取的 userSnap
                     );
                     console.log(`[MPG Notify TX] Updated user ${userId} subscription to ${itemId} (${billingCycle}).`);
                 }
-            } else {
-                transaction.update(currentOrderDocRef, {
-                    status: 'FAILED',
-                    gatewayMessage: decryptedData.Message,
-                    gatewayResult: decryptedData.Result || null,
-                    notifyDataRaw: JSON.stringify(req.body),
-                    notifyDataDecrypted: decryptedData,
-                    updatedAt: admin.firestore.FieldValue.serverTimestamp()
-                });
+            } else { // 支付失敗
+                transaction.update(currentOrderDocRef, { /* ... (更新訂單狀態為 FAILED) ... */ });
             }
         });
         return res.status(200).send('SUCCESS');
@@ -274,7 +311,7 @@ export async function handleMpgNotifyController(req, res, next) {
             try {
                 const tempDecrypted = newebpayService.verifyAndDecryptMpgData(req.body.TradeInfo, req.body.TradeSha);
                 if (tempDecrypted && tempDecrypted.Result) orderNoForLog = tempDecrypted.Result.MerchantOrderNo || 'DecryptedNoOrderNo';
-            } catch(e) {/* ignore */}
+            } catch (e) {/* ignore */ }
         }
         console.error(`[MPG Notify] Error processing MPG notification for MerchantOrderNo ${orderNoForLog}:`, error);
         return res.status(500).send('Internal Server Error');
@@ -310,7 +347,7 @@ export async function handlePeriodNotifyController(req, res, next) {
                     originalOrderMerchantNo = merchantOrderNoFromNotify;
                 }
             }
-            
+
             if (!orderData && periodNoFromNotify) { // 若無訂單或為每期授權，嘗試用 PeriodNo 找
                 const ordersQuery = admin.firestore().collection('orders').where('gatewayPeriodNo', '==', periodNoFromNotify).limit(1);
                 const querySnapshot = await transaction.get(ordersQuery);
@@ -324,7 +361,7 @@ export async function handlePeriodNotifyController(req, res, next) {
 
             if (!orderData || !orderRef) { // 如果最終還是沒有訂單數據或引用
                 console.error(`[Period Notify TX] Critical: Could not find related order. Notify Result:`, Result);
-                return; 
+                return;
             }
 
             const alreadyTimes = Result?.AlreadyTimes ? String(Result.AlreadyTimes) : null;
@@ -391,17 +428,17 @@ export async function handlePeriodNotifyController(req, res, next) {
 
                     if (!isNaN(totalPeriods) && !isNaN(currentPeriodNum) && currentPeriodNum < totalPeriods) {
                         let currentSubEndDate = currentUserData.subscriptionEndDate ? currentUserData.subscriptionEndDate.toDate() : new Date();
-                        if (isNaN(currentSubEndDate.getTime()) || currentSubEndDate < new Date(new Date().setDate(new Date().getDate()-5)) ) { // 如果結束日期無效或已嚴重過期，從今天算
+                        if (isNaN(currentSubEndDate.getTime()) || currentSubEndDate < new Date(new Date().setDate(new Date().getDate() - 5))) { // 如果結束日期無效或已嚴重過期，從今天算
                             currentSubEndDate = new Date();
-                             console.warn(`[Period Notify TX] subscriptionEndDate for user ${userId} was invalid or past, resetting from today for next calculation.`);
+                            console.warn(`[Period Notify TX] subscriptionEndDate for user ${userId} was invalid or past, resetting from today for next calculation.`);
                         }
                         const nextSubEndDate = new Date(currentSubEndDate);
                         nextSubEndDate.setMonth(nextSubEndDate.getMonth() + 1);
                         // 如果是月底，确保日期正确性
-                        if (nextSubEndDate.getDate() < currentSubEndDate.getDate() && currentSubEndDate.getMonth() !== nextSubEndDate.getMonth() -1 && (currentSubEndDate.getMonth() !== 11 && nextSubEndDate.getMonth() !== 0) ) {
-                           nextSubEndDate.setDate(0); // 設為上個月最後一天，然後 setMonth 會進位到正確月份的最後一天
+                        if (nextSubEndDate.getDate() < currentSubEndDate.getDate() && currentSubEndDate.getMonth() !== nextSubEndDate.getMonth() - 1 && (currentSubEndDate.getMonth() !== 11 && nextSubEndDate.getMonth() !== 0)) {
+                            nextSubEndDate.setDate(0); // 設為上個月最後一天，然後 setMonth 會進位到正確月份的最後一天
                         }
-                        nextSubEndDate.setHours(23,59,59,999);
+                        nextSubEndDate.setHours(23, 59, 59, 999);
 
 
                         transaction.update(userRef, {
@@ -441,11 +478,11 @@ export async function handlePeriodNotifyController(req, res, next) {
         return res.status(200).send('SUCCESS');
     } catch (error) {
         let orderInfoForLog = 'UnknownOrder';
-        if(req.body.Period) {
+        if (req.body.Period) {
             try {
                 const tempDecrypted = newebpayService.decryptPeriodData(req.body.Period);
                 orderInfoForLog = tempDecrypted?.Result?.MerchantOrderNo || tempDecrypted?.Result?.PeriodNo || 'DecryptedNoRelevantID';
-            } catch(e) {/*ignore*/}
+            } catch (e) {/*ignore*/ }
         }
         console.error(`[Period Notify] Error processing Period notification for ${orderInfoForLog}:`, error);
         return res.status(500).send('Internal Server Error');

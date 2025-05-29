@@ -208,7 +208,8 @@ export async function updateUserSubscriptionInTransaction(
   newPlanId,
   billingCycle,
   relatedOrderId = null,
-  isInitialActivation = true
+  isInitialActivation = true,
+  userSnapshot
 ) {
   console.log(`[UserService TX] Updating subscription for user ${userId} to plan ${newPlanId} (${billingCycle}), initial: ${isInitialActivation}, order: ${relatedOrderId}`);
 
@@ -223,11 +224,10 @@ export async function updateUserSubscriptionInTransaction(
   const pricingDetails = productConfig.pricing[billingCycleLowerCase];
   const userRef = admin.firestore().collection('users').doc(userId);
 
-  const userDoc = await transaction.get(userRef);
-  if (!userDoc.exists) {
-    throw new Error(`用戶文檔 (ID: ${userId}) 不存在。`);
+  if (!userSnapshot || !userSnapshot.exists) { // 使用傳入的 snapshot
+    throw new Error(`用戶文檔 (ID: ${userId}) (from snapshot) 不存在。`);
   }
-  const userData = userDoc.data();
+  const userData = userSnapshot.data(); // 從 snapshot 獲取數據
   const currentLevel = userData.level ? userData.level.toLowerCase() : 'free';
   // currentCredits 將由 creditService.addUserCreditsInTransaction 內部讀取和更新
 
@@ -287,7 +287,7 @@ export async function updateUserSubscriptionInTransaction(
   if (baseGrantedCredits > 0) {
     await creditService.addUserCreditsInTransaction(
       transaction, userRef, userId, baseGrantedCredits,
-      purposeKey, { description, relatedId: relatedOrderId }
+      purposeKey, { description, relatedId: relatedOrderId },userSnapshot
     );
     totalGrantedThisTransaction += baseGrantedCredits;
     console.log(`[UserService TX] Granted ${baseGrantedCredits} base credits to user ${userId} for ${description}.`);
@@ -318,7 +318,7 @@ export async function updateUserSubscriptionInTransaction(
         await creditService.addUserCreditsInTransaction(
           transaction, userRef, userId, upgradeBonusCredits,
           `upgrade_bonus_to_${planIdLowerCase}`,
-          { description: bonusDesc, relatedId: relatedOrderId }
+          { description: bonusDesc, relatedId: relatedOrderId },userSnapshot
         );
         totalGrantedThisTransaction += upgradeBonusCredits;
         console.log(`[UserService TX] Granted ${upgradeBonusCredits} upgrade bonus credits to user ${userId}.`);
