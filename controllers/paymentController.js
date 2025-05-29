@@ -62,10 +62,10 @@ export async function initiateCheckoutController(req, res, next) {
                 return res.status(400).json({ error: '訂閱方案價格配置錯誤 (金額小於0)。' });
             }
             if (planConfig.id === 'free') { // 免費方案價格應為0
-                 if(amount !== 0) console.warn(`[Checkout] Free plan ${planConfig.id} has non-zero price ${amount} in request.`);
-                 return res.status(400).json({ error: '免費方案無需支付流程。' });
+                if (amount !== 0) console.warn(`[Checkout] Free plan ${planConfig.id} has non-zero price ${amount} in request.`);
+                return res.status(400).json({ error: '免費方案無需支付流程。' });
             }
-             if (amount === 0 && planConfig.id !== 'free') { // 非免費方案但價格為0，通常不允許
+            if (amount === 0 && planConfig.id !== 'free') { // 非免費方案但價格為0，通常不允許
                 console.warn(`[Checkout] Attempt to checkout a non-free plan with 0 amount: ${itemId}, billingCycle: ${billingCycle}`);
                 return res.status(400).json({ error: '零元方案不應觸發支付（非免費方案）。' });
             }
@@ -88,13 +88,13 @@ export async function initiateCheckoutController(req, res, next) {
                     // 嚴格來說，下次是 PeriodFirstdate 的下一個週期點
                 } else if (finalPeriodApiParams.PeriodStartType === '2') { // 立即執行首期
                     nextBillingDate = new Date(now.getFullYear(), now.getMonth() + 1, parseInt(finalPeriodApiParams.PeriodPoint, 10));
-                     if (now.getDate() >= parseInt(finalPeriodApiParams.PeriodPoint, 10)) { // 如果當前日期已過本月扣款點，則下次是再下個月
+                    if (now.getDate() >= parseInt(finalPeriodApiParams.PeriodPoint, 10)) { // 如果當前日期已過本月扣款點，則下次是再下個月
                         nextBillingDate.setMonth(nextBillingDate.getMonth() + 1);
                     }
                 } else if (finalPeriodApiParams.PeriodStartType === '1' && finalPeriodApiParams.PeriodAmt === 10) { // 10元驗證
-                     trialInfo = { type: 'verification', verificationAmount: 10, message: '將先進行NT$10元信用卡驗證，驗證成功後開始訂閱。' };
-                     // 下次扣款日在驗證成功後，由 NotifyURL 更新用戶訂閱時計算
-                     nextBillingDate = null;
+                    trialInfo = { type: 'verification', verificationAmount: 10, message: '將先進行NT$10元信用卡驗證，驗證成功後開始訂閱。' };
+                    // 下次扣款日在驗證成功後，由 NotifyURL 更新用戶訂閱時計算
+                    nextBillingDate = null;
                 }
             } else if (billingCycleLower === 'annually' && amount > 0) {
                 usePeriodApi = false;
@@ -104,7 +104,7 @@ export async function initiateCheckoutController(req, res, next) {
         } else if (itemType === 'package') {
             const pkg = commerceConfig.creditPackages.find(p => p.id === itemId);
             if (!pkg) return res.status(400).json({ error: `Invalid package ID: ${itemId}` });
-            
+
             originalAmount = pkg.price;
             amount = pkg.price;
             itemDescription = `購買 LawSowl ${pkg.credits} 點積分包`;
@@ -128,7 +128,7 @@ export async function initiateCheckoutController(req, res, next) {
         if (usePeriodApi && finalPeriodApiParams?.PeriodStartType === '1' && finalPeriodApiParams?.PeriodAmt !== 10) {
             console.warn(`[Checkout] PeriodStartType is 1 (verification) but PeriodAmt is not 10. Received: ${finalPeriodApiParams?.PeriodAmt}. Forcing to 10.`);
             finalPeriodApiParams.PeriodAmt = 10; // 強制設為10元
-            if(amount !== 0) console.warn(`[Checkout] Product amount was ${amount}, but verification payment will be 10 TWD.`);
+            if (amount !== 0) console.warn(`[Checkout] Product amount was ${amount}, but verification payment will be 10 TWD.`);
             // 注意：這裡的 amount 是商品價格，PeriodAmt 是實際支付金額。
             // 如果商品是0元試用，amount=0, PeriodAmt=10。
         }
@@ -174,7 +174,7 @@ export async function initiateCheckoutController(req, res, next) {
                 paymentGatewayUrl: NEWEBPAY_PERIOD_URL,
                 newebpayMerchantID: NEWEBPAY_MERCHANT_ID, // 前端 submitToNewebpay 會用此值和 MerchantID_ key
                 postData: newebpayArgs.PostData_,
-                 periodDetails: {
+                periodDetails: {
                     periodType: finalPeriodApiParams.PeriodType,
                     periodPoint: finalPeriodApiParams.PeriodPoint,
                     periodTimes: finalPeriodApiParams.PeriodTimes,
@@ -192,7 +192,7 @@ export async function initiateCheckoutController(req, res, next) {
                 ClientBackURL: `${APP_BASE_URL}/payment-cancel`, CREDIT: 1,
             };
             const newebpayArgs = newebpayService.prepareMpgTradeArgs(mpgParams, NEWEBPAY_MERCHANT_ID);
-             // --- DEBUG LOG ---
+            // --- DEBUG LOG ---
             console.log(`[DEBUG Checkout - MPG] MerchantID to be sent to frontend (for form field 'MerchantID'): ${newebpayArgs.MerchantID}`);
             console.log(`[DEBUG Checkout - MPG] Full mpgParams before encryption (inside TradeInfo): `, mpgParams);
             console.log(`[DEBUG Checkout - MPG] Encrypted TradeInfo to be sent to frontend: ${newebpayArgs.TradeInfo}`);
@@ -224,7 +224,7 @@ export async function handleMpgNotifyController(req, res, next) {
 
     try {
         const decryptedData = newebpayService.verifyAndDecryptMpgData(TradeInfo, TradeSha);
-        if (!decryptedData) { return res.status(400).send('MPG notification verification/decryption failed.');}
+        if (!decryptedData) { return res.status(400).send('MPG notification verification/decryption failed.'); }
 
         const merchantOrderNo = decryptedData.MerchantOrderNo;
         console.log(`[MPG Notify] Decrypted Data for ${merchantOrderNo}:`, decryptedData);
@@ -293,12 +293,12 @@ export async function handlePeriodNotifyController(req, res, next) {
     console.log('[PaymentController] Received Period Notify Request:', req.body);
     const { Period, MerchantID_ } = req.body;
 
-    if (!Period) { return res.status(400).send('Invalid Period notification: Missing Period data.');}
-    if (MerchantID_ !== NEWEBPAY_MERCHANT_ID) { return res.status(400).send('Invalid Period notification: MerchantID mismatch.');}
+    if (!Period) { return res.status(400).send('Invalid Period notification: Missing Period data.'); }
+    if (MerchantID_ !== NEWEBPAY_MERCHANT_ID) { return res.status(400).send('Invalid Period notification: MerchantID mismatch.'); }
 
     try {
         const decryptedResult = newebpayService.decryptPeriodData(Period);
-        if (!decryptedResult) { return res.status(400).send('Period notification decryption failed.');}
+        if (!decryptedResult) { return res.status(400).send('Period notification decryption failed.'); }
 
         console.log('[Period Notify] Decrypted Result:', decryptedResult);
         const { Status, Message, Result } = decryptedResult;
@@ -392,10 +392,10 @@ export async function handlePeriodNotifyController(req, res, next) {
                         const nextSubEndDate = new Date(currentSubEndDate);
                         nextSubEndDate.setMonth(nextSubEndDate.getMonth() + 1);
                         // 如果下個結束日在今天或之前 (表示之前的結束日已過期)，則從今天加一個月
-                        if (nextSubEndDate <= new Date()){
+                        if (nextSubEndDate <= new Date()) {
                             const today = new Date();
-                            nextSubEndDate.setFullYear(today.getFullYear(), today.getMonth() + 1, today.getDate() -1);
-                            nextSubEndDate.setHours(23,59,59,999);
+                            nextSubEndDate.setFullYear(today.getFullYear(), today.getMonth() + 1, today.getDate() - 1);
+                            nextSubEndDate.setHours(23, 59, 59, 999);
                         }
 
                         transaction.update(userRef, {
@@ -407,7 +407,7 @@ export async function handlePeriodNotifyController(req, res, next) {
                         console.log(`[Period Notify TX] User ${userId} subscription for ${originalMerchantOrderNo} reached final period (${alreadyTimes}/${totalPeriods}).`);
                         transaction.update(orderRef, { status: 'COMPLETED_PERIODS', updatedAt: admin.firestore.FieldValue.serverTimestamp() });
                         // 可選：更新 user doc 中的訂閱狀態為已結束或待續約
-                         transaction.update(userRef, {
+                        transaction.update(userRef, {
                             level: 'free', // 或其他到期後的預設等級
                             subscriptionStatus: 'expired', // 標記訂閱狀態
                             subscriptionEndDate: admin.firestore.FieldValue.serverTimestamp(), // 記錄實際結束時間
@@ -418,9 +418,9 @@ export async function handlePeriodNotifyController(req, res, next) {
                         });
                         console.log(`[Period Notify TX] User ${userId} subscription for ${originalMerchantOrderNo} has ended. Level reverted/status updated.`);
                     }
-                } else { 
+                } else {
                     console.warn('[Period Notify TX] SUCCESS status but unknown result structure:', Result);
-                 }
+                }
             } else { // Status !== 'SUCCESS'
                 // ... (處理失敗邏輯，更新訂單和用戶訂閱狀態)
                 console.warn(`[Period Notify TX] Auth FAILED for ${orderData?.merchantOrderNo || periodNoFromNotify}. Status: ${Status}, Msg: ${Message}, Result:`, Result);
@@ -515,18 +515,114 @@ export async function handlePeriodReturnController(req, res, next) {
     return res.redirect(`${APP_BASE_URL}/payment-result?${queryParams}`);
 }
 
-export async function handleDefaultNotifyController(req, res, next) {
-    // ... (之前的 handleDefaultNotifyController 完整代碼)
-    console.log('[PaymentController] Received Default/Fallback Notify Request:', req.body);
-    if (req.body.TradeInfo && req.body.TradeSha) {
-        console.warn('[Default Notify] Detected MPG-like notification at default handler. API-specified NotifyURL might be failing. Forwarding for processing attempt.');
-        return handleMpgNotifyController(req, res, next);
-    } else if (req.body.Period) {
-        console.warn('[Default Notify] Detected Period-like notification at default handler. API-specified NotifyURL might be failing. Forwarding for processing attempt.');
-        return handlePeriodNotifyController(req, res, next);
-    } else {
-        console.warn('[Default Notify] Received unknown format notification at default handler:', req.body);
-        return res.status(200).send('SUCCESS_RECEIVED_UNKNOWN_AT_DEFAULT');
+export async function handleMpgNotifyController(req, res, next) {
+    console.log('[PaymentController] Received MPG Notify Request:', req.body);
+    const { TradeInfo, TradeSha, MerchantID } = req.body;
+
+    if (!TradeInfo || !TradeSha) {
+        console.error('[MPG Notify] Missing TradeInfo or TradeSha.');
+        return res.status(400).send('Invalid MPG notification: Missing parameters.');
+    }
+    if (MerchantID !== NEWEBPAY_MERCHANT_ID) { // 確保 NEWEBPAY_MERCHANT_ID 已從 environment 引入
+        console.error(`[MPG Notify] MerchantID mismatch. Expected: ${NEWEBPAY_MERCHANT_ID}, Received: ${MerchantID}`);
+        return res.status(400).send('Invalid MPG notification: MerchantID mismatch.');
+    }
+
+    try {
+        const decryptedData = newebpayService.verifyAndDecryptMpgData(TradeInfo, TradeSha);
+
+        if (!decryptedData || !decryptedData.Result) { // 增加對 decryptedData.Result 的檢查
+            console.error(`[MPG Notify] Failed to verify, decrypt, or parse data, or Result object missing. Decrypted data:`, decryptedData);
+            return res.status(400).send('MPG notification verification/decryption failed or malformed.');
+        }
+
+        // **修正點：從 decryptedData.Result 中獲取 MerchantOrderNo**
+        const merchantOrderNo = decryptedData.Result.MerchantOrderNo;
+
+        // 在獲取 merchantOrderNo 之後再打印，這樣就不會是 undefined 了
+        console.log(`[MPG Notify] Decrypted Data for MerchantOrderNo ${merchantOrderNo}:`, decryptedData);
+
+        if (!merchantOrderNo) { // 再次檢查 merchantOrderNo 是否真的獲取到了
+            console.error('[MPG Notify] MerchantOrderNo is missing from decrypted Result object.');
+            return res.status(400).send('MPG notification processing error: MerchantOrderNo missing in Result.');
+        }
+
+        await admin.firestore().runTransaction(async (transaction) => {
+            const currentOrderDocRef = admin.firestore().collection('orders').doc(merchantOrderNo); // 現在 merchantOrderNo 應該有值了
+            const currentOrderSnap = await transaction.get(currentOrderDocRef);
+
+            // ... (後續的 transaction 邏輯保持不變)
+            if (!currentOrderSnap.exists) {
+                console.warn(`[MPG Notify Transaction] Order ${merchantOrderNo} not found.`);
+                return;
+            }
+            const currentOrderData = currentOrderSnap.data();
+            if (currentOrderData.status !== 'PENDING_PAYMENT') {
+                console.warn(`[MPG Notify Transaction] Order ${merchantOrderNo} status is not PENDING_PAYMENT: ${currentOrderData.status}.`);
+                return;
+            }
+
+            const isPaymentSuccess = decryptedData.Status === 'SUCCESS' && decryptedData.Result?.TradeStatus === '1';
+            if (isPaymentSuccess) {
+                transaction.update(currentOrderDocRef, {
+                    status: 'PAID',
+                    gatewayTradeNo: decryptedData.Result?.TradeNo,
+                    paymentType: decryptedData.Result?.PaymentType,
+                    payTime: decryptedData.Result?.PayTime ? admin.firestore.Timestamp.fromDate(new Date(decryptedData.Result.PayTime.replace(/\//g, '-'))) : admin.firestore.FieldValue.serverTimestamp(),
+                    notifyDataRaw: JSON.stringify(req.body),
+                    notifyDataDecrypted: decryptedData,
+                    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                });
+
+                const { userId, itemId, itemType, billingCycle } = currentOrderData;
+                const userRef = admin.firestore().collection('users').doc(userId);
+
+                if (itemType === 'package') {
+                    const pkg = commerceConfig.creditPackages.find(p => p.id === itemId);
+                    if (pkg) {
+                        await creditService.addUserCreditsInTransaction(
+                            transaction, userRef, userId, pkg.credits,
+                            `${CREDIT_PURPOSES.PURCHASE_CREDITS_PKG_PREFIX}${itemId}`,
+                            { description: `購買 ${pkg.credits} 點積分包 (${itemId})`, relatedId: merchantOrderNo }
+                        );
+                    }
+                } else if (itemType === 'plan') { // MPG 支付的年付訂閱
+                    // const planConfig = subscriptionProducts[itemId.toLowerCase()]; // 已在 updateUserSubscriptionInTransaction 內部獲取
+                    // if (planConfig) { // 檢查也移到內部
+                    await userService.updateUserSubscriptionInTransaction(
+                        transaction, userId, itemId, billingCycle,
+                        merchantOrderNo, true
+                    );
+                    console.log(`[MPG Notify TX] Updated user ${userId} subscription to ${itemId} (${billingCycle}).`);
+                    // }
+                }
+            } else {
+                transaction.update(currentOrderDocRef, {
+                    status: 'FAILED',
+                    gatewayMessage: decryptedData.Message,
+                    gatewayResult: decryptedData.Result || null,
+                    notifyDataRaw: JSON.stringify(req.body),
+                    notifyDataDecrypted: decryptedData,
+                    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                });
+            }
+        }); // End of Firestore Transaction
+
+        return res.status(200).send('SUCCESS');
+
+    } catch (error) {
+        // 在 catch 之前，嘗試獲取 merchantOrderNo 以便日誌記錄
+        let orderNoForLog = req.body.MerchantOrderNo; // 來自原始請求 (如果 TradeInfo 解密失敗)
+        if (!orderNoForLog && typeof req.body.TradeInfo === 'string') { // 嘗試從 TradeInfo 內部獲取 (如果解密失敗前能拿到)
+            try {
+                const tempDecrypted = newebpayService.verifyAndDecryptMpgData(req.body.TradeInfo, req.body.TradeSha);
+                if (tempDecrypted && tempDecrypted.Result) {
+                    orderNoForLog = tempDecrypted.Result.MerchantOrderNo;
+                }
+            } catch (e) { /* ignore */ }
+        }
+        console.error(`[MPG Notify] Error processing MPG notification for MerchantOrderNo ${orderNoForLog || 'Unknown'}:`, error);
+        return res.status(500).send('Internal Server Error');
     }
 }
 
