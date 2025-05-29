@@ -5,77 +5,61 @@ import { checkAndDeductUserCreditsInTransaction } from '../services/credit.js'; 
 
 /**
  * 創建一個檢查並扣除積分的中間件。
- * @param {number} cost - 執行此操作所需的積分數量。
- * @param {string} purpose - 此次扣款的用途識別碼。
- * @param {object} [logDetailsOptions={}] - (可選) 傳遞給日誌的額外信息，例如 { description: '自訂描述', relatedIdKey: 'req.params.id' }
- * @returns {function} Express 中間件函數。
+* @param {number} baseCost - 執行此操作的基礎積分數量。
+ *                            對於 SEARCH_JUDGEMENT，這是基礎搜索成本，實際成本會根據篩選條件動態計算。
+ *                            對於其他操作，這是固定的積分成本。
+ * @param {string} purpose - 此次扣款的用途識別碼（例如：CREDIT_PURPOSES.SEARCH_JUDGEMENT）。
+ * @param {object} [logDetailsOptions={}] - (可選) 傳遞給日誌的額外信息。
+ * @param {string} [logDetailsOptions.description] - 自訂的交易描述文字。
+ * @param {string} [logDetailsOptions.relatedIdKey] - 從 req 對象中獲取相關 ID 的路徑（例如：'params.id'）。
+ * @param {boolean} [logDetailsOptions.enableDynamicCost=false] - 是否啟用動態積分計算（預設為 false）。
  */
-export function checkAndDeductCredits(cost, purpose, logDetailsOptions = {}) {
+export const checkAndDeductCredits = (baseCost, purpose, options = {}) => {
   return async (req, res, next) => {
-    if (!req.user || !req.user.uid) {
-      console.error("Credit Middleware: User not authenticated or UID missing from req.user.");
-      return res.status(401).json({
-        error: 'Unauthorized',
-        message: 'Authentication required to perform this action.'
-      });
+    const userId = req.user?.uid;
+    
+    if (!userId) {
+      return res.status(401).json({ error: '使用者未認證' });
     }
 
-    const userId = req.user.uid;
-    const db = admin.firestore(); // 獲取 Firestore 實例
-
     try {
-      await db.runTransaction(async (transaction) => {
+      // 計算動態積分消耗
+      let dynamicCost = baseCost;
+      
+      // 如果是搜索請求，根據篩選條件計算積分
+      if (purpose === CREDIT_PURPOSES.SEARCH_JUDGEMENT) {
+        dynamicCost = calculateSearchCost(req.query);
+      }
+
+      const db = admin.firestore();
+      const result = await db.runTransaction(async (transaction) => {
         const userDocRef = db.collection('users').doc(userId);
-
-        // 從 logDetailsOptions 構造 logDetails
-        const logDetails = {
-          description: logDetailsOptions.description || `API 操作 ${purpose} 扣除 ${cost} 點`, // 預設描述
-        };
-        if (logDetailsOptions.relatedIdKey) {
-          // 從 req 對象中動態獲取 relatedId, 例如 req.params.id 或 req.body.itemId
-          // 這需要小心處理路徑解析
-          let relatedIdValue = req;
-          const keys = logDetailsOptions.relatedIdKey.split('.'); // e.g., "params.id"
-          for (const key of keys) {
-            if (relatedIdValue && typeof relatedIdValue === 'object' && key in relatedIdValue) {
-              relatedIdValue = relatedIdValue[key];
-            } else {
-              relatedIdValue = undefined;
-              break;
-            }
-          }
-          if (relatedIdValue !== undefined) {
-            logDetails.relatedId = String(relatedIdValue);
-          }
-        }
-
-
-        const { sufficient, currentCredits } = await checkAndDeductUserCreditsInTransaction(
+        const deductResult = await checkAndDeductUserCreditsInTransaction(
           transaction,
           userDocRef,
           userId,
-          cost,
-          purpose, // 傳遞 purpose
-          logDetails // 傳遞構造好的 logDetails
+          dynamicCost, // 使用動態計算的積分
+          purpose,
+          {
+            description: options.description || `Deducted ${dynamicCost} credits for ${purpose}`,
+            relatedId: options.relatedId
+          }
         );
 
-        if (!sufficient) {
-          // 拋出一個特定錯誤，讓 runTransaction 捕捉並回傳給客戶端
-          const error = new Error('Insufficient credits');
-          error.statusCode = 402; // Payment Required
-          error.details = { // 附加額外信息
-            message: '您的積分不足，請購買積分或升級方案。',
-            required: cost,
-            current: currentCredits,
-            purpose: purpose,
-          };
+        if (!deductResult.sufficient) {
+          const error = new Error(`積分不足。當前積分: ${deductResult.currentCredits}，需要: ${dynamicCost}`);
+          error.statusCode = 402;
+          error.currentCredits = deductResult.currentCredits;
+          error.requiredCredits = dynamicCost;
           throw error;
         }
+
+        return deductResult;
       });
 
-      // console.log(`Credits Middleware: ${cost} credit(s) for ${purpose} successfully processed for user ${userId}.`);
-      next(); // 積分足夠且已扣除（包含記錄），繼續處理請求
-
+      req.creditDeducted = dynamicCost;
+      req.userCreditsAfter = result.newCredits;
+      next();
     } catch (error) {
       console.error(`Credit Middleware Error for user ${userId} (cost: ${cost}, purpose: ${purpose}):`, error.message, error.details || error.stack);
       if (error.statusCode === 402) { // 處理由 runTransaction 拋出的積分不足錯誤
@@ -100,4 +84,26 @@ export function checkAndDeductCredits(cost, purpose, logDetailsOptions = {}) {
       });
     }
   };
+}
+
+// 新增：計算搜索積分消耗的函數
+function calculateSearchCost(searchFilters) {
+  let cost = 1; // 基礎搜索消耗 1 積分
+  
+  // 檢查各種篩選條件
+  if (searchFilters.caseTypes && searchFilters.caseTypes.split(',').filter(Boolean).length > 0) cost += 1;
+  if (searchFilters.verdict && searchFilters.verdict !== '不指定') cost += 1;
+  if (searchFilters.laws && searchFilters.laws.split(',').filter(Boolean).length > 0) cost += 1;
+  if (searchFilters.courtLevels && searchFilters.courtLevels.split(',').filter(Boolean).length > 0) cost += 1;
+  if (searchFilters.minAmount || searchFilters.maxAmount) cost += 1;
+  if (searchFilters.reasoningStrength) cost += 1;
+  if (searchFilters.complexity) cost += 1;
+  if (searchFilters.winReasons && searchFilters.winReasons.split(',').filter(Boolean).length > 0) cost += 1;
+  
+  // 進階篩選
+  if (searchFilters.onlyWithFullText === 'true') cost += 1;
+  if (searchFilters.includeCitedCases === 'true') cost += 1;
+  if (searchFilters.onlyRecent3Years === 'true') cost += 1;
+  
+  return cost;
 }
