@@ -225,7 +225,7 @@ export async function handleMpgNotifyController(req, res, next) {
             const currentOrderData = currentOrderSnap.data();
             if (currentOrderData.status !== 'PENDING_PAYMENT') { console.warn(`[MPG Notify TX] Order ${merchantOrderNo} status not PENDING_PAYMENT: ${currentOrderData.status}.`); return; }
 
-            const isPaymentSuccess = decryptedData.Status === 'SUCCESS' && decryptedData.Result?.TradeStatus === '1';
+            const isPaymentSuccess = decryptedData.Status === 'SUCCESS' && decryptedData.Result?.RespondCode === '00';
             if (isPaymentSuccess) {
                 transaction.update(currentOrderDocRef, {
                     status: 'PAID',
@@ -466,9 +466,12 @@ export async function handleMpgReturnController(req, res, next) {
         return res.redirect(`${APP_BASE_URL}/payment-result?status=error&message=VerificationFailed`);
     }
 
-    const isPaymentSuccess = decryptedData.Status === 'SUCCESS' && decryptedData.Result?.TradeStatus === '1';
+    const isPaymentSuccess = decryptedData.Status === 'SUCCESS' && decryptedData.Result?.RespondCode === '00';
     const clientStatus = isPaymentSuccess ? 'success' : 'failure';
-    const clientMessage = decryptedData.Message || (isPaymentSuccess ? '付款成功，訂單處理中' : '付款失敗或未完成');
+    let clientMessage = decryptedData.Message;
+    if (!clientMessage) { // 如果 Message 為空，則根據成功狀態給一個預設
+        clientMessage = isPaymentSuccess ? '付款成功，訂單處理中' : '付款失敗或未完成';
+    }
     const queryParams = new URLSearchParams({
         status: clientStatus, message: encodeURIComponent(clientMessage),
         orderNo: decryptedData.MerchantOrderNo || '', tradeNo: decryptedData.Result?.TradeNo || '',
