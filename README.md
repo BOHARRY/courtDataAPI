@@ -53,6 +53,7 @@ Boooook 是一個司法資訊檢索與分析平台，後端採用 Node.js + Expr
 │   ├── user.js               # 使用者管理
 │   ├── aiAnalysisService.js  # 案件AI特徵分析
 │   ├── judgeService.js       # 法官分析與聚合
+│   ├── newebpayService.js    # 藍新金流加解密與參數組裝
 │   └── complaintService.js   # 民眾申訴處理
 ├── utils/                    # 工具函式
 │   ├── query-builder.js      # ES查詢建構
@@ -70,6 +71,7 @@ Boooook 是一個司法資訊檢索與分析平台，後端採用 Node.js + Expr
 │   ├── judge.js              # 法官
 │   ├── complaint.js          # 訴狀智能分析（驗證訴狀、法官檢查、匹配度分析）
 │   ├── judgmentProxy.js      # 判決書代理存取
+│   ├── payment.js            # 金流 API 路由
 │   └── configRoutes.js       # 積分包與會員優惠設定 API 路由
 ├── controllers/              # 控制器
 │   ├── search-controller.js
@@ -78,6 +80,7 @@ Boooook 是一個司法資訊檢索與分析平台，後端採用 Node.js + Expr
 │   ├── user-controller.js
 │   ├── judgeController.js
 │   ├── complaint-controller.js
+│   ├── paymentController.js  # 金流流程與回調處理
 │   └── configController.js   # 查詢積分包與會員優惠設定
 ├── index.js                  # 進入點
 └── .env                      # 環境變數
@@ -115,6 +118,92 @@ Boooook 是一個司法資訊檢索與分析平台，後端採用 Node.js + Expr
 - `controllers/complaint-controller.js`：訴狀相關 API 控制器，負責處理訴狀驗證、法官檢查、匹配度分析等請求。
 
 如未來有新增目錄或檔案，請於本區塊補充說明，以利團隊與 AI 理解專案全貌。
+- `services/newebpayService.js`：藍新金流（Newebpay）串接服務，負責交易參數加密、解密、雜湊驗證，支援幕前支付（MPG）與信用卡定期定額（Period）兩種模式。提供交易參數組裝、回傳資料驗證與解密等核心函式，所有金流相關流程皆依賴此服務。
+#### 金流（藍新 Newebpay）串接重點說明
+
+- **金流服務核心：**  
+  [`services/newebpayService.js`](services/newebpayService.js:1) 實作藍新 Newebpay 所需的 AES 加密、解密、SHA256 雜湊，並封裝交易參數組裝（`prepareMpgTradeArgs`、`preparePeriodCreateArgs`）、回傳資料驗證與解密（`verifyAndDecryptMpgData`、`decryptPeriodData`）。所有金流請求與回調資料皆經過加解密與雜湊驗證，確保安全性與正確性。
+
+- **金流 API 流程：**  
+  [`controllers/paymentController.js`](controllers/paymentController.js:1) 整合訂單建立、金流參數生成、Notify/Return 處理。  
+  - `initiateCheckoutController`：依據用戶購買方案（訂閱/積分包）組裝訂單，決定一次性付款（MPG）或定期定額（Period），並產生對應加密參數，回傳前端。
+  - `handleMpgNotifyController` / `handlePeriodNotifyController`：接收藍新 Notify 回調，解密並驗證資料，根據支付結果自動更新訂單狀態、發放積分或更新訂閱。
+  - `handleMpgReturnController` / `handlePeriodReturnController`：處理前景跳轉（ReturnURL），解密資料後導向前端顯示付款結果。
+  - `handleGeneralNotifyController` / `handleGeneralReturnController`：通用回調入口，根據資料型態自動分流至 MPG/Period 處理。
+
+- **API 路由設計：**  
+  [`routes/payment.js`](routes/payment.js:1) 定義金流相關路由，包含：
+  - `POST /api/payment/initiate-checkout`：發起結帳（需登入）
+  - `POST /api/payment/notify/mpg`、`/notify/period`、`/notify/general`：接收藍新 Notify 回調
+  - `POST /api/payment/return/general`：接收藍新 Return 跳轉
+
+- **積分包與會員優惠設定：**  
+  [`config/commerceConfig.js`](config/commerceConfig.js:1) 定義所有可購買積分包、價格、折扣規則，供金流流程與前端查詢。
+
+**整體流程說明：**  
+1. 前端呼叫 `/api/payment/initiate-checkout`，後端依據商品類型組裝訂單與金流參數，回傳前端表單資料與金流 gateway URL。
+2. 用戶於藍新頁面付款，藍新於付款完成後以 Notify/Return 回調後端，後端解密驗證資料，根據結果自動更新訂單、發放積分或訂閱權益。
+3. 支援一次性付款（MPG）與定期定額（Period）兩種模式，所有金流資料皆經過加解密與雜湊驗證，確保安全。
+
+**安全性重點：**  
+- 所有金流資料皆以 AES-256-CBC 加密，並以 SHA256 雜湊驗證。
+- Notify/Return 回調皆需驗證商店代號與雜湊值，避免偽造。
+- 訂單與用戶狀態更新皆於 Firestore Transaction 內完成，確保資料一致性。
+- `controllers/paymentController.js`：金流 API 控制器，整合訂單建立、藍新支付參數生成、Notify/Return 處理、訂閱與積分包購買流程。支援一次性付款（MPG）與定期定額（Period），並根據藍新回傳結果自動更新訂單與用戶狀態，處理訂閱續期、積分發放、訂單狀態流轉等。
+- `routes/payment.js`：金流相關 API 路由，包含 `/initiate-checkout`（發起結帳）、`/notify/mpg`、`/notify/period`、`/notify/general`（接收藍新 Notify）、`/return/general`（接收藍新 Return 跳轉）等，對應 paymentController 之各處理函式。
+#### 【建議補充】金流串接更完整說明（供 AI 工程師快速上手）
+
+- **金流 API 請求/回應範例：**
+
+  - initiate-checkout 請求（POST `/api/payment/initiate-checkout`）：
+    ```json
+    {
+      "itemId": "credits_100",
+      "itemType": "package",
+      "billingCycle": null
+    }
+    ```
+    回應（一次性付款）：
+    ```json
+    {
+      "merchantOrderNo": "202405290001",
+      "orderSummary": { "itemId": "credits_100", "itemType": "package", ... },
+      "paymentMethod": "MPG",
+      "paymentGatewayUrl": "https://core.newebpay.com/MPG/mpg_gateway",
+      "merchantID": "商店代號",
+      "tradeInfo": "加密字串",
+      "tradeSha": "雜湊值",
+      "version": "2.2"
+    }
+    ```
+
+  - Notify/Return POST body 範例（MPG）：
+    ```json
+    {
+      "TradeInfo": "加密字串",
+      "TradeSha": "雜湊值",
+      "MerchantID": "商店代號"
+    }
+    ```
+
+- **金流流程時序圖（文字描述）：**
+  1. 前端呼叫 initiate-checkout，取得金流參數與 gateway URL。
+  2. 前端自動送出表單至藍新金流頁面。
+  3. 用戶付款後，藍新以 Notify/Return POST 回調後端。
+  4. 後端解密、驗證、更新訂單與用戶狀態，回應前端付款結果。
+
+- **金流相關環境變數：**
+  - `NEWEBPAY_MERCHANT_ID`：藍新商店代號
+  - `NEWEBPAY_HASH_KEY`、`NEWEBPAY_HASH_IV`：加解密金鑰
+  - `NEWEBPAY_MPG_URL`、`NEWEBPAY_PERIOD_URL`：金流 gateway 端點
+  - 需於 [`config/environment.js`](config/environment.js:1) 設定
+
+- **訂單狀態流轉（常見狀態）：**
+  - `PENDING_PAYMENT` → `PAID`（付款成功）/`FAILED`（失敗）
+  - 訂閱：`AGREEMENT_CREATED`（定期定額建立）→ `PAID`（每期授權成功）→ `COMPLETED_PERIODS`（期滿結束）
+  - 失敗時會記錄錯誤訊息與狀態
+
+如需更完整串接細節，請參考 [`controllers/paymentController.js`](controllers/paymentController.js:1) 內各 API 實作。
 
 - `controllers/aiAnalysisController.js`：AI 勝訴關鍵分析 API 控制器，負責驗證輸入並調用 AI 分析服務，回傳案件摘要與勝訴關鍵分析結果。
 - `services/aiSuccessAnalysisService.js`：AI 勝訴率/判決結果分析服務，負責呼叫 OpenAI API 取得文本 embedding（採用 text-embedding-3-large，維度1536），並結合案件資料進行勝訴關鍵分析。
