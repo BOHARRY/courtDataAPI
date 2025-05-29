@@ -215,31 +215,55 @@ export async function initiateCheckoutController(req, res, next) {
 
 // handleMpgNotifyController - 修正調用 userService
 export async function handleMpgNotifyController(req, res, next) {
-    // ... (日誌和初步檢查不變)
     console.log('[PaymentController] Received MPG Notify Request:', req.body);
     const { TradeInfo, TradeSha, MerchantID } = req.body;
 
-    if (!TradeInfo || !TradeSha) { return res.status(400).send('Invalid MPG notification: Missing parameters.'); }
-    if (MerchantID !== NEWEBPAY_MERCHANT_ID) { return res.status(400).send('Invalid MPG notification: MerchantID mismatch.'); }
+    if (!TradeInfo || !TradeSha) {
+        console.error('[MPG Notify] Missing TradeInfo or TradeSha.');
+        return res.status(400).send('Invalid MPG notification: Missing parameters.');
+    }
+    if (MerchantID !== NEWEBPAY_MERCHANT_ID) { // 確保 NEWEBPAY_MERCHANT_ID 已從 environment 引入
+        console.error(`[MPG Notify] MerchantID mismatch. Expected: ${NEWEBPAY_MERCHANT_ID}, Received: ${MerchantID}`);
+        return res.status(400).send('Invalid MPG notification: MerchantID mismatch.');
+    }
 
     try {
         const decryptedData = newebpayService.verifyAndDecryptMpgData(TradeInfo, TradeSha);
-        if (!decryptedData) { return res.status(400).send('MPG notification verification/decryption failed.'); }
 
-        const merchantOrderNo = decryptedData.MerchantOrderNo;
-        console.log(`[MPG Notify] Decrypted Data for ${merchantOrderNo}:`, decryptedData);
+        if (!decryptedData || !decryptedData.Result) { // 增加對 decryptedData.Result 的檢查
+            console.error(`[MPG Notify] Failed to verify, decrypt, or parse data, or Result object missing. Decrypted data:`, decryptedData);
+            return res.status(400).send('MPG notification verification/decryption failed or malformed.');
+        }
+
+        // **修正點：從 decryptedData.Result 中獲取 MerchantOrderNo**
+        const merchantOrderNo = decryptedData.Result.MerchantOrderNo;
+
+        // 在獲取 merchantOrderNo 之後再打印，這樣就不會是 undefined 了
+        console.log(`[MPG Notify] Decrypted Data for MerchantOrderNo ${merchantOrderNo}:`, decryptedData);
+
+        if (!merchantOrderNo) { // 再次檢查 merchantOrderNo 是否真的獲取到了
+            console.error('[MPG Notify] MerchantOrderNo is missing from decrypted Result object.');
+            return res.status(400).send('MPG notification processing error: MerchantOrderNo missing in Result.');
+        }
 
         await admin.firestore().runTransaction(async (transaction) => {
-            const currentOrderDocRef = admin.firestore().collection('orders').doc(merchantOrderNo);
+            const currentOrderDocRef = admin.firestore().collection('orders').doc(merchantOrderNo); // 現在 merchantOrderNo 應該有值了
             const currentOrderSnap = await transaction.get(currentOrderDocRef);
 
-            if (!currentOrderSnap.exists) { console.warn(`[MPG Notify TX] Order ${merchantOrderNo} not found.`); return; }
+            // ... (後續的 transaction 邏輯保持不變)
+            if (!currentOrderSnap.exists) {
+                console.warn(`[MPG Notify Transaction] Order ${merchantOrderNo} not found.`);
+                return;
+            }
             const currentOrderData = currentOrderSnap.data();
-            if (currentOrderData.status !== 'PENDING_PAYMENT') { console.warn(`[MPG Notify TX] Order ${merchantOrderNo} status not PENDING_PAYMENT: ${currentOrderData.status}.`); return; }
+            if (currentOrderData.status !== 'PENDING_PAYMENT') {
+                console.warn(`[MPG Notify Transaction] Order ${merchantOrderNo} status is not PENDING_PAYMENT: ${currentOrderData.status}.`);
+                return;
+            }
 
             const isPaymentSuccess = decryptedData.Status === 'SUCCESS' && decryptedData.Result?.TradeStatus === '1';
             if (isPaymentSuccess) {
-                transaction.update(currentOrderDocRef, { /* ... (更新訂單狀態為 PAID) ... */
+                transaction.update(currentOrderDocRef, {
                     status: 'PAID',
                     gatewayTradeNo: decryptedData.Result?.TradeNo,
                     paymentType: decryptedData.Result?.PaymentType,
@@ -253,7 +277,6 @@ export async function handleMpgNotifyController(req, res, next) {
                 const userRef = admin.firestore().collection('users').doc(userId);
 
                 if (itemType === 'package') {
-                    // ... (積分包邏輯不變)
                     const pkg = commerceConfig.creditPackages.find(p => p.id === itemId);
                     if (pkg) {
                         await creditService.addUserCreditsInTransaction(
@@ -263,14 +286,17 @@ export async function handleMpgNotifyController(req, res, next) {
                         );
                     }
                 } else if (itemType === 'plan') { // MPG 支付的年付訂閱
-                    await userService.updateUserSubscriptionInTransaction( // **調用已修正的 TX 版本**
-                        transaction, userId, itemId, billingCycle, // billingCycle 應為 'annually'
+                    // const planConfig = subscriptionProducts[itemId.toLowerCase()]; // 已在 updateUserSubscriptionInTransaction 內部獲取
+                    // if (planConfig) { // 檢查也移到內部
+                    await userService.updateUserSubscriptionInTransaction(
+                        transaction, userId, itemId, billingCycle,
                         merchantOrderNo, true
                     );
                     console.log(`[MPG Notify TX] Updated user ${userId} subscription to ${itemId} (${billingCycle}).`);
+                    // }
                 }
-            } else { // 支付失敗
-                transaction.update(currentOrderDocRef, { /* ... (更新訂單狀態為 FAILED) ... */
+            } else {
+                transaction.update(currentOrderDocRef, {
                     status: 'FAILED',
                     gatewayMessage: decryptedData.Message,
                     gatewayResult: decryptedData.Result || null,
@@ -279,13 +305,26 @@ export async function handleMpgNotifyController(req, res, next) {
                     updatedAt: admin.firestore.FieldValue.serverTimestamp()
                 });
             }
-        });
+        }); // End of Firestore Transaction
+
         return res.status(200).send('SUCCESS');
-    } catch (error) { /* ... (錯誤處理) ... */
-        console.error(`[MPG Notify] Error processing MPG notification for MerchantOrderNo ${req.body.MerchantOrderNo || 'Unknown'}:`, error);
+
+    } catch (error) {
+        // 在 catch 之前，嘗試獲取 merchantOrderNo 以便日誌記錄
+        let orderNoForLog = req.body.MerchantOrderNo; // 來自原始請求 (如果 TradeInfo 解密失敗)
+        if (!orderNoForLog && typeof req.body.TradeInfo === 'string') { // 嘗試從 TradeInfo 內部獲取 (如果解密失敗前能拿到)
+            try {
+                const tempDecrypted = newebpayService.verifyAndDecryptMpgData(req.body.TradeInfo, req.body.TradeSha);
+                if (tempDecrypted && tempDecrypted.Result) {
+                    orderNoForLog = tempDecrypted.Result.MerchantOrderNo;
+                }
+            } catch (e) { /* ignore */ }
+        }
+        console.error(`[MPG Notify] Error processing MPG notification for MerchantOrderNo ${orderNoForLog || 'Unknown'}:`, error);
         return res.status(500).send('Internal Server Error');
     }
 }
+
 
 // handlePeriodNotifyController - 修正調用 userService 和 subscriptionEndDate 更新
 export async function handlePeriodNotifyController(req, res, next) {
@@ -515,116 +554,6 @@ export async function handlePeriodReturnController(req, res, next) {
     return res.redirect(`${APP_BASE_URL}/payment-result?${queryParams}`);
 }
 
-export async function handleMpgNotifyController(req, res, next) {
-    console.log('[PaymentController] Received MPG Notify Request:', req.body);
-    const { TradeInfo, TradeSha, MerchantID } = req.body;
-
-    if (!TradeInfo || !TradeSha) {
-        console.error('[MPG Notify] Missing TradeInfo or TradeSha.');
-        return res.status(400).send('Invalid MPG notification: Missing parameters.');
-    }
-    if (MerchantID !== NEWEBPAY_MERCHANT_ID) { // 確保 NEWEBPAY_MERCHANT_ID 已從 environment 引入
-        console.error(`[MPG Notify] MerchantID mismatch. Expected: ${NEWEBPAY_MERCHANT_ID}, Received: ${MerchantID}`);
-        return res.status(400).send('Invalid MPG notification: MerchantID mismatch.');
-    }
-
-    try {
-        const decryptedData = newebpayService.verifyAndDecryptMpgData(TradeInfo, TradeSha);
-
-        if (!decryptedData || !decryptedData.Result) { // 增加對 decryptedData.Result 的檢查
-            console.error(`[MPG Notify] Failed to verify, decrypt, or parse data, or Result object missing. Decrypted data:`, decryptedData);
-            return res.status(400).send('MPG notification verification/decryption failed or malformed.');
-        }
-
-        // **修正點：從 decryptedData.Result 中獲取 MerchantOrderNo**
-        const merchantOrderNo = decryptedData.Result.MerchantOrderNo;
-
-        // 在獲取 merchantOrderNo 之後再打印，這樣就不會是 undefined 了
-        console.log(`[MPG Notify] Decrypted Data for MerchantOrderNo ${merchantOrderNo}:`, decryptedData);
-
-        if (!merchantOrderNo) { // 再次檢查 merchantOrderNo 是否真的獲取到了
-            console.error('[MPG Notify] MerchantOrderNo is missing from decrypted Result object.');
-            return res.status(400).send('MPG notification processing error: MerchantOrderNo missing in Result.');
-        }
-
-        await admin.firestore().runTransaction(async (transaction) => {
-            const currentOrderDocRef = admin.firestore().collection('orders').doc(merchantOrderNo); // 現在 merchantOrderNo 應該有值了
-            const currentOrderSnap = await transaction.get(currentOrderDocRef);
-
-            // ... (後續的 transaction 邏輯保持不變)
-            if (!currentOrderSnap.exists) {
-                console.warn(`[MPG Notify Transaction] Order ${merchantOrderNo} not found.`);
-                return;
-            }
-            const currentOrderData = currentOrderSnap.data();
-            if (currentOrderData.status !== 'PENDING_PAYMENT') {
-                console.warn(`[MPG Notify Transaction] Order ${merchantOrderNo} status is not PENDING_PAYMENT: ${currentOrderData.status}.`);
-                return;
-            }
-
-            const isPaymentSuccess = decryptedData.Status === 'SUCCESS' && decryptedData.Result?.TradeStatus === '1';
-            if (isPaymentSuccess) {
-                transaction.update(currentOrderDocRef, {
-                    status: 'PAID',
-                    gatewayTradeNo: decryptedData.Result?.TradeNo,
-                    paymentType: decryptedData.Result?.PaymentType,
-                    payTime: decryptedData.Result?.PayTime ? admin.firestore.Timestamp.fromDate(new Date(decryptedData.Result.PayTime.replace(/\//g, '-'))) : admin.firestore.FieldValue.serverTimestamp(),
-                    notifyDataRaw: JSON.stringify(req.body),
-                    notifyDataDecrypted: decryptedData,
-                    updatedAt: admin.firestore.FieldValue.serverTimestamp()
-                });
-
-                const { userId, itemId, itemType, billingCycle } = currentOrderData;
-                const userRef = admin.firestore().collection('users').doc(userId);
-
-                if (itemType === 'package') {
-                    const pkg = commerceConfig.creditPackages.find(p => p.id === itemId);
-                    if (pkg) {
-                        await creditService.addUserCreditsInTransaction(
-                            transaction, userRef, userId, pkg.credits,
-                            `${CREDIT_PURPOSES.PURCHASE_CREDITS_PKG_PREFIX}${itemId}`,
-                            { description: `購買 ${pkg.credits} 點積分包 (${itemId})`, relatedId: merchantOrderNo }
-                        );
-                    }
-                } else if (itemType === 'plan') { // MPG 支付的年付訂閱
-                    // const planConfig = subscriptionProducts[itemId.toLowerCase()]; // 已在 updateUserSubscriptionInTransaction 內部獲取
-                    // if (planConfig) { // 檢查也移到內部
-                    await userService.updateUserSubscriptionInTransaction(
-                        transaction, userId, itemId, billingCycle,
-                        merchantOrderNo, true
-                    );
-                    console.log(`[MPG Notify TX] Updated user ${userId} subscription to ${itemId} (${billingCycle}).`);
-                    // }
-                }
-            } else {
-                transaction.update(currentOrderDocRef, {
-                    status: 'FAILED',
-                    gatewayMessage: decryptedData.Message,
-                    gatewayResult: decryptedData.Result || null,
-                    notifyDataRaw: JSON.stringify(req.body),
-                    notifyDataDecrypted: decryptedData,
-                    updatedAt: admin.firestore.FieldValue.serverTimestamp()
-                });
-            }
-        }); // End of Firestore Transaction
-
-        return res.status(200).send('SUCCESS');
-
-    } catch (error) {
-        // 在 catch 之前，嘗試獲取 merchantOrderNo 以便日誌記錄
-        let orderNoForLog = req.body.MerchantOrderNo; // 來自原始請求 (如果 TradeInfo 解密失敗)
-        if (!orderNoForLog && typeof req.body.TradeInfo === 'string') { // 嘗試從 TradeInfo 內部獲取 (如果解密失敗前能拿到)
-            try {
-                const tempDecrypted = newebpayService.verifyAndDecryptMpgData(req.body.TradeInfo, req.body.TradeSha);
-                if (tempDecrypted && tempDecrypted.Result) {
-                    orderNoForLog = tempDecrypted.Result.MerchantOrderNo;
-                }
-            } catch (e) { /* ignore */ }
-        }
-        console.error(`[MPG Notify] Error processing MPG notification for MerchantOrderNo ${orderNoForLog || 'Unknown'}:`, error);
-        return res.status(500).send('Internal Server Error');
-    }
-}
 
 export async function handleGeneralNotifyController(req, res, next) {
     console.log('[PaymentController] Received General Notify Request (via /notify/general):', req.body);
