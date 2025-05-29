@@ -282,15 +282,13 @@ export async function handleMpgNotifyController(req, res, next) {
                         //    4c. transaction.set(creditTransactionRef, ...)
 
                         // **解決方案：重構 `creditService.addUserCreditsInTransaction` 使其不再自己 `get` userDoc，而是接收 `userData`**
+                        const purchaseDescription = `購買 ${pkg.displayName || `${pkg.credits}點積分`} (${itemId})`;
                         await creditService.addUserCreditsInTransaction(
-                            transaction,
-                            userRef,
-                            userId,
-                            pkg.credits,
-                            `${CREDIT_PURPOSES.PURCHASE_CREDITS_PKG_PREFIX}${itemId}`,
-                            { description: `購買 ${pkg.credits} 點積分包 (${itemId})`, relatedId: merchantOrderNo },
-                            userSnap // <--- 傳入已讀取的 userSnap，讓 service 內部使用它而不是重新 get
+                            transaction, userRef, userId, pkg.credits,
+                            `${CREDIT_PURPOSES.PURCHASE_CREDITS_PKG_PREFIX}${itemId}`, // purpose 保持英文標識符
+                            { description: purchaseDescription, relatedId: merchantOrderNo } // description 使用中文
                         );
+                        console.log(`[MPG Notify Transaction] Granted ${pkg.credits} credits to user ${userId} for package ${itemId}. Description: "${purchaseDescription}"`);
                     }
                 } else if (itemType === 'plan') { // MPG 支付的年付訂閱
                     await userService.updateUserSubscriptionInTransaction(
