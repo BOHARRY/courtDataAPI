@@ -90,15 +90,25 @@ export function verifyAndDecryptMpgData(encryptedTradeInfo, receivedTradeSha) {
 
     try {
         const decryptedString = aesDecrypt(encryptedTradeInfo, NEWEBPAY_HASH_KEY, NEWEBPAY_HASH_IV);
-        // 將查詢字串轉為物件
-        const params = {};
-        new URLSearchParams(decryptedString).forEach((value, key) => {
-            params[key] = value;
-        });
-        return params;
+        
+        // **修正點：假設解密後是 JSON 字串**
+        console.log('[NewebpayService DEBUG] Decrypted TradeInfo string:', decryptedString); // 打印原始解密字串
+        const decryptedObject = JSON.parse(decryptedString);
+        
+        // 檢查 Status 是否存在，以判斷是否成功解析為預期結構
+        if (typeof decryptedObject.Status === 'undefined' || typeof decryptedObject.Result === 'undefined') {
+            console.error('[NewebpayService] MPG Decrypted data is not in expected JSON format (missing Status or Result). String was:', decryptedString);
+            // 如果不是預期的JSON，可以嘗試按查詢字串解析作為備用方案 (但通常一個API格式是固定的)
+            // 或者直接返回 null
+            return null;
+        }
+        return decryptedObject;
 
     } catch (error) {
-        console.error('[NewebpayService] MPG AES decryption failed:', error);
+        console.error('[NewebpayService] MPG AES decryption or JSON parse failed:', error);
+        // 打印原始解密字串以便調試
+        // const rawDecryptedStringForDebug = aesDecrypt(encryptedTradeInfo, NEWEBPAY_HASH_KEY, NEWEBPAY_HASH_IV);
+        // console.error('[NewebpayService DEBUG] Raw decrypted string on error:', rawDecryptedStringForDebug);
         return null;
     }
 }
