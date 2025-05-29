@@ -518,3 +518,29 @@ export async function handleGeneralNotifyController(req, res, next) {
         return res.status(200).send('SUCCESS_RECEIVED_UNKNOWN_AT_GENERAL');
     }
 }
+
+// **新增或補全 handleGeneralReturnController 的實現與導出**
+export async function handleGeneralReturnController(req, res, next) {
+    console.log('[PaymentController] Received General Return Request (via /return/general):', req.body);
+    // 判斷是 MPG 還是 Period 的返回數據
+    // MPG 返回的 body 中會有 TradeInfo 和 TradeSha
+    // Period 返回的 body 中只有 Period
+    if (req.body.TradeInfo && req.body.TradeSha) {
+        console.log('[General Return] Detected MPG-like return data, forwarding to handleMpgReturnController.');
+        return handleMpgReturnController(req, res, next); // 轉發給 MPG 的 Return 處理器
+    } else if (req.body.Period) {
+        console.log('[General Return] Detected Period-like return data, forwarding to handlePeriodReturnController.');
+        return handlePeriodReturnController(req, res, next); // 轉發給 Period 的 Return 處理器
+    } else {
+        console.warn('[General Return] Unknown return data format received:', req.body);
+        // 如果格式未知，可以重定向到一個通用的前端錯誤頁面或首頁
+        const queryParams = new URLSearchParams({
+            status: 'error',
+            message: encodeURIComponent('收到未知的支付返回格式，請稍後查詢您的訂單狀態或聯繫客服。'),
+            paymentMethod: 'unknown_return'
+        }).toString();
+        // APP_BASE_URL 需要從 environment.js 引入
+        // import { APP_BASE_URL } from '../config/environment.js';
+        return res.redirect(`${APP_BASE_URL}/payment-result?${queryParams}`);
+    }
+}
