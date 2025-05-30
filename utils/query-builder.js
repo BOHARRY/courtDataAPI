@@ -6,7 +6,7 @@ import { CRIMINAL_KEYWORDS_TITLE, CIVIL_KEYWORDS_TITLE } from './constants.js';
  * @param {object} filters - 從請求查詢參數中獲取的篩選條件對象。
  * @returns {object} Elasticsearch 查詢的 bool query 部分。
  */
-export function buildEsQuery(filters = {}) { // 給予預設值以防 filters 未定義
+export function buildEsQuery(filters = {}) {
   const {
     query,
     caseTypes,
@@ -24,12 +24,12 @@ export function buildEsQuery(filters = {}) { // 給予預設值以防 filters �
   } = filters;
 
   const must = [];
-  const filter = []; // 注意：ES 中的 filter context 不計算評分，適合精確匹配
+  const filter = [];
 
+  // 關鍵字查詢
   if (query) {
     if (query.startsWith('"') && query.endsWith('"')) {
       const exactPhrase = query.slice(1, -1);
-      // console.log("精確匹配查詢:", exactPhrase); // 開發時調試用
       must.push({
         bool: {
           should: [
@@ -55,64 +55,69 @@ export function buildEsQuery(filters = {}) { // 給予預設值以防 filters �
             'tags',
             'lawyers^4',
             'lawyers.raw^8',
-            'winlawyers^4', // 注意: winlawyers 的準確性可能不高
+            'winlawyers^4',
             'judges^4',
             'judges.raw^8'
           ],
-          type: 'best_fields', // 'cross_fields' 或 'phrase' 可能在某些情況下更好
-          operator: 'and'    // 'and' 表示所有詞項都需匹配 (在其中一個欄位)
+          type: 'best_fields',
+          operator: 'and'
         }
       });
     }
   }
 
+  // 案件類型篩選 - 處理陣列格式
   if (caseTypes) {
     const typesArray = Array.isArray(caseTypes) ? caseTypes : caseTypes.split(',');
     if (typesArray.length > 0) {
-      filter.push({ terms: { 'case_type.keyword': typesArray } }); // 建議使用 .keyword 精確匹配
+      // 使用 terms 查詢來匹配陣列欄位
+      filter.push({
+        terms: {
+          'case_type.keyword': typesArray
+        }
+      });
     }
   }
 
+  // 判決結果篩選 - 使用實際資料的 verdict_type
   if (verdict && verdict !== '不指定') {
-    filter.push({ term: { 'verdict.keyword': verdict } }); // 建議使用 .keyword
+    // 使用 match 查詢以支援部分匹配
+    filter.push({
+      match: {
+        'verdict_type': verdict
+      }
+    });
   }
 
+  // 法條篩選
   if (laws) {
     const lawsArray = Array.isArray(laws) ? laws : laws.split(',');
     lawsArray.forEach(law => {
-      if (law.trim()) { // 避免空字串
-        must.push({ match: { 'legal_basis': law.trim() } }); // legal_basis 通常是 text 類型
+      if (law.trim()) {
+        must.push({ match: { 'legal_basis': law.trim() } });
       }
     });
   }
 
+  // 法院篩選 - 使用實際法院名稱
   if (courtLevels) {
-    const levels = Array.isArray(courtLevels) ? courtLevels : courtLevels.split(',');
-    const courtShouldClauses = [];
-    levels.forEach(level => {
-      if (level.trim()) {
-        // 這裡的匹配邏輯可以根據您的 ES mapping 調整
-        // 如果 court 欄位是 text 且分詞，match_phrase 可能適用
-        // 如果是 keyword，則應該用 term 或 terms
-        if (level === '地方法院') {
-          courtShouldClauses.push({ match_phrase: { court: '簡易' } });
-          courtShouldClauses.push({ match_phrase: { court: '地方法' } });
-        } else if (level === '高等法院') {
-          courtShouldClauses.push({ match_phrase: { court: '高等' } });
-        } else if (level === '最高法院') {
-          courtShouldClauses.push({ match_phrase: { court: '最高' } });
-        } else if (level === '智慧財產及商業法院') {
-          courtShouldClauses.push({ match_phrase: { court: '智慧財產' } });
-          // 如果有"商業法庭"，也可能需要加入
+    const courtsArray = Array.isArray(courtLevels) ? courtLevels : courtLevels.split(',');
+    if (courtsArray.length > 0) {
+      // 直接使用法院名稱進行匹配
+      filter.push({
+        bool: {
+          should: courtsArray.map(court => ({
+            match_phrase: {
+              'court': court
+            }
+          })),
+          minimum_should_match: 1
         }
-        // 可以考慮用 terms query 匹配 'court.keyword' 如果有該欄位
-      }
-    });
-    if (courtShouldClauses.length > 0) {
-      filter.push({ bool: { should: courtShouldClauses, minimum_should_match: 1 } });
+      });
     }
   }
 
+  // 金額範圍篩選
   if (minAmount || maxAmount) {
     const rangeQuery = {};
     if (minAmount !== undefined && minAmount !== null && minAmount !== '') {
@@ -124,69 +129,82 @@ export function buildEsQuery(filters = {}) { // 給予預設值以防 filters �
       if (!isNaN(parsedMax)) rangeQuery.lte = parsedMax;
     }
     if (Object.keys(rangeQuery).length > 0) {
-      filter.push({ range: { 'compensation_claimed': rangeQuery } }); // 假設欄位名
+      // 注意：需要確認 ES 中是否有金額相關欄位
+      filter.push({ range: { 'compensation_claimed': rangeQuery } });
     }
   }
 
+  // 判決理由強度篩選
   if (reasoningStrength && reasoningStrength !== '不指定') {
-    filter.push({ term: { 'outcome_reasoning_strength.keyword': reasoningStrength } }); // 假設有 .keyword
+    filter.push({ term: { 'outcome_reasoning_strength.keyword': reasoningStrength } });
   }
 
+  // 案件複雜度篩選
   if (complexity && complexity !== '不指定') {
     let minScore, maxScore;
-    if (complexity.includes('簡單')) { minScore = 1; maxScore = 3; } // 調整範圍
-    else if (complexity.includes('普通')) { minScore = 4; maxScore = 6; }
-    else if (complexity.includes('複雜')) { minScore = 7; maxScore = 9; } // 假設 SCORE 範圍是 1-9
+    if (complexity.includes('簡單')) {
+      minScore = 1;
+      maxScore = 2;
+    } else if (complexity.includes('普通')) {
+      minScore = 3;
+      maxScore = 5;
+    } else if (complexity.includes('複雜')) {
+      minScore = 6;
+      maxScore = 9;
+    }
 
     if (minScore !== undefined && maxScore !== undefined) {
       filter.push({ range: { 'SCORE': { gte: minScore, lte: maxScore } } });
     }
   }
 
+  // 勝訴理由篩選
   if (winReasons) {
     const reasonsArray = Array.isArray(winReasons) ? winReasons : winReasons.split(',');
     if (reasonsArray.length > 0) {
-      // main_reasons_ai 可能是 text 類型，用 match
-      // 如果是 tags 類型（keyword array），用 terms
-      must.push({ terms: { 'main_reasons_ai.keyword': reasonsArray.map(r => r.trim()).filter(r => r) } });
+      must.push({
+        terms: {
+          'main_reasons_ai.keyword': reasonsArray.map(r => r.trim()).filter(r => r)
+        }
+      });
     }
   }
 
+  // 進階篩選：只顯示包含判決全文
   if (onlyWithFullText === 'true' || onlyWithFullText === true) {
     filter.push({ exists: { field: 'JFULL' } });
   }
 
+  // 進階篩選：包含引用判例
   if (includeCitedCases === 'true' || includeCitedCases === true) {
-    // 確保至少有一個引用，或者 cited_cases_count 大於 0
     must.push({
       bool: {
         should: [
-          { exists: { field: 'citations' } }, // 假設 citations 是個陣列或物件
-          { range: { 'cited_cases_count': { gte: 1 } } } // 假設有這個計數欄位
+          { exists: { field: 'citations' } },
+          { range: { 'citations_count': { gte: 1 } } }
         ],
         minimum_should_match: 1
       }
     });
   }
 
+  // 進階篩選：近三年判決
   if (onlyRecent3Years === 'true' || onlyRecent3Years === true) {
     const threeYearsAgo = new Date();
     threeYearsAgo.setFullYear(threeYearsAgo.getFullYear() - 3);
-    // 構建 YYYYMMDD 格式的字串
-    const dateStr =
-      `${threeYearsAgo.getFullYear()}${("0" + (threeYearsAgo.getMonth() + 1)).slice(-2)}${("0" + threeYearsAgo.getDate()).slice(-2)}`;
-
-    // 對 keyword 類型的 YYYYMMDD 字串使用 range 查詢
+    const dateStr = `${threeYearsAgo.getFullYear()}${String(threeYearsAgo.getMonth() + 1).padStart(2, '0')}${String(threeYearsAgo.getDate()).padStart(2, '0')}`;
+    
     filter.push({ range: { 'JDATE': { gte: dateStr } } });
   }
 
+  // 構建最終查詢
   const esQueryBody = { bool: {} };
   if (must.length > 0) esQueryBody.bool.must = must;
-  if (filter.length > 0) esQueryBody.bool.filter = filter; // 使用 filter context
+  if (filter.length > 0) esQueryBody.bool.filter = filter;
 
-  // 如果 must 和 filter 都為空，可以返回 match_all，或者讓調用者處理
-  if (must.length === 0 && filter.length === 0 && !query) { // 如果連 query 都沒有
-    return { match_all: {} }; // 如果沒有任何篩選，則匹配所有文件
+  // 如果沒有任何條件，返回 match_all
+  if (must.length === 0 && filter.length === 0) {
+    return { match_all: {} };
   }
 
   return esQueryBody;
