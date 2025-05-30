@@ -150,6 +150,14 @@ export async function getAvailableFilters() {
             field: 'outcome_reasoning_strength',  // 不加 .keyword
             size: 10
           }
+        },
+        // 新增：初始的判決理由選項
+        win_reasons: {
+          terms: {
+            field: 'main_reasons_ai.keyword',
+            size: 30,  // 顯示前 30 個最常見的
+            order: { _count: 'desc' }
+          }
         }
       }
     });
@@ -167,6 +175,7 @@ export async function getAvailableFilters() {
       courtNames: aggs?.court_names?.buckets.map(b => b.key) || [],
       verdicts: aggs?.verdicts?.buckets.map(b => b.key) || [],
       reasoningStrengths: aggs?.reasoning_strengths?.buckets.map(b => b.key) || [],
+      winReasons: aggs?.win_reasons?.buckets || []  // 新增
     };
 
     console.log('[Search Service] Filters data retrieved:', filters);
