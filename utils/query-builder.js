@@ -164,7 +164,7 @@ export function buildEsQuery(filters = {}) {
     if (reasonsArray.length > 0) {
       must.push({
         terms: {
-          'main_reasons_ai.keyword': reasonsArray.map(r => r.trim()).filter(r => r)
+          'main_reasons_ai.tags': reasonsArray.map(r => r.trim()).filter(r => r)
         }
       });
     }

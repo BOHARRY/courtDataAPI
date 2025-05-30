@@ -26,7 +26,7 @@ export async function performSearch(searchFilters, page, pageSize) {
         // 主要勝訴理由聚合
         win_reasons: {
           terms: {
-            field: 'main_reasons_ai.keyword',
+            field: 'main_reasons_ai.tags',
             size: 20,
             order: { _count: 'desc' }
           }
@@ -154,7 +154,7 @@ export async function getAvailableFilters() {
         // 新增：初始的判決理由選項
         win_reasons: {
           terms: {
-            field: 'main_reasons_ai.keyword',
+            field: 'main_reasons_ai.tags',
             size: 30,  // 顯示前 30 個最常見的
             order: { _count: 'desc' }
           }
