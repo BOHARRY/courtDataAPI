@@ -128,9 +128,16 @@ export function buildEsQuery(filters = {}) {
       const parsedMax = parseInt(maxAmount, 10);
       if (!isNaN(parsedMax)) rangeQuery.lte = parsedMax;
     }
+
     if (Object.keys(rangeQuery).length > 0) {
-      // 注意：需要確認 ES 中是否有金額相關欄位
-      filter.push({ range: { 'compensation_claimed': rangeQuery } });
+      filter.push({
+        nested: {
+          path: "lawyerperformance",
+          query: {
+            range: { "lawyerperformance.claim_amount": rangeQuery }
+          }
+        }
+      });
     }
   }
 
@@ -193,7 +200,7 @@ export function buildEsQuery(filters = {}) {
     const threeYearsAgo = new Date();
     threeYearsAgo.setFullYear(threeYearsAgo.getFullYear() - 3);
     const dateStr = `${threeYearsAgo.getFullYear()}${String(threeYearsAgo.getMonth() + 1).padStart(2, '0')}${String(threeYearsAgo.getDate()).padStart(2, '0')}`;
-    
+
     filter.push({ range: { 'JDATE': { gte: dateStr } } });
   }
 
