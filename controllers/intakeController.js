@@ -1,16 +1,12 @@
-// controllers/intakeController.js
+// controllers/intakeController.js (升級版)
 
 import { handleChat } from '../services/intakeService.js';
 
-/**
- * AI 接待聊天室的控制器
- */
 async function chatController(req, res, next) {
   try {
-    // 從請求的 body 中獲取對話歷史
-    const { conversationHistory } = req.body;
+    // 這次我們從 request body 接收對話歷史和「目前的案件資訊」
+    const { conversationHistory, caseInfo } = req.body;
 
-    // 基本的輸入驗證
     if (!Array.isArray(conversationHistory) || conversationHistory.length === 0) {
       return res.status(400).json({
         status: 'failed',
@@ -18,18 +14,30 @@ async function chatController(req, res, next) {
       });
     }
 
-    // 呼叫核心服務來處理對話
-    const assistantResponse = await handleChat(conversationHistory);
+    // 呼叫我們的核心服務
+    const structuredResponse = await handleChat(conversationHistory);
 
-    // 回傳成功的結果
+    // --- 記憶功能的雛形 ---
+    // 在這裡，我們可以根據 structuredResponse.analysis 來更新 caseInfo
+    // 為了今天能快速看到效果，我們先簡單地將分析結果直接回傳
+    const updatedCaseInfo = {
+        ...caseInfo, // 保留舊的資訊
+        lastAnalysis: structuredResponse.analysis, // 存入最新的分析
+        // 簡易更新案件類型
+        caseType: (caseInfo && caseInfo.caseType) ? caseInfo.caseType : structuredResponse.analysis.caseType,
+    };
+    // ----------------------
+
+    // 回傳 AI 的回覆，以及更新後的案件資訊
     res.status(200).json({
       status: 'success',
-      response: assistantResponse,
+      response: structuredResponse.response, // 這是要顯示給用戶的句子
+      updatedCaseInfo: updatedCaseInfo, // 這是更新後的記憶，前端下次請求要再傳回來
+      rawAnalysis: structuredResponse.analysis, // 也可以選擇傳回原始分析供前端除錯
     });
 
   } catch (error) {
     console.error('Error in chatController:', error);
-    // 將錯誤傳遞給 Express 的錯誤處理中介軟體
     next(error);
   }
 }
