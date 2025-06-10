@@ -43,7 +43,7 @@ async function handleChat(domainConfig, conversationHistory, caseInfo = {}) {
         ];
 
         const response = await openai.chat.completions.create({
-            model: 'gpt-4.1-mini', // 注意：您的代碼中使用的是 gpt-4.1，我這裡修正為與 README 一致的 gpt-4o 或更新的模型
+            model: 'gpt-4.1', // 注意：您的代碼中使用的是 gpt-4.1，我這裡修正為與 README 一致的 gpt-4o 或更新的模型
             messages: messages,
             response_format: { type: "json_object" },
             temperature: 0.7,
