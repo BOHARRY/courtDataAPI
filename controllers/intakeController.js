@@ -18,11 +18,21 @@ async function chatController(req, res, next) {
 
     // --- 核心記憶更新邏輯 ---
     const updatedCaseInfo = updateMemory(caseInfo, structuredResponse.analysis, conversationHistory.slice(-1)[0].content);
-    // ----------------------
+    // 檢查 AI 回傳的對話狀態
+    const conversationState = structuredResponse.conversationState || 'collecting';
+
+    // --- 在這裡，未來可以根據 'completed' 狀態觸發其他動作 ---
+    if (conversationState === 'completed') {
+        console.log(`對話完成，準備轉交律師。Session ID: ${req.user ? req.user.uid : 'N/A'}`);
+        // 例如：可以觸發一個異步任務，將 caseInfo 存入 Firestore 的待辦案件列表
+        // await createPendingCase(updatedCaseInfo);
+    }
+    // ----------------------------------------------------------------
 
     res.status(200).json({
       status: 'success',
       response: structuredResponse.response,
+      conversationState: conversationState,
       updatedCaseInfo: updatedCaseInfo,
     });
 
