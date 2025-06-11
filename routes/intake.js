@@ -8,7 +8,7 @@ import { verifyToken } from '../middleware/auth.js'; // 假設這是您的身份
 
 const router = express.Router();
 
-router.get('/sessions', requireAuth, listSessionsController);
+router.get('/sessions', verifyToken, listSessionsController);
 router.post('/new', verifyToken, newSessionController);
 
 /**
