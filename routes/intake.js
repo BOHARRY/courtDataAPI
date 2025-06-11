@@ -1,15 +1,12 @@
 // routes/intake.js
 
 import express from 'express';
-import { chatController, sessionController } from '../controllers/intakeController.js';
+import { chatController, listSessionsController,sessionController,newSessionController } from '../controllers/intakeController.js';
 import { verifyToken } from '../middleware/auth.js'; // 假設這是您的身份驗證中介軟體
 // 根據 README，我們有一個 auth middleware，可以先準備好
 // import { requireAuth } from '../middleware/auth.js'; 
 
 const router = express.Router();
-
-router.get('/sessions', verifyToken, listSessionsController);
-router.post('/new', verifyToken, newSessionController);
 
 /**
  * @route   POST /api/intake/chat
@@ -17,10 +14,8 @@ router.post('/new', verifyToken, newSessionController);
  * @access  Private (未來應加上 verifyToken)
  */
 router.post('/session', sessionController);
-router.post(
-  '/chat',
-  // verifyToken, // 為了快速測試，我們先註解掉身份驗證
-  chatController
-);
+router.post('/chat', chatController);
+router.get('/sessions', listSessionsController); // 拿掉 requireAuth
+router.post('/new', newSessionController);     // 拿掉 requireAuth
 
 export default router;

@@ -10,8 +10,11 @@ import { getOrCreateSession, updateSession, listSessionsByUser, forceCreateNewSe
 export async function listSessionsController(req, res, next) {
     try {
         // 我們需要身份驗證來獲取 userId
-        const userId = req.user.uid; // 假設 auth middleware 會將 user 資訊放在 req.user
-        const sessions = await listSessionsByUser(userId);
+        const { anonymousUserId } = req.query; 
+        if (!anonymousUserId) {
+            return res.status(400).json({ status: 'failed', message: '缺少 anonymousUserId。' });
+        }
+        const sessions = await listSessionsByUser(anonymousUserId);
         res.status(200).json({ status: 'success', sessions });
     } catch (error) {
         console.error('Error in listSessionsController:', error);
@@ -24,8 +27,11 @@ export async function listSessionsController(req, res, next) {
  */
 export async function newSessionController(req, res, next) {
     try {
-        const userId = req.user.uid;
-        const newSession = await forceCreateNewSession(userId);
+        const { anonymousUserId } = req.body;
+        if (!anonymousUserId) {
+            return res.status(400).json({ status: 'failed', message: '缺少 anonymousUserId。' });
+        }
+        const newSession = await forceCreateNewSession(anonymousUserId);
         res.status(201).json({ status: 'success', ...newSession });
     } catch (error) {
         console.error('Error in newSessionController:', error);
@@ -38,8 +44,8 @@ export async function newSessionController(req, res, next) {
  */
 export async function sessionController(req, res, next) {
     try {
-        const { sessionId } = req.body;
-        const session = await getOrCreateSession(sessionId);
+        const { anonymousUserId, sessionId } = req.body;
+        const session = await getOrCreateSession(anonymousUserId, sessionId);
         res.status(200).json(session);
     } catch (error) {
         console.error('Error in sessionController:', error);

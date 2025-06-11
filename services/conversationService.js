@@ -9,39 +9,25 @@ const db = admin.firestore();
 const sessionsCollection = db.collection('intake_sessions');
 
 /**
- * 獲取或創建一個對話 Session。
- * @param {string|null} sessionId - 從前端傳來的 Session ID。
- * @returns {Promise<Object>} - 包含 sessionId 和 sessionData 的物件。
+ * 獲取或創建一個對話 Session，並確保匿名使用者ID存在。
+ * @param {string|null} anonymousUserId - 從前端傳來的匿名用戶ID。
+ * @param {string|null} sessionId - 從前端傳來的對話ID。
+ * @returns {Promise<Object>}
  */
-export async function getOrCreateSession(sessionId) {
+export async function getOrCreateSession(anonymousUserId, sessionId) {
+    const finalUserId = anonymousUserId || uuidv4(); // 如果沒有匿名ID，就創建一個
+
     if (sessionId) {
         const docRef = sessionsCollection.doc(sessionId);
         const docSnap = await docRef.get();
-        
-        if (docSnap.exists) {
-            console.log(`Session found: ${sessionId}`);
-            return { sessionId, sessionData: docSnap.data() };
+        if (docSnap.exists() && docSnap.data().anonymousUserId === finalUserId) {
+            console.log(`Session found for anonymous user: ${sessionId}`);
+            return { anonymousUserId: finalUserId, sessionId, sessionData: docSnap.data() };
         }
     }
-    
-    // 如果 sessionId 不存在或在資料庫中找不到，則創建一個新的
-    const newSessionId = uuidv4();
-    console.log(`Creating new session: ${newSessionId}`);
-    
-    const newSessionData = {
-        sessionId: newSessionId,
-        caseInfo: {},
-        conversationHistory: [
-            { role: 'assistant', content: '您好！我是法握，您的AI法律諮詢助理。請問您遇到什麼法律問題呢？我會一步步協助您釐清狀況。' }
-        ],
-        status: 'in_progress',
-        createdAt: new Date(),
-        updatedAt: new Date(),
-    };
-    
-    await sessionsCollection.doc(newSessionId).set(newSessionData);
-    
-    return { sessionId: newSessionId, sessionData: newSessionData };
+
+    // 如果 sessionId 不存在或不屬於該匿名用戶，則為他創建一個新的 Session
+    return await forceCreateNewSession(finalUserId);
 }
 
 /**
@@ -51,7 +37,7 @@ export async function getOrCreateSession(sessionId) {
  */
 export async function updateSession(sessionId, updatedData) {
     if (!sessionId) return;
-    
+
     const docRef = sessionsCollection.doc(sessionId);
     await docRef.update({
         caseInfo: updatedData.updatedCaseInfo,
@@ -63,27 +49,21 @@ export async function updateSession(sessionId, updatedData) {
 }
 
 /**
- * 新增：根據使用者ID，列出其所有對話 Session。
- * @param {string} userId - 使用者的唯一ID (來自 Firebase Auth)。
- * @returns {Promise<Array<Object>>} - Session 列表，包含關鍵摘要資訊。
+ * 根據匿名使用者ID，列出其所有對話 Session。
+ * @param {string} anonymousUserId
+ * @returns {Promise<Array<Object>>}
  */
-export async function listSessionsByUser(userId) {
-    if (!userId) {
-        throw new Error("User ID is required to list sessions.");
-    }
-    
-    // 根據 lawyerId 或 userId 進行查詢
-    // 假設我們在 Session 中儲存了 userId
+export async function listSessionsByUser(anonymousUserId) {
+    if (!anonymousUserId) return []; // 如果沒有ID，就返回空列表
+
     const snapshot = await sessionsCollection
-        .where('userId', '==', userId)
-        .orderBy('updatedAt', 'desc') // 按最近更新時間排序
-        .limit(20) // 最多取最近 20 筆
+        .where('anonymousUserId', '==', anonymousUserId)
+        .orderBy('updatedAt', 'desc')
+        .limit(20)
         .get();
 
-    if (snapshot.empty) {
-        return [];
-    }
-    
+    if (snapshot.empty) return [];
+
     // 只返回前端列表需要的摘要資訊，避免傳輸過多數據
     const sessions = snapshot.docs.map(doc => {
         const data = doc.data();
@@ -99,25 +79,25 @@ export async function listSessionsByUser(userId) {
             updatedAt: data.updatedAt.toDate().toLocaleString('zh-TW'),
         };
     });
-    
+
     return sessions;
 }
 
 /**
- * 新增：強制創建一個新的對話 Session。
- * @param {string} userId - 使用者的唯一ID。
- * @returns {Promise<Object>} - 新創建的 Session 的完整資料。
+ * 強制創建一個新的對話 Session，並關聯到匿名使用者ID。
+ * @param {string} anonymousUserId
+ * @returns {Promise<Object>}
  */
-export async function forceCreateNewSession(userId) {
+export async function forceCreateNewSession(anonymousUserId) {
     const newSessionId = uuidv4();
-    console.log(`Force creating new session for user ${userId}: ${newSessionId}`);
+    console.log(`Force creating new session for anonymous user ${anonymousUserId}: ${newSessionId}`);
     
     const newSessionData = {
         sessionId: newSessionId,
-        userId: userId, // 關聯使用者
+        anonymousUserId: anonymousUserId, // <--- 關鍵：關聯匿名ID
         caseInfo: {},
         conversationHistory: [
-            { role: 'assistant', content: '您好！我是法握，您的AI法律諮詢助理。這是一個全新的案件諮詢，請問這次您遇到了什麼問題呢？' }
+            { role: 'assistant', content: '您好！我是法握。這是一個全新的案件諮詢，請問這次您遇到了什麼問題呢？' }
         ],
         status: 'in_progress',
         createdAt: new Date(),
@@ -126,5 +106,5 @@ export async function forceCreateNewSession(userId) {
     
     await sessionsCollection.doc(newSessionId).set(newSessionData);
     
-    return { sessionId: newSessionId, sessionData: newSessionData };
+    return { anonymousUserId, sessionId: newSessionId, sessionData: newSessionData };
 }
