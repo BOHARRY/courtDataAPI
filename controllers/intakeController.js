@@ -2,6 +2,20 @@
 
 import { handleChat } from '../services/intakeService.js';
 import { lawDomainConfig } from '../config/intakeDomainConfig.js'; // 引入我們未來的設定檔
+import { getOrCreateSession, updateSession } from '../services/conversationService.js';
+/**
+ * 新增：Session 控制器
+ */
+export async function sessionController(req, res, next) {
+    try {
+        const { sessionId } = req.body;
+        const session = await getOrCreateSession(sessionId);
+        res.status(200).json(session);
+    } catch (error) {
+        console.error('Error in sessionController:', error);
+        next(error);
+    }
+}
 
 /**
  * 核心對話控制器
@@ -9,7 +23,11 @@ import { lawDomainConfig } from '../config/intakeDomainConfig.js'; // 引入我�
  */
 async function chatController(req, res, next) {
   try {
-    const { conversationHistory, caseInfo } = req.body;
+    const { sessionId, conversationHistory, caseInfo } = req.body;
+
+    if (!sessionId) {
+        return res.status(400).json({ status: 'failed', message: '缺少 sessionId。' });
+    }
     
     // 1. 載入領域設定 (目前寫死為法律領域，未來可根據需求動態載入)
     const domainConfig = lawDomainConfig;
@@ -53,6 +71,13 @@ async function chatController(req, res, next) {
     if (conversationState === 'completed') {
         console.log(`對話完成，準備轉交律師。最終案件資訊:`, JSON.stringify(updatedCaseInfo, null, 2));
     }
+
+    // 關鍵一步：在回傳給前端之前，將最新的狀態存入資料庫
+    await updateSession(sessionId, {
+        updatedCaseInfo: updatedCaseInfo,
+        conversationHistory: conversationHistory,
+        conversationState: conversationState
+    });
 
     // 8. 回傳成功的結果給前端
     res.status(200).json({
