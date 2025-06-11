@@ -1,7 +1,6 @@
 // routes/intake.js
 
 import express from 'express';
-import { chatController } from '../controllers/intakeController.js';
 import { chatController, sessionController } from '../controllers/intakeController.js';
 // 根據 README，我們有一個 auth middleware，可以先準備好
 // import { requireAuth } from '../middleware/auth.js'; 
