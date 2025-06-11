@@ -1,10 +1,11 @@
 // controllers/intakeController.js
 
 import { handleChat } from '../services/intakeService.js';
-import { lawDomainConfig } from '../config/intakeDomainConfig.js'; // 引入我們未來的設定檔
+import { lawDomainConfig } from '../config/intakeDomainConfig.js';
 import { getOrCreateSession, updateSession } from '../services/conversationService.js';
+
 /**
- * 新增：Session 控制器
+ * Session 控制器：處理對話的初始化與恢復
  */
 export async function sessionController(req, res, next) {
     try {
@@ -18,78 +19,54 @@ export async function sessionController(req, res, next) {
 }
 
 /**
- * 核心對話控制器
- * 協調整個 AI 對話的請求、處理、狀態更新與回應流程。
+ * 核心對話控制器 (升級版，使用 Session)
  */
-async function chatController(req, res, next) {
+export async function chatController(req, res, next) {
   try {
     const { sessionId, conversationHistory, caseInfo } = req.body;
-
+    
     if (!sessionId) {
         return res.status(400).json({ status: 'failed', message: '缺少 sessionId。' });
     }
-    
-    // 1. 載入領域設定 (目前寫死為法律領域，未來可根據需求動態載入)
-    const domainConfig = lawDomainConfig;
 
-    // 2. 基本輸入驗證
-    if (!Array.isArray(conversationHistory) || conversationHistory.length === 0) {
-      return res.status(400).json({
-        status: 'failed',
-        message: '請求格式錯誤，需要提供 conversationHistory 陣列。'
-      });
-    }
+    const domainConfig = lawDomainConfig;
     
-    // 3. 呼叫核心服務，獲取 AI 的結構化回應
-    // 我們將 caseInfo 傳遞給服務層，服務層會處理好所有與 Prompt 相關的邏輯
     const structuredResponse = await handleChat(domainConfig, conversationHistory, caseInfo);
 
-    // 4. 根據 AI 回應和舊的 caseInfo，更新案件的「事實」資訊
-    const factUpdatedCaseInfo = updateFacts(
-      domainConfig, 
-      caseInfo, 
-      structuredResponse.analysis, 
-      conversationHistory.slice(-1)[0].content
-    );
-
-    // 5. 使用狀態機，根據當前階段和 AI 分析，決定「下一階段」
+    const factUpdatedCaseInfo = updateFacts(domainConfig, caseInfo, structuredResponse.analysis, conversationHistory.slice(-1)[0].content);
+    
     const currentStage = (caseInfo && caseInfo.dialogueStage) || 'greeting';
-    const nextStage = determineNextStage(
-      currentStage, 
-      structuredResponse.analysis
-    );
+    const nextStage = determineNextStage(currentStage, structuredResponse.analysis);
 
-    // 6. 組合出最終要回傳給前端的、完整的案件資訊物件
     const updatedCaseInfo = {
         ...factUpdatedCaseInfo,
         dialogueStage: nextStage,
-        lastAnalysis: structuredResponse.analysis // 儲存本次分析以供除錯或未來使用
+        lastAnalysis: structuredResponse.analysis
     };
     
-    // 7. 檢查對話是否結束，並在後端留下紀錄
     const conversationState = structuredResponse.conversationState || 'collecting';
+
+    // 在回傳給前端之前，異步更新資料庫
+    updateSession(sessionId, {
+        updatedCaseInfo: updatedCaseInfo,
+        conversationHistory: [...conversationHistory, { role: 'assistant', content: structuredResponse.response }],
+        conversationState: conversationState
+    }).catch(err => console.error("Failed to update session in background:", err)); // 即使更新失敗也不要阻塞回應
+
     if (conversationState === 'completed') {
-        console.log(`對話完成，準備轉交律師。最終案件資訊:`, JSON.stringify(updatedCaseInfo, null, 2));
+        console.log(`對話完成，準備轉交律師。SessionID: ${sessionId}`);
     }
 
-    // 關鍵一步：在回傳給前端之前，將最新的狀態存入資料庫
-    await updateSession(sessionId, {
-        updatedCaseInfo: updatedCaseInfo,
-        conversationHistory: conversationHistory,
-        conversationState: conversationState
-    });
-
-    // 8. 回傳成功的結果給前端
     res.status(200).json({
       status: 'success',
-      response: structuredResponse.response, // 給使用者看的下一句話
-      conversationState: conversationState,   // 當前對話狀態
-      updatedCaseInfo: updatedCaseInfo,       // 更新後的完整案件資訊
+      response: structuredResponse.response,
+      conversationState: conversationState,
+      updatedCaseInfo: updatedCaseInfo,
     });
 
   } catch (error) {
     console.error('Error in chatController:', error);
-    next(error); // 將錯誤傳遞給 Express 的統一錯誤處理中介軟體
+    next(error);
   }
 }
 
