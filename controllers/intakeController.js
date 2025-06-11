@@ -145,5 +145,3 @@ function updateFacts(domainConfig, oldCaseInfo, analysis, userLastUtterance) {
     
     return newCaseInfo;
 }
-
-export { chatController };
