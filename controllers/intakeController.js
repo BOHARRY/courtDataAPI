@@ -1,18 +1,125 @@
-// controllers/intakeController.js
+// controllers/intakeController.js (改進版本)
 
 import { handleChat } from '../services/intakeService.js';
 import { lawDomainConfig } from '../config/intakeDomainConfig.js';
-import { getOrCreateSession, updateSession, listSessionsByUser, forceCreateNewSession } from '../services/conversationService.js';
+import { 
+    getExistingSession, 
+    updateSession, 
+    listSessionsByUser, 
+    createSessionOnFirstMessage,
+    prepareNewSession 
+} from '../services/conversationService.js';
 
 /**
- * 新增：列出使用者的歷史案件控制器
+ * Session 控制器：只獲取現有 session，不自動創建
+ */
+export async function sessionController(req, res, next) {
+    try {
+        const { anonymousUserId, sessionId } = req.body;
+        const session = await getExistingSession(anonymousUserId, sessionId);
+        res.status(200).json(session);
+    } catch (error) {
+        console.error('Error in sessionController:', error);
+        next(error);
+    }
+}
+
+/**
+ * 核心對話控制器 - 支援延遲創建 Session
+ */
+export async function chatController(req, res, next) {
+    try {
+        const { sessionId, conversationHistory, caseInfo, anonymousUserId, isFirstMessage } = req.body;
+        
+        let actualSessionId = sessionId;
+        let actualConversationHistory = conversationHistory;
+        
+        // 如果是第一則訊息且沒有 sessionId，創建新的 session
+        if (isFirstMessage && !sessionId) {
+            const userMessage = conversationHistory[conversationHistory.length - 1].content;
+            const newSession = await createSessionOnFirstMessage(anonymousUserId, userMessage);
+            actualSessionId = newSession.sessionId;
+            actualConversationHistory = newSession.sessionData.conversationHistory;
+        }
+        
+        if (!actualSessionId) {
+            return res.status(400).json({ 
+                status: 'failed', 
+                message: '需要有效的 sessionId 或是第一則訊息' 
+            });
+        }
+
+        const domainConfig = lawDomainConfig;
+        
+        // 使用 AI 處理對話
+        const structuredResponse = await handleChat(
+            domainConfig, 
+            actualConversationHistory, 
+            caseInfo
+        );
+
+        // 更新案件資訊
+        const factUpdatedCaseInfo = updateFacts(
+            domainConfig, 
+            caseInfo, 
+            structuredResponse.analysis, 
+            actualConversationHistory[actualConversationHistory.length - 1].content
+        );
+        
+        const currentStage = (caseInfo && caseInfo.dialogueStage) || 'greeting';
+        const nextStage = determineNextStage(currentStage, structuredResponse.analysis);
+
+        const updatedCaseInfo = {
+            ...factUpdatedCaseInfo,
+            dialogueStage: nextStage,
+            lastAnalysis: structuredResponse.analysis
+        };
+        
+        const conversationState = structuredResponse.conversationState || 'collecting';
+
+        // 更新對話歷史（加入 AI 回應）
+        const updatedConversationHistory = [
+            ...actualConversationHistory, 
+            { role: 'assistant', content: structuredResponse.response }
+        ];
+
+        // 異步更新資料庫
+        updateSession(actualSessionId, {
+            updatedCaseInfo: updatedCaseInfo,
+            conversationHistory: updatedConversationHistory,
+            conversationState: conversationState
+        }).catch(err => console.error("Failed to update session:", err));
+
+        if (conversationState === 'completed') {
+            console.log(`對話完成，準備轉交律師。SessionID: ${actualSessionId}`);
+        }
+
+        res.status(200).json({
+            status: 'success',
+            sessionId: actualSessionId, // 返回實際的 sessionId
+            response: structuredResponse.response,
+            conversationState: conversationState,
+            updatedCaseInfo: updatedCaseInfo,
+            isNewSession: isFirstMessage && !sessionId
+        });
+
+    } catch (error) {
+        console.error('Error in chatController:', error);
+        next(error);
+    }
+}
+
+/**
+ * 列出使用者的歷史案件控制器
  */
 export async function listSessionsController(req, res, next) {
     try {
-        // 我們需要身份驗證來獲取 userId
         const { anonymousUserId } = req.query; 
         if (!anonymousUserId) {
-            return res.status(400).json({ status: 'failed', message: '缺少 anonymousUserId。' });
+            return res.status(400).json({ 
+                status: 'failed', 
+                message: '缺少 anonymousUserId。' 
+            });
         }
         const sessions = await listSessionsByUser(anonymousUserId);
         res.status(200).json({ status: 'success', sessions });
@@ -23,86 +130,23 @@ export async function listSessionsController(req, res, next) {
 }
 
 /**
- * 新增：強制開新案件控制器
+ * 準備新案件控制器（不會真正創建到資料庫）
  */
 export async function newSessionController(req, res, next) {
     try {
         const { anonymousUserId } = req.body;
         if (!anonymousUserId) {
-            return res.status(400).json({ status: 'failed', message: '缺少 anonymousUserId。' });
+            return res.status(400).json({ 
+                status: 'failed', 
+                message: '缺少 anonymousUserId。' 
+            });
         }
-        const newSession = await forceCreateNewSession(anonymousUserId);
-        res.status(201).json({ status: 'success', ...newSession });
+        const newSession = await prepareNewSession(anonymousUserId);
+        res.status(200).json({ status: 'success', ...newSession });
     } catch (error) {
         console.error('Error in newSessionController:', error);
         next(error);
     }
-}
-
-/**
- * Session 控制器：處理對話的初始化與恢復
- */
-export async function sessionController(req, res, next) {
-    try {
-        const { anonymousUserId, sessionId } = req.body;
-        const session = await getOrCreateSession(anonymousUserId, sessionId);
-        res.status(200).json(session);
-    } catch (error) {
-        console.error('Error in sessionController:', error);
-        next(error);
-    }
-}
-
-/**
- * 核心對話控制器 (升級版，使用 Session)
- */
-export async function chatController(req, res, next) {
-  try {
-    const { sessionId, conversationHistory, caseInfo } = req.body;
-    
-    if (!sessionId) {
-        return res.status(400).json({ status: 'failed', message: '缺少 sessionId。' });
-    }
-
-    const domainConfig = lawDomainConfig;
-    
-    const structuredResponse = await handleChat(domainConfig, conversationHistory, caseInfo);
-
-    const factUpdatedCaseInfo = updateFacts(domainConfig, caseInfo, structuredResponse.analysis, conversationHistory.slice(-1)[0].content);
-    
-    const currentStage = (caseInfo && caseInfo.dialogueStage) || 'greeting';
-    const nextStage = determineNextStage(currentStage, structuredResponse.analysis);
-
-    const updatedCaseInfo = {
-        ...factUpdatedCaseInfo,
-        dialogueStage: nextStage,
-        lastAnalysis: structuredResponse.analysis
-    };
-    
-    const conversationState = structuredResponse.conversationState || 'collecting';
-
-    // 在回傳給前端之前，異步更新資料庫
-    updateSession(sessionId, {
-        updatedCaseInfo: updatedCaseInfo,
-        conversationHistory: [...conversationHistory, { role: 'assistant', content: structuredResponse.response }],
-        conversationState: conversationState
-    }).catch(err => console.error("Failed to update session in background:", err)); // 即使更新失敗也不要阻塞回應
-
-    if (conversationState === 'completed') {
-        console.log(`對話完成，準備轉交律師。SessionID: ${sessionId}`);
-    }
-
-    res.status(200).json({
-      status: 'success',
-      response: structuredResponse.response,
-      conversationState: conversationState,
-      updatedCaseInfo: updatedCaseInfo,
-    });
-
-  } catch (error) {
-    console.error('Error in chatController:', error);
-    next(error);
-  }
 }
 
 /**
