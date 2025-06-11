@@ -1,7 +1,11 @@
-// services/conversationService.js
-import { db } from '../config/firebase.js'; // 假設您有一個 firebase 初始化檔案
+// services/conversationService.js (正確的最終版)
+
+import admin from 'firebase-admin'; // 直接從套件引入 admin
 import { v4 as uuidv4 } from 'uuid'; // 用來生成新的 Session ID
 
+// 因為我們在 index.js 中已經確保了 Firebase 被初始化，
+// 所以在這裡，我們可以安全地、直接地呼叫 admin.firestore() 來獲取 db 實例。
+const db = admin.firestore();
 const sessionsCollection = db.collection('intake_sessions');
 
 /**
@@ -28,7 +32,6 @@ export async function getOrCreateSession(sessionId) {
         sessionId: newSessionId,
         caseInfo: {},
         conversationHistory: [
-            // 由後端發出第一句問候，確保體驗一致
             { role: 'assistant', content: '您好！我是法握，您的AI法律諮詢助理。請問您遇到什麼法律問題呢？我會一步步協助您釐清狀況。' }
         ],
         status: 'in_progress',
