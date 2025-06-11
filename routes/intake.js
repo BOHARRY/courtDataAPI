@@ -2,10 +2,14 @@
 
 import express from 'express';
 import { chatController, sessionController } from '../controllers/intakeController.js';
+import { requireAuth } from '../middleware/auth.js'; // 假設這是您的身份驗證中介軟體
 // 根據 README，我們有一個 auth middleware，可以先準備好
 // import { requireAuth } from '../middleware/auth.js'; 
 
 const router = express.Router();
+
+router.get('/sessions', requireAuth, listSessionsController);
+router.post('/new', requireAuth, newSessionController);
 
 /**
  * @route   POST /api/intake/chat

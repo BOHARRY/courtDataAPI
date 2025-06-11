@@ -2,7 +2,36 @@
 
 import { handleChat } from '../services/intakeService.js';
 import { lawDomainConfig } from '../config/intakeDomainConfig.js';
-import { getOrCreateSession, updateSession } from '../services/conversationService.js';
+import { getOrCreateSession, updateSession, listSessionsByUser, forceCreateNewSession } from '../services/conversationService.js';
+
+/**
+ * 新增：列出使用者的歷史案件控制器
+ */
+export async function listSessionsController(req, res, next) {
+    try {
+        // 我們需要身份驗證來獲取 userId
+        const userId = req.user.uid; // 假設 auth middleware 會將 user 資訊放在 req.user
+        const sessions = await listSessionsByUser(userId);
+        res.status(200).json({ status: 'success', sessions });
+    } catch (error) {
+        console.error('Error in listSessionsController:', error);
+        next(error);
+    }
+}
+
+/**
+ * 新增：強制開新案件控制器
+ */
+export async function newSessionController(req, res, next) {
+    try {
+        const userId = req.user.uid;
+        const newSession = await forceCreateNewSession(userId);
+        res.status(201).json({ status: 'success', ...newSession });
+    } catch (error) {
+        console.error('Error in newSessionController:', error);
+        next(error);
+    }
+}
 
 /**
  * Session 控制器：處理對話的初始化與恢復

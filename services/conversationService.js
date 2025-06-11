@@ -61,3 +61,70 @@ export async function updateSession(sessionId, updatedData) {
     });
     console.log(`Session updated: ${sessionId}`);
 }
+
+/**
+ * 新增：根據使用者ID，列出其所有對話 Session。
+ * @param {string} userId - 使用者的唯一ID (來自 Firebase Auth)。
+ * @returns {Promise<Array<Object>>} - Session 列表，包含關鍵摘要資訊。
+ */
+export async function listSessionsByUser(userId) {
+    if (!userId) {
+        throw new Error("User ID is required to list sessions.");
+    }
+    
+    // 根據 lawyerId 或 userId 進行查詢
+    // 假設我們在 Session 中儲存了 userId
+    const snapshot = await sessionsCollection
+        .where('userId', '==', userId)
+        .orderBy('updatedAt', 'desc') // 按最近更新時間排序
+        .limit(20) // 最多取最近 20 筆
+        .get();
+
+    if (snapshot.empty) {
+        return [];
+    }
+    
+    // 只返回前端列表需要的摘要資訊，避免傳輸過多數據
+    const sessions = snapshot.docs.map(doc => {
+        const data = doc.data();
+        const lastUserMessage = data.conversationHistory
+            .filter(msg => msg.role === 'user')
+            .pop();
+
+        return {
+            sessionId: data.sessionId,
+            caseType: data.caseInfo.caseType || '未分類案件',
+            lastMessage: lastUserMessage ? lastUserMessage.content.substring(0, 30) + '...' : '尚未開始對話',
+            status: data.status,
+            updatedAt: data.updatedAt.toDate().toLocaleString('zh-TW'),
+        };
+    });
+    
+    return sessions;
+}
+
+/**
+ * 新增：強制創建一個新的對話 Session。
+ * @param {string} userId - 使用者的唯一ID。
+ * @returns {Promise<Object>} - 新創建的 Session 的完整資料。
+ */
+export async function forceCreateNewSession(userId) {
+    const newSessionId = uuidv4();
+    console.log(`Force creating new session for user ${userId}: ${newSessionId}`);
+    
+    const newSessionData = {
+        sessionId: newSessionId,
+        userId: userId, // 關聯使用者
+        caseInfo: {},
+        conversationHistory: [
+            { role: 'assistant', content: '您好！我是法握，您的AI法律諮詢助理。這是一個全新的案件諮詢，請問這次您遇到了什麼問題呢？' }
+        ],
+        status: 'in_progress',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+    };
+    
+    await sessionsCollection.doc(newSessionId).set(newSessionData);
+    
+    return { sessionId: newSessionId, sessionData: newSessionData };
+}
