@@ -85,16 +85,28 @@ router.post('/return', async (req, res) => {
       });
     }
     
-    // 處理 302 重定向
+    // 處理 302 重定向 - ezShip 使用重定向回傳結果
     if (response.status === 302 || response.status === 301) {
       const location = response.headers.location;
       console.log('收到重定向，目標：', location);
       
-      return res.status(400).json({
-        error: 'API 請求被重定向',
-        redirect_to: location,
-        message: '可能需要登入或設定不正確'
-      });
+      // 解析重定向 URL 中的參數
+      const url = new URL(location);
+      const params = new URLSearchParams(url.search);
+      
+      const result = {
+        order_id: params.get('order_id'),
+        sn_id: params.get('sn_id'),
+        order_status: params.get('order_status'),
+        webPara: params.get('webPara'),
+        http_code: response.status,
+        timestamp: new Date().toISOString()
+      };
+      
+      console.log('從重定向 URL 解析的結果：', result);
+      
+      // 這是 ezShip 的正常回應方式，直接回傳結果
+      return res.json(result);
     }
     
     // 嘗試解析 API 回應
