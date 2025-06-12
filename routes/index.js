@@ -12,6 +12,7 @@ import platformStatusRoutes from './platformStatusRoutes.js';
 import contactRoutes from './contactRoutes.js';
 import paymentRoutes from './payment.js';
 import intakeRoutes from './intake.js';
+import ezshipRoutes from './ezship.js'; // 新增這行
 
 const router = express.Router();
 
@@ -28,6 +29,7 @@ router.use('/platform-status', platformStatusRoutes); // 新增掛載平台狀�
 router.use('/contact', contactRoutes);
 router.use('/payment', paymentRoutes);
 router.use('/intake', intakeRoutes); 
+router.use('/ezship', ezshipRoutes); // 新增這行
 
 // 可以有一個根路由 /api 的健康檢查或歡迎訊息
 router.get('/', (req, res) => {
