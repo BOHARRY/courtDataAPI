@@ -1,4 +1,3 @@
-//這是EZSHIP拿來退換貨的代理路由，和律師工具無關，測試用的
 // routes/ezship.js
 import express from 'express';
 import axios from 'axios';
@@ -31,48 +30,105 @@ router.post('/return', async (req, res) => {
       });
     }
     
-    // 準備表單資料
-    const params = new URLSearchParams();
-    params.append('su_id', su_id);
-    params.append('order_id', order_id);
-    params.append('order_amount', order_amount);
+    // 準備表單資料 - 確保正確的格式
+    const formData = `su_id=${encodeURIComponent(su_id)}&order_id=${encodeURIComponent(order_id)}&order_amount=${encodeURIComponent(order_amount)}`;
     
     console.log('發送請求到 ezShip API...');
+    console.log('表單資料：', formData);
     
     // 發送請求到 ezShip
-    const response = await axios.post(EZSHIP_API_URL, params, {
+    const response = await axios({
+      method: 'POST',
+      url: EZSHIP_API_URL,
+      data: formData,
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
-        'User-Agent': 'Mozilla/5.0 (compatible; ezShip-Proxy/1.0)'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': '*/*',
+        'Accept-Language': 'zh-TW,zh;q=0.9,en;q=0.8',
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache'
       },
-      maxRedirects: 5,  // 自動處理重定向
+      maxRedirects: 0,  // 不自動重定向
       timeout: 30000,
-      validateStatus: function (status) {
-        return status >= 200 && status < 500; // 接受所有 2xx, 3xx, 4xx 狀態碼
-      }
+      validateStatus: (status) => true, // 接受所有狀態碼
+      responseType: 'text',
+      responseEncoding: 'binary' // 保留原始編碼
     });
     
     console.log('ezShip 回應狀態：', response.status);
-    console.log('ezShip 原始回應：', response.data);
+    console.log('ezShip 回應 headers：', response.headers);
     
-    // 解析回應
+    // 嘗試偵測並轉換編碼
+    let responseText = response.data;
+    
+    // 檢查是否為 HTML（錯誤情況）
+    if (responseText.includes('<HTML>') || responseText.includes('<html>') || 
+        responseText.includes('<!DOCTYPE') || responseText.includes('meta http-equiv')) {
+      
+      console.error('收到 HTML 回應而非 API 回應');
+      
+      // 提供診斷資訊
+      return res.status(400).json({
+        error: 'ezShip API 錯誤',
+        message: '收到網頁回應而非 API 資料',
+        diagnostic: {
+          status: response.status,
+          headers: response.headers,
+          suggestion: [
+            '1. 請確認 su_id 是否為正確的 ezShip 商家帳號',
+            '2. 確認該帳號是否已開通 API 串接權限',
+            '3. 可能需要先在 ezShip 後台進行相關設定',
+            '4. 請參考 ezShip 文件確認 API 端點是否正確'
+          ]
+        }
+      });
+    }
+    
+    // 處理 302 重定向
+    if (response.status === 302 || response.status === 301) {
+      const location = response.headers.location;
+      console.log('收到重定向，目標：', location);
+      
+      return res.status(400).json({
+        error: 'API 請求被重定向',
+        redirect_to: location,
+        message: '可能需要登入或設定不正確'
+      });
+    }
+    
+    // 嘗試解析 API 回應
     let result = {};
-    const responseData = response.data;
     
-    if (typeof responseData === 'string' && responseData.includes('=')) {
-      // 解析 key=value&key=value 格式
-      const pairs = responseData.split('&');
+    // 檢查是否為 key=value 格式
+    if (responseText.includes('=') && responseText.includes('&')) {
+      console.log('解析 key=value 格式回應...');
+      const pairs = responseText.split('&');
       pairs.forEach(pair => {
         const [key, value] = pair.split('=');
         if (key && value) {
-          result[key] = decodeURIComponent(value);
+          // 解碼 URL 編碼的值
+          result[key] = decodeURIComponent(value.trim());
         }
       });
-    } else if (typeof responseData === 'object') {
-      result = responseData;
-    } else {
-      // 如果無法解析，返回原始資料
-      result = { raw_response: responseData };
+    } else if (responseText.trim().startsWith('{')) {
+      // 嘗試 JSON 解析
+      try {
+        result = JSON.parse(responseText);
+      } catch (e) {
+        console.log('JSON 解析失敗');
+      }
+    }
+    
+    // 如果沒有解析出 order_status，可能格式有問題
+    if (!result.order_status) {
+      console.log('無法解析出 order_status，原始回應：', responseText.substring(0, 200));
+      
+      return res.status(400).json({
+        error: '回應格式無法解析',
+        raw_response: responseText.substring(0, 500),
+        message: '請聯繫 ezShip 技術支援確認 API 格式'
+      });
     }
     
     // 加入額外資訊
@@ -87,29 +143,35 @@ router.post('/return', async (req, res) => {
   } catch (error) {
     console.error('ezShip 代理錯誤：', error);
     
-    // 處理 axios 錯誤
-    if (error.response) {
-      // ezShip 伺服器回應了錯誤狀態
-      res.status(error.response.status).json({
-        error: 'ezShip API 錯誤',
-        message: error.message,
-        ezship_response: error.response.data,
-        status: error.response.status
-      });
-    } else if (error.request) {
-      // 請求已發送但沒有收到回應
-      res.status(504).json({
+    // 處理網路錯誤
+    if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT') {
+      return res.status(504).json({
         error: '無法連接到 ezShip 伺服器',
-        message: '請求超時或網路錯誤'
-      });
-    } else {
-      // 其他錯誤
-      res.status(500).json({
-        error: '代理伺服器內部錯誤',
-        message: error.message
+        code: error.code,
+        message: '網路連線錯誤或 ezShip 伺服器無回應'
       });
     }
+    
+    // 其他錯誤
+    res.status(500).json({
+      error: '代理伺服器內部錯誤',
+      message: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
+});
+
+// GET /api/ezship/test - 測試端點
+router.get('/test', (req, res) => {
+  res.json({
+    message: 'ezShip 代理服務運作正常',
+    endpoints: {
+      return: '/api/ezship/return',
+      health: '/api/ezship/health'
+    },
+    required_params: ['su_id', 'order_id', 'order_amount'],
+    api_url: EZSHIP_API_URL
+  });
 });
 
 // GET /api/ezship/health - 健康檢查
