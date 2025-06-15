@@ -57,20 +57,26 @@ export async function performSearch(searchFilters, page, pageSize) {
         }
       },
       highlight: {
+        pre_tags: ["<em class='search-highlight'>"], // 使用 class 以便於 CSS 美化
+        post_tags: ["</em>"],
         fields: {
-          "JFULL": {
-            fragment_size: 60,
-            number_of_fragments: 2,
-            pre_tags: ["<em>"],
-            post_tags: ["</em>"]
+          // 對 JFULL.cjk 和 JTITLE.cjk 進行高亮
+          "JFULL.cjk": {
+            fragment_size: 100, // 每個片段的長度
+            number_of_fragments: 3, // 最多返回 3 個片段
+            no_match_size: 120 // 如果沒有匹配，從頭截取 120 字元作為摘要
           },
-          "summary_ai": {
+          "JTITLE.cjk": {
+            number_of_fragments: 0 // 對標題返回完整的高亮內容
+          },
+          "summary_ai.cjk": {
             fragment_size: 150,
             number_of_fragments: 1,
-            pre_tags: ["<em>"],
-            post_tags: ["</em>"]
+            no_match_size: 150
           }
-        }
+        },
+        // 核心修正：使用主查詢來生成高亮
+        highlight_query: esQueryBody
       },
       sort: [
         { '_score': 'desc' },
