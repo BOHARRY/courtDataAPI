@@ -54,10 +54,10 @@ export function buildEsQuery(filters = {}) {
             'JTITLE',
             'tags',
             'lawyers^4',
-            'lawyers.raw^8',
+            'lawyers.exact^8',
             'winlawyers^4',
             'judges^4',
-            'judges.raw^8'
+            'judges.exact^8'
           ],
           type: 'best_fields',
           operator: 'and'
@@ -73,7 +73,7 @@ export function buildEsQuery(filters = {}) {
       // 使用 terms 查詢來匹配陣列欄位
       filter.push({
         terms: {
-          'case_type.keyword': typesArray
+          'case_type': typesArray
         }
       });
     }
@@ -83,7 +83,7 @@ export function buildEsQuery(filters = {}) {
   if (verdict && verdict !== '不指定') {
     // 使用 match 查詢以支援部分匹配
     filter.push({
-      match: {
+      terms: {
         'verdict_type': verdict
       }
     });
@@ -143,7 +143,7 @@ export function buildEsQuery(filters = {}) {
 
   // 判決理由強度篩選
   if (reasoningStrength && reasoningStrength !== '不指定') {
-    filter.push({ term: { 'outcome_reasoning_strength.keyword': reasoningStrength } });
+    filter.push({ term: { 'outcome_reasoning_strength': reasoningStrength } });
   }
 
   // 案件複雜度篩選
