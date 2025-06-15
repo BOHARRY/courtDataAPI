@@ -48,16 +48,16 @@ export function buildEsQuery(filters = {}) {
         multi_match: {
           query,
           fields: [
-            'JFULL^3',
-            'summary_ai^2',
-            'main_reasons_ai^2',
-            'JTITLE',
-            'tags',
-            'lawyers^4',
-            'lawyers.exact^8',
-            'winlawyers^4',
-            'judges^4',
-            'judges.exact^8'
+            "JFULL.cjk^3",                 // 使用中文分詞搜尋全文
+            "JTITLE.cjk^4",                // 提高標題的中文分詞權重
+            "summary_ai.cjk^2",            // 使用中文分詞搜尋 AI 摘要
+            "main_reasons_ai^2",           // 保持原樣
+            "tags^1.5",                    // 保持原樣或略微提高權重
+            "lawyers.exact^8",             // 律師姓名精確匹配 (已修正)
+            "judges.exact^8",              // 法官姓名精確匹配 (已修正)
+            "lawyers.edge_ngram^2",        // 增加律師姓名前綴匹配，可輸入「羅翠」找到「羅翠慧」
+            "judges.edge_ngram^2",         // 增加法官姓名前綴匹配
+
           ],
           type: 'best_fields',
           operator: 'and'
@@ -94,7 +94,7 @@ export function buildEsQuery(filters = {}) {
     const lawsArray = Array.isArray(laws) ? laws : laws.split(',');
     lawsArray.forEach(law => {
       if (law.trim()) {
-        must.push({ match: { 'legal_basis': law.trim() } });
+        filter.push({ term: { 'legal_basis': law.trim() } });
       }
     });
   }
@@ -169,7 +169,7 @@ export function buildEsQuery(filters = {}) {
   if (winReasons) {
     const reasonsArray = Array.isArray(winReasons) ? winReasons : winReasons.split(',');
     if (reasonsArray.length > 0) {
-      must.push({
+      filter.push({
         terms: {
           'main_reasons_ai.tags': reasonsArray.map(r => r.trim()).filter(r => r)
         }
