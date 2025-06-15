@@ -1,5 +1,76 @@
 // utils/query-builder.js
 import { CRIMINAL_KEYWORDS_TITLE, CIVIL_KEYWORDS_TITLE } from './constants.js';
+/**
+ * 解析查詢字串，生成對應的查詢子句陣列。
+ * @param {string} query - 原始查詢字串。
+ * @returns {{mustClauses: object[], shouldClauses: object[]}} - 解析後的 must 和 should 子句。
+ */
+function parseQueryString(query) {
+  const mustClauses = [];
+  const shouldClauses = [];
+
+  // 1. 檢測 OR 邏輯
+  const orRegex = /\s*(\|\||OR)\s*/i; // 匹配 || 或 OR (不分大小寫)
+  if (orRegex.test(query)) {
+    const terms = query.split(orRegex).filter(t => t && !orRegex.test(t));
+    terms.forEach(term => {
+      shouldClauses.push(buildSubQuery(term.trim()));
+    });
+    return { mustClauses, shouldClauses };
+  }
+
+  // 2. 檢測 AND 邏輯 (預設)
+  const andRegex = /\s*(\+|&| )\s*/; // 匹配 +, &, 或空格
+  const terms = query.split(andRegex).filter(t => t && !andRegex.test(t));
+  terms.forEach(term => {
+    mustClauses.push(buildSubQuery(term.trim()));
+  });
+
+  return { mustClauses, shouldClauses };
+}
+
+/**
+ * 為單一關鍵詞或詞組構建 ES 查詢子句。
+ * @param {string} term - 單一查詢詞，例如 "漏水" 或 ""不當得利""。
+ * @returns {object} - 一個 bool query 物件。
+ */
+function buildSubQuery(term) {
+  // 檢查是否為精確詞組 (被雙引號包圍)
+  if (term.startsWith('"') && term.endsWith('"')) {
+    const exactPhrase = term.slice(1, -1);
+    // 對於精確詞組，我們使用 match_phrase
+    return {
+      bool: {
+        should: [
+          { match_phrase: { "JFULL.cjk": { query: exactPhrase, boost: 5.0 } } },
+          { match_phrase: { "JTITLE.cjk": { query: exactPhrase, boost: 6.0 } } },
+          { match_phrase: { "summary_ai.cjk": { query: exactPhrase, boost: 4.0 } } },
+          { match_phrase: { "main_reasons_ai": { query: exactPhrase, boost: 3.0 } } },
+          { match_phrase: { "tags": { query: exactPhrase, boost: 2.0 } } }
+        ],
+        minimum_should_match: 1
+      }
+    };
+  } else {
+    // 對於單一關鍵字，使用 match_phrase 以確保「漏水」被視為一個整體
+    // 這解決了您的第一個需求：從模糊搜索改為精準搜索
+    return {
+      bool: {
+        should: [
+          { match_phrase: { "JFULL.cjk": { query: term, boost: 3.0 } } },
+          { match_phrase: { "JTITLE.cjk": { query: term, boost: 4.0 } } },
+          { match_phrase: { "summary_ai.cjk": { query: term, boost: 2.0 } } },
+          { match_phrase: { "main_reasons_ai": { query: term, boost: 2.0 } } },
+          { match_phrase: { "tags": { query: term, boost: 1.5 } } },
+          { term: { "lawyers.exact": { value: term, boost: 8.0 } } },
+          { term: { "judges.exact": { value: term, boost: 8.0 } } },
+        ],
+        minimum_should_match: 1
+      }
+    };
+  }
+}
+
 
 /**
  * 根據提供的篩選條件構建 Elasticsearch 查詢 DSL 的 query 部分。
@@ -26,51 +97,32 @@ export function buildEsQuery(filters = {}) {
   const must = [];
   const filter = [];
 
-  // 關鍵字查詢
+  // ==================== 關鍵字查詢重構 ====================
   if (query) {
-    if (query.startsWith('"') && query.endsWith('"')) {
-      const exactPhrase = query.slice(1, -1);
+    const { mustClauses, shouldClauses } = parseQueryString(query);
+
+    if (mustClauses.length > 0) {
+      // 對於 AND 邏輯，所有子查詢都放入 must 陣列
+      must.push(...mustClauses);
+    }
+
+    if (shouldClauses.length > 0) {
+      // 對於 OR 邏輯，將所有子查詢放入一個 bool.should 塊中
       must.push({
         bool: {
-          should: [
-            { match_phrase: { "JFULL": { query: exactPhrase, boost: 5.0 } } },
-            { match_phrase: { "summary_ai": { query: exactPhrase, boost: 4.0 } } },
-            { match_phrase: { "lawyers": { query: exactPhrase, boost: 8.0 } } },
-            { match_phrase: { "judges": { query: exactPhrase, boost: 8.0 } } },
-            { match_phrase: { "plaintiff": { query: exactPhrase, boost: 3.0 } } },
-            { match_phrase: { "defendant": { query: exactPhrase, boost: 3.0 } } }
-          ],
-          minimum_should_match: 1
-        }
-      });
-    } else {
-      must.push({
-        multi_match: {
-          query,
-          fields: [
-            "JFULL.cjk^3",                 // 使用中文分詞搜尋全文
-            "JTITLE.cjk^4",                // 提高標題的中文分詞權重
-            "summary_ai.cjk^2",            // 使用中文分詞搜尋 AI 摘要
-            "main_reasons_ai^2",           // 保持原樣
-            "tags^1.5",                    // 保持原樣或略微提高權重
-            "lawyers.exact^8",             // 律師姓名精確匹配 (已修正)
-            "judges.exact^8",              // 法官姓名精確匹配 (已修正)
-            "lawyers.edge_ngram^2",        // 增加律師姓名前綴匹配，可輸入「羅翠」找到「羅翠慧」
-            "judges.edge_ngram^2",         // 增加法官姓名前綴匹配
-
-          ],
-          type: 'best_fields',
-          operator: 'and'
+          should: shouldClauses,
+          minimum_should_match: 1 // 至少匹配一個
         }
       });
     }
   }
+  // =======================================================
 
-  // 案件類型篩選 - 處理陣列格式
+
+  // 案件類型篩選 - (使用您上一輪的修正)
   if (caseTypes) {
     const typesArray = Array.isArray(caseTypes) ? caseTypes : caseTypes.split(',');
     if (typesArray.length > 0) {
-      // 使用 terms 查詢來匹配陣列欄位
       filter.push({
         terms: {
           'case_type': typesArray
@@ -79,39 +131,32 @@ export function buildEsQuery(filters = {}) {
     }
   }
 
-  // 判決結果篩選 - 使用實際資料的 verdict_type
+  // 判決結果篩選 - (使用您上一輪的修正)
   if (verdict && verdict !== '不指定') {
-    // 使用 match 查詢以支援部分匹配
     filter.push({
-      terms: {
+      term: {
         'verdict_type': verdict
       }
     });
   }
 
-  // 法條篩選
+  // 法條篩選 - (使用您上一輪的修正)
   if (laws) {
     const lawsArray = Array.isArray(laws) ? laws : laws.split(',');
-    lawsArray.forEach(law => {
-      if (law.trim()) {
-        filter.push({ term: { 'legal_basis': law.trim() } });
-      }
-    });
+    if (lawsArray.length > 0) {
+      filter.push({
+        terms: { 'legal_basis': lawsArray.map(l => l.trim()).filter(Boolean) }
+      });
+    }
   }
 
-  // 法院篩選 - 使用實際法院名稱
+  // 法院篩選
   if (courtLevels) {
     const courtsArray = Array.isArray(courtLevels) ? courtLevels : courtLevels.split(',');
     if (courtsArray.length > 0) {
-      // 直接使用法院名稱進行匹配
       filter.push({
-        bool: {
-          should: courtsArray.map(court => ({
-            match_phrase: {
-              'court': court
-            }
-          })),
-          minimum_should_match: 1
+        terms: {
+          'court.exact': courtsArray
         }
       });
     }
@@ -141,7 +186,7 @@ export function buildEsQuery(filters = {}) {
     }
   }
 
-  // 判決理由強度篩選
+  // 判決理由強度篩選 - (使用您上一輪的修正)
   if (reasoningStrength && reasoningStrength !== '不指定') {
     filter.push({ term: { 'outcome_reasoning_strength': reasoningStrength } });
   }
@@ -149,23 +194,16 @@ export function buildEsQuery(filters = {}) {
   // 案件複雜度篩選
   if (complexity && complexity !== '不指定') {
     let minScore, maxScore;
-    if (complexity.includes('簡單')) {
-      minScore = 1;
-      maxScore = 2;
-    } else if (complexity.includes('普通')) {
-      minScore = 3;
-      maxScore = 5;
-    } else if (complexity.includes('複雜')) {
-      minScore = 6;
-      maxScore = 9;
-    }
+    if (complexity.includes('簡單')) { minScore = 1; maxScore = 2; }
+    else if (complexity.includes('普通')) { minScore = 3; maxScore = 5; }
+    else if (complexity.includes('複雜')) { minScore = 6; maxScore = 9; }
 
     if (minScore !== undefined && maxScore !== undefined) {
       filter.push({ range: { 'SCORE': { gte: minScore, lte: maxScore } } });
     }
   }
 
-  // 勝訴理由篩選
+  // 勝訴理由篩選 - (使用您上一輪的修正)
   if (winReasons) {
     const reasonsArray = Array.isArray(winReasons) ? winReasons : winReasons.split(',');
     if (reasonsArray.length > 0) {
@@ -177,14 +215,12 @@ export function buildEsQuery(filters = {}) {
     }
   }
 
-  // 進階篩選：只顯示包含判決全文
+  // 進階篩選
   if (onlyWithFullText === 'true' || onlyWithFullText === true) {
     filter.push({ exists: { field: 'JFULL' } });
   }
-
-  // 進階篩選：包含引用判例
   if (includeCitedCases === 'true' || includeCitedCases === true) {
-    must.push({
+    filter.push({
       bool: {
         should: [
           { exists: { field: 'citations' } },
@@ -194,13 +230,10 @@ export function buildEsQuery(filters = {}) {
       }
     });
   }
-
-  // 進階篩選：近三年判決
   if (onlyRecent3Years === 'true' || onlyRecent3Years === true) {
     const threeYearsAgo = new Date();
     threeYearsAgo.setFullYear(threeYearsAgo.getFullYear() - 3);
     const dateStr = `${threeYearsAgo.getFullYear()}${String(threeYearsAgo.getMonth() + 1).padStart(2, '0')}${String(threeYearsAgo.getDate()).padStart(2, '0')}`;
-
     filter.push({ range: { 'JDATE': { gte: dateStr } } });
   }
 
@@ -209,7 +242,6 @@ export function buildEsQuery(filters = {}) {
   if (must.length > 0) esQueryBody.bool.must = must;
   if (filter.length > 0) esQueryBody.bool.filter = filter;
 
-  // 如果沒有任何條件，返回 match_all
   if (must.length === 0 && filter.length === 0) {
     return { match_all: {} };
   }
