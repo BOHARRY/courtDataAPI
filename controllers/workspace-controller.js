@@ -7,22 +7,27 @@ import * as workspaceService from '../services/workspace.js';
 export async function createWorkspaceController(req, res, next) {
   try {
     const userId = req.user.uid;
-    const { name, description } = req.body;
+    // ===== 核心修改點：從 req.body 中解構出 template =====
+    const { name, description, template } = req.body;
 
-    if (!name || name.trim().length === 0) {
-      return res.status(400).json({ 
-        error: 'Bad Request', 
-        message: '工作區名稱不能為空' 
+    // 名稱現在是可選的，如果提供了範本，我們可以自動生成名稱
+    const newName = name || (template?.name ? `${template.name} 的副本` : null);
+
+    if (!newName) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: '工作區名稱不能為空'
       });
     }
 
     const workspace = await workspaceService.createWorkspace(userId, {
-      name: name.trim(),
-      description: description?.trim() || ''
+      name: newName.trim(),
+      description: description?.trim() || '',
+      template: template // 將 template 物件傳遞給服務層
     });
 
     console.log(`[WorkspaceController] Created workspace ${workspace.id} for user ${userId}`);
-    
+
     res.status(201).json({
       success: true,
       workspace
@@ -45,14 +50,14 @@ export async function updateWorkspaceController(req, res, next) {
     // 驗證工作區擁有權
     const workspace = await workspaceService.getWorkspaceById(userId, workspaceId);
     if (!workspace) {
-      return res.status(404).json({ 
-        error: 'Not Found', 
-        message: '找不到指定的工作區' 
+      return res.status(404).json({
+        error: 'Not Found',
+        message: '找不到指定的工作區'
       });
     }
 
     const updated = await workspaceService.updateWorkspace(userId, workspaceId, updateData);
-    
+
     res.status(200).json({
       success: true,
       message: '工作區已更新',
@@ -97,11 +102,11 @@ export async function getWorkspaceByIdController(req, res, next) {
     const { workspaceId } = req.params;
 
     const workspace = await workspaceService.getWorkspaceById(userId, workspaceId);
-    
+
     if (!workspace) {
-      return res.status(404).json({ 
-        error: 'Not Found', 
-        message: '找不到指定的工作區' 
+      return res.status(404).json({
+        error: 'Not Found',
+        message: '找不到指定的工作區'
       });
     }
 
@@ -126,9 +131,9 @@ export async function deleteWorkspaceController(req, res, next) {
     // 檢查是否存在
     const workspace = await workspaceService.getWorkspaceById(userId, workspaceId);
     if (!workspace) {
-      return res.status(404).json({ 
-        error: 'Not Found', 
-        message: '找不到指定的工作區' 
+      return res.status(404).json({
+        error: 'Not Found',
+        message: '找不到指定的工作區'
       });
     }
 
@@ -155,9 +160,9 @@ export async function setActiveWorkspaceController(req, res, next) {
     // 驗證工作區存在
     const workspace = await workspaceService.getWorkspaceById(userId, workspaceId);
     if (!workspace) {
-      return res.status(404).json({ 
-        error: 'Not Found', 
-        message: '找不到指定的工作區' 
+      return res.status(404).json({
+        error: 'Not Found',
+        message: '找不到指定的工作區'
       });
     }
 

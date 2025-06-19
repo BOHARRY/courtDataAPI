@@ -11,28 +11,31 @@ export async function createWorkspace(userId, workspaceData) {
     const workspaceRef = db.collection('users').doc(userId).collection('workspaces').doc();
     
     const now = admin.firestore.FieldValue.serverTimestamp();
+
+    // ===== 核心修改點：檢查是否有範本資料 =====
+    const hasTemplate = workspaceData.template && typeof workspaceData.template === 'object';
+
+    const newWorkspaceName = workspaceData.name || `工作區 ${new Date().toLocaleDateString()}`;
+
     const workspace = {
       id: workspaceRef.id,
-      name: workspaceData.name,
-      description: workspaceData.description || '',
+      name: newWorkspaceName,
+      description: hasTemplate ? workspaceData.template.description || '' : workspaceData.description || '',
       createdAt: now,
       updatedAt: now,
-      lastAccessedAt: now,
+      lastAccessedAt: now, // 創建即訪問
       
-      // 初始搜尋狀態
-      searchState: null,
-      
-      // 初始分頁狀態
-      tabs: [{
+      // 使用範本資料或預設值
+      searchState: hasTemplate ? workspaceData.template.searchState || null : null,
+      tabs: hasTemplate ? workspaceData.template.tabs || [INITIAL_TABS[0]] : [{
         id: 'SEARCH_LIST',
         type: 'list',
         title: '搜尋列表',
         order: 0
       }],
+      activeTabId: hasTemplate ? workspaceData.template.activeTabId || 'SEARCH_LIST' : 'SEARCH_LIST',
       
-      activeTabId: 'SEARCH_LIST',
-      
-      // 統計資訊
+      // 統計資訊總是從零開始
       stats: {
         totalSearches: 0,
         totalJudgements: 0,
