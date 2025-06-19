@@ -38,3 +38,51 @@ export async function getJudgmentDetails(judgmentId) {
     throw serviceError; // 拋出錯誤由控制器捕獲
   }
 }
+
+/**
+ * 根據 ID 陣列批次獲取多個判決書的詳細資料。
+ * @param {Array<string>} judgmentIds - 包含多個判決書 ID 的陣列。
+ * @returns {Promise<object>} 一個以判決書 ID 為鍵，判決書內容為值的物件。
+ * @throws {Error} 如果 Elasticsearch 查詢失敗。
+ */
+export async function getJudgmentsByIds(judgmentIds) {
+  // 備註：這是我們新增的核心批次查詢函式。
+  console.log(`[Judgment Service] Batch getting details for ${judgmentIds.length} judgment IDs.`);
+  
+  // 如果傳入的陣列為空，直接返回空物件，避免不必要的 ES 查詢。
+  if (!judgmentIds || judgmentIds.length === 0) {
+    return {};
+  }
+
+  try {
+    const result = await esClient.mget({
+      index: ES_INDEX_NAME,
+      body: {
+        ids: judgmentIds
+      }
+    });
+
+    // 備註：使用 mget API 是根據多個 ID 獲取文檔最高效的方式。
+    // 它返回的 result.docs 是一個陣列，包含了每個 ID 的查詢結果。
+
+    const judgmentsMap = {};
+    if (result && result.docs) {
+      result.docs.forEach(doc => {
+        // 我們只處理成功找到的 (found: true) 文檔。
+        if (doc.found && doc._source) {
+          judgmentsMap[doc._id] = doc._source;
+        }
+      });
+    }
+
+    console.log(`[Judgment Service] Batch fetch found ${Object.keys(judgmentsMap).length} of ${judgmentIds.length} judgments.`);
+    return judgmentsMap; // 返回一個以 ID 為鍵的物件，方便前端查找。
+
+  } catch (error) {
+    console.error(`[Judgment Service] Error during batch get for judgment IDs:`, error.meta || error);
+    const serviceError = new Error('Failed to retrieve judgment details in batch.');
+    serviceError.statusCode = error.statusCode || 500;
+    serviceError.originalError = error.message;
+    throw serviceError;
+  }
+}

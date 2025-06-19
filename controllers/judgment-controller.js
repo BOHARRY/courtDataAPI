@@ -22,3 +22,34 @@ export async function getJudgmentByIdController(req, res, next) {
     next(error);
   }
 }
+
+/**
+ * 根據 ID 陣列批次獲取判決書的控制器。
+ */
+export async function getJudgmentsByIdsController(req, res, next) {
+  // 備註：這是處理 POST /batch 請求的控制器。
+  const { ids } = req.body;
+
+  // 驗證輸入
+  if (!ids || !Array.isArray(ids)) {
+    return res.status(400).json({ error: 'Bad Request', message: 'Request body must contain an "ids" array.' });
+  }
+
+  if (ids.length === 0) {
+    return res.status(200).json({}); // 如果請求空陣列，直接返回空物件。
+  }
+  
+  // 增加一個合理的請求數量上限，防止濫用。
+  if (ids.length > 100) { 
+    return res.status(400).json({ error: 'Bad Request', message: 'The number of IDs per batch request cannot exceed 100.' });
+  }
+
+  try {
+    const judgmentsData = await judgmentService.getJudgmentsByIds(ids);
+    // 備註：服務層返回的直接就是我們需要的 {id: doc} 格式。
+    res.status(200).json(judgmentsData);
+  } catch (error) {
+    // 將錯誤傳遞給全局錯誤處理器。
+    next(error);
+  }
+}
