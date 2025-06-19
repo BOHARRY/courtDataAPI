@@ -46,9 +46,24 @@ export async function createWorkspace(userId, workspaceData) {
     await setActiveWorkspace(userId, workspaceRef.id);
     
     console.log(`[WorkspaceService] Created workspace ${workspaceRef.id} for user ${userId}`);
-    
+
+    // ===== 增加一步驗證讀取（加上重試機制） =====
+    let newDoc = null;
+    let attempts = 0;
+    const maxAttempts = 3;
+    const delay = ms => new Promise(res => setTimeout(res, ms));
+    while (attempts < maxAttempts) {
+        newDoc = await workspaceRef.get();
+        if (newDoc.exists) break;
+        attempts++;
+        await delay(200);
+    }
+    if (!newDoc || !newDoc.exists) {
+        throw new Error('Failed to verify workspace creation after multiple attempts.');
+    }
+
     return {
-      ...workspace,
+      ...newDoc.data(),
       id: workspaceRef.id
     };
   } catch (error) {
