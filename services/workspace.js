@@ -84,8 +84,8 @@ export async function updateWorkspace(userId, workspaceId, updateData) {
     
     // 準備更新資料
     const updates = {
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      lastAccessedAt: admin.firestore.FieldValue.serverTimestamp()
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      // lastAccessedAt 僅在 getWorkspaceById 時更新
     };
 
     // 選擇性更新欄位
