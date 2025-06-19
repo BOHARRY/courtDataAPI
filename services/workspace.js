@@ -15,7 +15,17 @@ export async function createWorkspace(userId, workspaceData) {
     // ===== 核心修改點：檢查是否有範本資料 =====
     const hasTemplate = workspaceData.template && typeof workspaceData.template === 'object';
 
-    const newWorkspaceName = workspaceData.name || `工作區 ${new Date().toLocaleDateString()}`;
+    // 產生精簡版日期字串：2025.0619.2029
+    function getCompactDateString() {
+      const now = new Date();
+      const yyyy = now.getFullYear();
+      const mm = String(now.getMonth() + 1).padStart(2, '0');
+      const dd = String(now.getDate()).padStart(2, '0');
+      const hh = String(now.getHours()).padStart(2, '0');
+      const min = String(now.getMinutes()).padStart(2, '0');
+      return `${yyyy}.${mm}${dd}.${hh}${min}`;
+    }
+    const newWorkspaceName = workspaceData.name || `工作區 ${getCompactDateString()}`;
 
     const workspace = {
       id: workspaceRef.id,
