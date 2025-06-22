@@ -1,4 +1,4 @@
-// utils/response-formatter.js
+// utils/response-formatter.js (修正後的完整版本)
 
 /**
  * 格式化來自 Elasticsearch 的搜尋回應。
@@ -23,26 +23,20 @@ export function formatEsResponse(esResult, pageSize = 10) {
       ...source,
     };
 
-    // ========== 核心修正：正確解析高亮欄位 ==========
-    // 我們在 search.js 中請求的是 JFULL.cjk, JTITLE.cjk, summary_ai.cjk 的高亮
+    // ========== 核心修正：使用新的高亮鍵名（不含 .cjk） ==========
     
     // 處理 JFULL 的高亮匹配段落
-    if (highlight['JFULL.cjk'] && Array.isArray(highlight['JFULL.cjk'])) {
-      processedItem.JFULL_highlights = highlight['JFULL.cjk'];
-    } else {
-      processedItem.JFULL_highlights = []; // 確保此欄位永遠存在
-    }
+    // ES回傳的是一個字串陣列，直接賦值
+    processedItem.JFULL_highlights = highlight['JFULL'] || [];
 
     // 處理 JTITLE 的高亮標題
-    if (highlight['JTITLE.cjk'] && Array.isArray(highlight['JTITLE.cjk'])) {
-      processedItem.JTITLE_highlighted = highlight['JTITLE.cjk'][0];
-    }
+    // 如果有高亮，則使用高亮版本；否則，回退到原始 source 的標題
+    processedItem.JTITLE_highlighted = highlight['JTITLE']?.[0] || source.JTITLE;
 
     // 處理 summary_ai 的高亮摘要
-    if (highlight['summary_ai.cjk'] && Array.isArray(highlight['summary_ai.cjk'])) {
-      processedItem.summary_ai_highlighted = highlight['summary_ai.cjk'][0];
-    }
-    // ===============================================
+    // 如果有高亮，則使用高亮版本；否則，回退到原始 source 的摘要
+    processedItem.summary_ai_highlighted = highlight['summary_ai']?.[0] || source.summary_ai;
+    // ===============================================================
 
     return processedItem;
   });
@@ -51,12 +45,13 @@ export function formatEsResponse(esResult, pageSize = 10) {
     ? esResult.hits.total 
     : (esResult.hits.total?.value || 0);
 
+  // 同時也將後端回傳的所有聚合結果都傳給前端
+  const allAggregations = esResult.aggregations || {};
+
   return {
     total: totalResults,
     hits: hits,
     totalPages: pageSize > 0 ? Math.ceil(totalResults / pageSize) : 1,
-    aggregations: {
-      win_reasons: esResult.aggregations?.win_reasons?.buckets || []
-    }
+    aggregations: allAggregations // 將所有聚合結果傳遞下去
   };
 }
