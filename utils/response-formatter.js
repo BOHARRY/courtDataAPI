@@ -1,20 +1,4 @@
-// utils/response-formatter.js (最終版 - 使用索引映射處理髒數據)
-
-/**
- * 創建一個從“乾淨”文本（無空白）索引到原始文本索引的映射。
- * @param {string} originalText - 帶有空白符的原始文本。
- * @returns {number[]} 一個陣列，其索引是乾淨文本的索引，值是原始文本的對應索引。
- */
-function createCleanToOriginalIndexMap(originalText) {
-    const map = [];
-    const whitespaceRegex = /\s/;
-    for (let i = 0; i < originalText.length; i++) {
-        if (!whitespaceRegex.test(originalText[i])) {
-            map.push(i);
-        }
-    }
-    return map;
-}
+// utils/response-formatter.js (新思路：簡化版，只提供原材料)
 
 /**
  * 格式化來自 Elasticsearch 的搜尋回應。
@@ -32,84 +16,21 @@ export function formatEsResponse(esResult, pageSize = 10) {
     const source = hit._source || {};
     const highlight = hit.highlight || {};
 
+    // 我們的目標是將所有需要的原始數據和高亮數據都傳給前端
     const processedItem = {
       id: hit._id,
       score: hit._score,
-      ...source,
-    };
-
-    processedItem.JTITLE_highlighted = highlight['JTITLE']?.[0] || source.JTITLE;
-    processedItem.summary_ai_highlighted = highlight['summary_ai']?.[0] || source.summary_ai;
-    
-    // ========== CourtInsight 邏輯 - 使用索引映射法 ==========
-
-    const jfullText = source.JFULL || '';
-    const courtInsightsStartTag = source.CourtInsightsStart || '';
-    const courtInsightsEndTag = source.CourtInsightsEND || '';
-    
-    let insightStartIndex = -1;
-    let insightEndIndex = -1;
-
-    if (jfullText && courtInsightsStartTag && courtInsightsEndTag) {
-        try {
-            // 1. 創建一個 JFULL 的乾淨版本（移除所有空白符）
-            const cleanJfullText = jfullText.replace(/\s/g, '');
-            
-            // 2. 創建從乾淨索引到原始索引的映射
-            const indexMap = createCleanToOriginalIndexMap(jfullText);
-
-            // 3. 在乾淨的文本中定位標記
-            const cleanStartIndex = cleanJfullText.indexOf(courtInsightsStartTag);
-            
-            if (cleanStartIndex !== -1) {
-                // 4. 使用映射表將乾淨索引轉換回原始索引
-                insightStartIndex = indexMap[cleanStartIndex];
-
-                // 從起始標記之後開始尋找結束標記
-                const cleanEndIndex = cleanJfullText.indexOf(courtInsightsEndTag, cleanStartIndex + courtInsightsStartTag.length);
-
-                if (cleanEndIndex !== -1) {
-                    insightEndIndex = indexMap[cleanEndIndex];
-                }
-            }
-        } catch (e) {
-            console.error(`[Formatter] Index mapping failed for JID: ${hit._id}. Error:`, e);
-        }
-    }
-    
-    const originalHighlights = highlight['JFULL'] || [];
-    let highlightsWithInfo = originalHighlights.map(fragment => {
-      let in_court_insight = false;
+      ...source, // 包含 JFULL, CourtInsightsStart, CourtInsightsEND 等所有原始欄位
       
-      if (insightStartIndex !== -1 && insightEndIndex !== -1) {
-        const cleanFragment = fragment.replace(/<em class='search-highlight'>/g, '').replace(/<\/em>/g, '');
-        try {
-          const fragmentIndex = jfullText.indexOf(cleanFragment);
-          if (fragmentIndex !== -1 && fragmentIndex >= insightStartIndex && fragmentIndex < insightEndIndex) {
-            in_court_insight = true;
-          }
-        } catch (e) {
-          console.warn(`[Formatter] Error locating fragment for JID: ${hit._id}. Fragment: ${cleanFragment.substring(0,50)}... Error:`, e);
-        }
-      }
+      // 添加高亮欄位
+      JTITLE_highlighted: highlight['JTITLE']?.[0] || source.JTITLE,
+      summary_ai_highlighted: highlight['summary_ai']?.[0] || source.summary_ai,
       
-      return {
-        fragment: fragment,
-        in_court_insight: in_court_insight,
-      };
-    });
-
-    highlightsWithInfo.sort((a, b) => b.in_court_insight - a.in_court_insight);
-    processedItem.JFULL_highlights = highlightsWithInfo;
-
-    const totalFragments = highlightsWithInfo.length;
-    const insightFragmentsCount = highlightsWithInfo.filter(h => h.in_court_insight).length;
-    processedItem.JFULL_highlights_summary = {
-      total: totalFragments,
-      in_insight: insightFragmentsCount,
+      // JFULL_highlights 恢復為簡單的字串陣列
+      JFULL_highlights: highlight['JFULL'] || [], 
     };
-    // ======================================================
-
+    
+    // 不再進行排序和計數，這些交給前端處理
     return processedItem;
   });
 
