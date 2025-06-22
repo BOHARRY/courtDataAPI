@@ -1,26 +1,20 @@
-// utils/response-formatter.js (最終安全強化版)
-
-const MAX_TAG_LENGTH = 200; // 安全限制：標記文本的最大長度
+// utils/response-formatter.js (最終版 - 使用索引映射處理髒數據)
 
 /**
- * 將普通字串轉換為可以匹配內部任意空白的正則表達式字串。
- * @param {string} text - 原始文字。
- * @returns {RegExp|null} - 一個正則表達式物件，如果文本無效或過長則返回 null。
+ * 創建一個從“乾淨”文本（無空白）索引到原始文本索引的映射。
+ * @param {string} originalText - 帶有空白符的原始文本。
+ * @returns {number[]} 一個陣列，其索引是乾淨文本的索引，值是原始文本的對應索引。
  */
-function createSpacedRegex(text) {
-  // 安全性檢查：確保 text 是有效且長度合理的字串
-  if (!text || typeof text !== 'string' || text.length > MAX_TAG_LENGTH) {
-    return null;
-  }
-  
-  // 1. 轉義文本中的特殊正則字符，防止注入
-  const escapedText = text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  // 2. 在每個字符之間插入 \\s*
-  const spacedPattern = escapedText.split('').join('\\s*');
-  
-  return new RegExp(spacedPattern, 'i'); // 'i' 表示不區分大小寫
+function createCleanToOriginalIndexMap(originalText) {
+    const map = [];
+    const whitespaceRegex = /\s/;
+    for (let i = 0; i < originalText.length; i++) {
+        if (!whitespaceRegex.test(originalText[i])) {
+            map.push(i);
+        }
+    }
+    return map;
 }
-
 
 /**
  * 格式化來自 Elasticsearch 的搜尋回應。
@@ -47,38 +41,40 @@ export function formatEsResponse(esResult, pageSize = 10) {
     processedItem.JTITLE_highlighted = highlight['JTITLE']?.[0] || source.JTITLE;
     processedItem.summary_ai_highlighted = highlight['summary_ai']?.[0] || source.summary_ai;
     
-    // ========== CourtInsight 邏輯 - 安全強化版 ==========
+    // ========== CourtInsight 邏輯 - 使用索引映射法 ==========
 
     const jfullText = source.JFULL || '';
-    const courtInsightsStartTag = source.CourtInsightsStart;
-    const courtInsightsEndTag = source.CourtInsightsEND;
+    const courtInsightsStartTag = source.CourtInsightsStart || '';
+    const courtInsightsEndTag = source.CourtInsightsEND || '';
     
     let insightStartIndex = -1;
     let insightEndIndex = -1;
 
-    // 1. 使用正則表達式來查找標記位置 (已加入安全檢查)
     if (jfullText && courtInsightsStartTag && courtInsightsEndTag) {
-      const startRegex = createSpacedRegex(courtInsightsStartTag);
-      const endRegex = createSpacedRegex(courtInsightsEndTag);
-      
-      if (startRegex) {
         try {
-            const startMatch = jfullText.match(startRegex);
-            if (startMatch) {
-              insightStartIndex = startMatch.index;
-              const searchFromIndex = insightStartIndex + startMatch[0].length;
+            // 1. 創建一個 JFULL 的乾淨版本（移除所有空白符）
+            const cleanJfullText = jfullText.replace(/\s/g, '');
+            
+            // 2. 創建從乾淨索引到原始索引的映射
+            const indexMap = createCleanToOriginalIndexMap(jfullText);
 
-              if (endRegex) {
-                 const endMatch = jfullText.substring(searchFromIndex).match(endRegex);
-                 if (endMatch) {
-                    insightEndIndex = searchFromIndex + endMatch.index;
-                 }
-              }
+            // 3. 在乾淨的文本中定位標記
+            const cleanStartIndex = cleanJfullText.indexOf(courtInsightsStartTag);
+            
+            if (cleanStartIndex !== -1) {
+                // 4. 使用映射表將乾淨索引轉換回原始索引
+                insightStartIndex = indexMap[cleanStartIndex];
+
+                // 從起始標記之後開始尋找結束標記
+                const cleanEndIndex = cleanJfullText.indexOf(courtInsightsEndTag, cleanStartIndex + courtInsightsStartTag.length);
+
+                if (cleanEndIndex !== -1) {
+                    insightEndIndex = indexMap[cleanEndIndex];
+                }
             }
-        } catch(e) {
-            console.error(`[Formatter] Regex match failed for JID: ${hit._id}. Error:`, e);
+        } catch (e) {
+            console.error(`[Formatter] Index mapping failed for JID: ${hit._id}. Error:`, e);
         }
-      }
     }
     
     const originalHighlights = highlight['JFULL'] || [];
@@ -88,8 +84,6 @@ export function formatEsResponse(esResult, pageSize = 10) {
       if (insightStartIndex !== -1 && insightEndIndex !== -1) {
         const cleanFragment = fragment.replace(/<em class='search-highlight'>/g, '').replace(/<\/em>/g, '');
         try {
-          // 定位片段。indexOf 性能好，但在極端情況下（短片段重複）可能不準。
-          // 對於判決書高亮上下文，此風險通常很低。
           const fragmentIndex = jfullText.indexOf(cleanFragment);
           if (fragmentIndex !== -1 && fragmentIndex >= insightStartIndex && fragmentIndex < insightEndIndex) {
             in_court_insight = true;
