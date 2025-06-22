@@ -1,4 +1,4 @@
-// utils/response-formatter.js (修正後的完整版本)
+// utils/response-formatter.js (新增 CourtInsight 判斷邏輯的完整版本)
 
 /**
  * 格式化來自 Elasticsearch 的搜尋回應。
@@ -15,7 +15,7 @@ export function formatEsResponse(esResult, pageSize = 10) {
   const hits = (esResult.hits.hits || []).map(hit => {
     const source = hit._source || {};
     const highlight = hit.highlight || {};
-    
+
     // 建立一個包含原始資料的物件
     const processedItem = {
       id: hit._id,
@@ -23,20 +23,57 @@ export function formatEsResponse(esResult, pageSize = 10) {
       ...source,
     };
 
-    // ========== 核心修正：使用新的高亮鍵名（不含 .cjk） ==========
-    
-    // 處理 JFULL 的高亮匹配段落
-    // ES回傳的是一個字串陣列，直接賦值
-    processedItem.JFULL_highlights = highlight['JFULL'] || [];
-
-    // 處理 JTITLE 的高亮標題
-    // 如果有高亮，則使用高亮版本；否則，回退到原始 source 的標題
+    // --- 舊有高亮處理 ---
     processedItem.JTITLE_highlighted = highlight['JTITLE']?.[0] || source.JTITLE;
-
-    // 處理 summary_ai 的高亮摘要
-    // 如果有高亮，則使用高亮版本；否則，回退到原始 source 的摘要
     processedItem.summary_ai_highlighted = highlight['summary_ai']?.[0] || source.summary_ai;
-    // ===============================================================
+    
+    // ========== 新增 CourtInsight 判斷邏輯 ==========
+
+    const jfullText = source.JFULL || '';
+    const courtInsightsStartTag = source.CourtInsightsStart;
+    const courtInsightsEndTag = source.CourtInsightsEND;
+    
+    let insightStartIndex = -1;
+    let insightEndIndex = -1;
+
+    // 1. 獲取「法院見解」區間的索引位置
+    if (jfullText && courtInsightsStartTag && courtInsightsEndTag) {
+      insightStartIndex = jfullText.indexOf(courtInsightsStartTag);
+      insightEndIndex = jfullText.indexOf(courtInsightsEndTag, insightStartIndex);
+    }
+    
+    // 2. 處理 JFULL 的高亮匹配段落，並增加 in_court_insight 標記
+    const originalHighlights = highlight['JFULL'] || [];
+    processedItem.JFULL_highlights = originalHighlights.map(fragment => {
+      let in_court_insight = false;
+      
+      // 只有在區間有效時才進行判斷
+      if (insightStartIndex !== -1 && insightEndIndex !== -1) {
+        // 為了定位，我們需要一個相對乾淨的文本片段
+        // 移除高亮標籤，並取前後一些字符以提高定位準確性
+        const cleanFragment = fragment.replace(/<em class='search-highlight'>/g, '').replace(/<\/em>/g, '');
+        
+        try {
+          // 在全文中尋找這個乾淨片段的位置
+          const fragmentIndex = jfullText.indexOf(cleanFragment);
+        
+          // 如果找到了片段，並且它的位置在「法院見解」區間內
+          if (fragmentIndex !== -1 && fragmentIndex >= insightStartIndex && fragmentIndex <= insightEndIndex) {
+            in_court_insight = true;
+          }
+        } catch (e) {
+            // 在極端情況下，如果 cleanFragment 過於復雜導致 indexOf 出錯，則忽略
+            console.warn("Error locating fragment:", e);
+        }
+      }
+      
+      // 3. 回傳新的物件結構
+      return {
+        fragment: fragment,
+        in_court_insight: in_court_insight,
+      };
+    });
+    // ======================================================
 
     return processedItem;
   });
@@ -45,13 +82,12 @@ export function formatEsResponse(esResult, pageSize = 10) {
     ? esResult.hits.total 
     : (esResult.hits.total?.value || 0);
 
-  // 同時也將後端回傳的所有聚合結果都傳給前端
   const allAggregations = esResult.aggregations || {};
 
   return {
     total: totalResults,
     hits: hits,
     totalPages: pageSize > 0 ? Math.ceil(totalResults / pageSize) : 1,
-    aggregations: allAggregations // 將所有聚合結果傳遞下去
+    aggregations: allAggregations
   };
 }
