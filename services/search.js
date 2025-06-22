@@ -26,7 +26,8 @@ export async function performSearch(searchFilters, page, pageSize) {
         // 主要勝訴理由聚合
         win_reasons: {
           terms: {
-            field: 'main_reasons_ai.tags',
+            // ===== 修正 #1: 移除 .tags 後綴 =====
+            field: 'main_reasons_ai',
             size: 20,
             order: { _count: 'desc' }
           }
@@ -34,7 +35,7 @@ export async function performSearch(searchFilters, page, pageSize) {
         // 動態獲取實際使用的案件類型
         dynamic_case_types: {
           terms: {
-            field: 'case_type.keyword',
+            field: 'case_type', // 根據 mapping，case_type 是 keyword，不需 .keyword
             size: 50,
             order: { _count: 'desc' }
           }
@@ -42,7 +43,7 @@ export async function performSearch(searchFilters, page, pageSize) {
         // 動態獲取實際的判決結果
         dynamic_verdicts: {
           terms: {
-            field: 'verdict_type.keyword',
+            field: 'verdict_type', // 根據 mapping，verdict_type 是 keyword，不需 .keyword
             size: 30,
             order: { _count: 'desc' }
           }
@@ -50,7 +51,7 @@ export async function performSearch(searchFilters, page, pageSize) {
         // 動態獲取法院名稱
         dynamic_courts: {
           terms: {
-            field: 'court.exact',
+            field: 'court.exact', // 保持不變，這個是正確的
             size: 50,
             order: { _count: 'desc' }
           }
@@ -60,20 +61,21 @@ export async function performSearch(searchFilters, page, pageSize) {
         pre_tags: ["<em class='search-highlight'>"], // 使用 class 以便於 CSS 美化
         post_tags: ["</em>"],
         fields: {
-          // 對 JFULL.cjk 和 JTITLE.cjk 進行高亮
-          "JFULL.cjk": {
+          // ===== 修正 #2: 移除 .cjk 後綴，直接對主欄位進行高亮 =====
+          "JFULL": {
             fragment_size: 100, // 每個片段的長度
             number_of_fragments: 3, // 最多返回 3 個片段
             no_match_size: 120 // 如果沒有匹配，從頭截取 120 字元作為摘要
           },
-          "JTITLE.cjk": {
+          "JTITLE": {
             number_of_fragments: 0 // 對標題返回完整的高亮內容
           },
-          "summary_ai.cjk": {
+          "summary_ai": {
             fragment_size: 150,
             number_of_fragments: 1,
             no_match_size: 150
           }
+          // ==============================================================
         },
         // 核心修正：使用主查詢來生成高亮
         highlight_query: esQueryBody
@@ -108,7 +110,8 @@ export async function getAvailableFilters() {
     const sampleDoc = await esClient.search({
       index: ES_INDEX_NAME,
       size: 1,
-      _source: ['case_type', 'verdict_type', 'outcome_reasoning_strength']
+      // ===== 修正 #3: 移除不存在的 outcome_reasoning_strength 欄位 =====
+      _source: ['case_type', 'verdict_type', 'main_reasons_ai']
     });
 
     console.log('[DIAGNOSE] Sample document structure:', JSON.stringify(sampleDoc.hits.hits[0]?._source, null, 2));
@@ -117,7 +120,7 @@ export async function getAvailableFilters() {
     const testResponse = await esClient.search({
       index: ES_INDEX_NAME,
       size: 1,
-      _source: ['case_type', 'verdict_type', 'outcome_reasoning_strength']
+      _source: ['case_type', 'verdict_type']
     });
 
     console.log('[Test] Sample document fields:', testResponse.hits.hits[0]?._source);
@@ -129,7 +132,7 @@ export async function getAvailableFilters() {
         // 對陣列欄位，直接使用欄位名稱（不加 .keyword）
         case_types: {
           terms: {
-            field: 'case_type',  // 移除 .keyword
+            field: 'case_type',  // 移除 .keyword，正確
             size: 100,
             order: { _count: 'desc' }
           }
@@ -145,22 +148,23 @@ export async function getAvailableFilters() {
         // 嘗試不加 .keyword
         verdicts: {
           terms: {
-            field: 'verdict_type',  // 先試試不加 .keyword
+            field: 'verdict_type',  // 移除 .keyword，正確
             size: 50,
             order: { _count: 'desc' }
           }
         },
-        // 同樣嘗試不加 .keyword
-        reasoning_strengths: {
-          terms: {
-            field: 'outcome_reasoning_strength',  // 不加 .keyword
-            size: 10
-          }
-        },
+        // ===== 修正 #4: 移除對不存在欄位 reasoning_strengths 的聚合 =====
+        // reasoning_strengths: {
+        //   terms: {
+        //     field: 'outcome_reasoning_strength',
+        //     size: 10
+        //   }
+        // },
         // 新增：初始的判決理由選項
         win_reasons: {
           terms: {
-            field: 'main_reasons_ai.tags',
+            // ===== 修正 #5: 修正勝訴理由的聚合欄位 =====
+            field: 'main_reasons_ai',
             size: 30,  // 顯示前 30 個最常見的
             order: { _count: 'desc' }
           }
@@ -174,13 +178,15 @@ export async function getAvailableFilters() {
     console.log('[Search Service] Aggregation results:');
     console.log('- case_types buckets:', aggs?.case_types?.buckets?.length || 0);
     console.log('- verdicts buckets:', aggs?.verdicts?.buckets?.length || 0);
-    console.log('- reasoning_strengths buckets:', aggs?.reasoning_strengths?.buckets?.length || 0);
+    // console.log('- reasoning_strengths buckets:', aggs?.reasoning_strengths?.buckets?.length || 0); // 移除
 
     const filters = {
       caseTypes: aggs?.case_types?.buckets.map(b => b.key) || [],
       courtNames: aggs?.court_names?.buckets.map(b => b.key) || [],
       verdicts: aggs?.verdicts?.buckets.map(b => b.key) || [],
-      reasoningStrengths: aggs?.reasoning_strengths?.buckets.map(b => b.key) || [],
+      // ===== 修正 #6: 移除不存在的欄位 =====
+      // reasoningStrengths: aggs?.reasoning_strengths?.buckets.map(b => b.key) || [],
+      reasoningStrengths: [], // 返回空陣列，因為 mapping 中沒有這個欄位
       winReasons: aggs?.win_reasons?.buckets || []  // 新增
     };
 
@@ -200,4 +206,3 @@ export async function getAvailableFilters() {
     throw serviceError;
   }
 }
-

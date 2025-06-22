@@ -41,10 +41,13 @@ Boooook 是一個司法資訊檢索與分析平台，後端採用 Node.js + Expr
 │   ├── express.js            # Express 設定
 │   ├── creditCosts.js        # 點數消耗規則設定
 │   ├── plansData.js          # 訂閱方案資料
-│   └── commerceConfig.js     # 積分包與會員優惠設定
+│   ├── commerceConfig.js     # 積分包與會員優惠設定
+│   ├── subscriptionProducts.js # 訂閱方案詳情設定
+│   └── intakeDomainConfig.js # AI 接待助理領域知識設定
 ├── middleware/               # 中介軟體
 │   ├── auth.js               # 身分驗證
-│   └── credit.js             # 點數檢查
+│   ├── credit.js             # 點數檢查
+│   └── adminAuth.js          # 管理員權限驗證
 ├── services/                 # 商業邏輯
 │   ├── search.js             # 判決書搜尋
 │   ├── lawyer.js             # 律師分析
@@ -54,7 +57,13 @@ Boooook 是一個司法資訊檢索與分析平台，後端採用 Node.js + Expr
 │   ├── aiAnalysisService.js  # 案件AI特徵分析
 │   ├── judgeService.js       # 法官分析與聚合
 │   ├── newebpayService.js    # 藍新金流加解密與參數組裝
-│   └── complaintService.js   # 民眾申訴處理
+│   ├── complaintService.js   # 民眾申訴處理
+│   ├── orderService.js       # 訂單管理
+│   ├── contactService.js     # 聯絡表單處理 (含郵件通知)
+│   ├── platformStatusService.js # 平台狀態管理
+│   ├── workspace.js          # 工作區管理
+│   ├── intakeService.js      # AI 接待助理核心服務
+│   └── conversationService.js # AI 對話 Session 管理
 ├── utils/                    # 工具函式
 │   ├── query-builder.js      # ES查詢建構
 │   ├── response-formatter.js # 回應格式化
@@ -69,19 +78,30 @@ Boooook 是一個司法資訊檢索與分析平台，後端採用 Node.js + Expr
 │   ├── lawyer.js             # 律師
 │   ├── user.js               # 使用者
 │   ├── judge.js              # 法官
-│   ├── complaint.js          # 訴狀智能分析（驗證訴狀、法官檢查、匹配度分析）
+│   ├── complaint.js          # 訴狀智能分析
 │   ├── judgmentProxy.js      # 判決書代理存取
 │   ├── payment.js            # 金流 API 路由
-│   └── configRoutes.js       # 積分包與會員優惠設定 API 路由
+│   ├── configRoutes.js       # 積分包與會員優惠設定 API 路由
+│   ├── aiAnalysisRoutes.js   # AI 分析相關路由
+│   ├── contactRoutes.js      # 聯絡我們表單路由
+│   ├── platformStatusRoutes.js # 平台狀態路由
+│   ├── workspace.js          # 工作區管理路由
+│   ├── intake.js             # AI 接待助理路由
+│   └── ezship.js             # ezShip 物流代理路由
 ├── controllers/              # 控制器
-│   ├── search-controller.js
-│   ├── judgment-controller.js
-│   ├── lawyer-controller.js
-│   ├── user-controller.js
-│   ├── judgeController.js
-│   ├── complaint-controller.js
-│   ├── paymentController.js  # 金流流程與回調處理
-│   └── configController.js   # 查詢積分包與會員優惠設定
+│   ├── search-controller.js      # 處理判決書搜尋請求
+│   ├── judgment-controller.js    # 處理單一判決書詳情請求
+│   ├── lawyer-controller.js      # 處理律師分析相關請求
+│   ├── user-controller.js        # 處理使用者資料、歷史紀錄、訂閱等請求
+│   ├── judgeController.js        # 處理法官分析相關請求
+│   ├── complaint-controller.js   # 處理訴狀分析相關請求
+│   ├── paymentController.js      # 處理金流、訂單與支付回調
+│   ├── configController.js       # 提供前端所需的設定檔 (如訂閱方案)
+│   ├── aiAnalysisController.js   # 處理 AI 勝訴關鍵分析請求
+│   ├── contactController.js      # 處理聯絡我們表單提交
+│   ├── platformStatusController.js # 處理平台狀態資訊的讀取與更新
+│   ├── workspace-controller.js   # 處理使用者工作區的 CRUD 操作
+│   └── intakeController.js       # 處理 AI 接待助理的對話流程
 ├── index.js                  # 進入點
 └── .env                      # 環境變數
 ```
@@ -211,6 +231,43 @@ Boooook 是一個司法資訊檢索與分析平台，後端採用 Node.js + Expr
 - `utils/constants.js`：專案常數定義，包含案件關鍵字、判決結果標準化代碼等，供多個模組引用。
 - `utils/judgeAnalysisUtils.js`：法官案件聚合分析工具，提供案件類型分布、判決結果分類、代表案件挑選等聚合統計輔助函式。
 - `utils/win-rate-calculator.js`：勝訴率與案件結果統計計算工具，負責案件結果分類、勝訴率百分比計算，供法官/律師分析模組調用。
+
+### AI 接待助理 (法握) 模組
+
+此模組提供一個對話式 AI 介面，用於初步接待使用者、收集案件資訊並進行分類。
+
+- `config/intakeDomainConfig.js`：AI 接待助理的核心設定檔，定義了其名稱、對話流程（如歡迎語、費用說明）、案件類型判斷規則、資訊擷取邏輯，以及一個詳細的、用於生成 OpenAI System Prompt 的動態模板。所有領域知識和 AI 行為模式都集中於此。
+- `services/intakeService.js`：呼叫 OpenAI API 的核心服務。它會根據 `intakeDomainConfig.js` 的設定動態產生 Prompt，並將使用者的對話歷史傳送給 AI 進行處理，最後回傳結構化的 JSON 回應。
+- `services/conversationService.js`：負責管理對話 Session 的生命週期。它處理 Session 在 Firestore 中的創建（延遲到使用者發送第一則訊息後才建立）、讀取、更新與列表查詢，確保對話狀態的持久化。
+- `controllers/intakeController.js`：AI 接待助理的 API 控制器，負責協調上述服務。它管理對話狀態機、更新案件資訊，並處理 `/api/intake/*` 的所有請求。
+- `routes/intake.js`：定義 AI 接待助理的所有 API 路由，包括 `/chat`（核心對話）、`/sessions`（歷史列表）、`/session`（單一查詢）和 `/new`（準備新對話）。
+
+### 工作區 (Workspace) 管理模組
+
+此模組提供讓使用者儲存、管理和組織其研究專案的功能。
+
+- `services/workspace.js`：提供工作區完整的後端商業邏輯，包括在 Firestore 中對工作區進行創建、讀取、更新、刪除（CRUD）等操作。支援從範本創建、自動更新存取時間、刪除時清理關聯設定等。
+- `controllers/workspace-controller.js`：工作區的 API 控制器，將 HTTP 請求映射到 `workspace.js` 服務中的對應函式。
+- `routes/workspace.js`：定義了 `/api/workspace` 的 RESTful API 路由，所有操作都需要使用者登入驗證。
+
+### 平台狀態與聯絡我們
+
+- `services/platformStatusService.js`：管理一個全站共享的狀態文件（如總判決書數量、最新更新日期），提供讀取與（管理員）寫入的服務。
+- `middleware/adminAuth.js`：管理員權限驗證中介軟體。它會檢查使用者的 Firestore 文件，確保只有 `isAdmin: true` 的使用者才能存取特定 API。
+- `routes/platformStatusRoutes.js`：定義 `/api/platform-status/database-stats` 路由，其中 `PUT` 方法受到 `adminAuth` 保護。
+- `services/contactService.js`：處理「聯絡我們」表單的完整後端服務。它負責將使用者上傳的附件存到 Firebase Storage、將表單內容存入 Firestore，並使用 `nodemailer` 寄送 Email 通知給管理者。
+- `routes/contactRoutes.js`：定義 `/api/contact/submit` 路由，並使用 `multer` 中介軟體處理檔案上傳。
+
+### 商務與金流擴充
+
+- `config/subscriptionProducts.js`：詳細定義所有訂閱方案（免費、基本、進階、尊榮），包含價格、點數、功能列表，以及與藍新金流對接所需的定期定額參數。
+- `services/orderService.js`：訂單管理服務。在使用者發起結帳流程時，此服務會在 Firestore 中創建一筆訂單紀錄，並在收到金流回調後更新其狀態。
+
+### 其他
+
+- `routes/ezship.js`：一個獨立的後端代理，專門用於串接台灣物流服務「ezShip」的退貨 API，處理其特殊的請求與回應格式。
+- `routes/aiAnalysisRoutes.js`：定義 `/api/ai/success-analysis` 路由，並掛載了身分驗證與點數扣除中介軟體。
+
 ---
 
 ## 安裝、環境變數與啟動
@@ -359,6 +416,20 @@ node index.js
 | /api/judges/:name/analytics        | GET  | 法官分析（含AI）           | judgeController.js/judgeService   | 是     | 3        |
 | /api/judges/:name/ai-status        | GET  | 法官AI分析狀態             | judgeController.js/judgeService   | 是     | 0        |
 | /api/judges/:name/reanalyze        | POST | 重新觸發法官AI分析         | judgeController.js/judgeService   | 是     | 0        |
+| /api/contact/submit                 | POST | 提交聯絡表單 (可含附件)    | contactController.js/contactService | 否     | 0        |
+| /api/platform-status/database-stats | GET  | 獲取平台資料庫統計         | platformStatusController.js/platformStatusService | 是     | 0        |
+| /api/platform-status/database-stats | PUT  | 更新平台資料庫統計         | platformStatusController.js/platformStatusService | 是 (管理員) | 0        |
+| /api/workspace                      | POST | 創建新工作區               | workspace-controller.js/workspace.js | 是     | 0        |
+| /api/workspace                      | GET  | 獲取所有工作區列表         | workspace-controller.js/workspace.js | 是     | 0        |
+| /api/workspace/:workspaceId         | GET  | 獲取單一工作區詳情         | workspace-controller.js/workspace.js | 是     | 0        |
+| /api/workspace/:workspaceId         | PUT  | 更新工作區內容             | workspace-controller.js/workspace.js | 是     | 0        |
+| /api/workspace/:workspaceId         | DELETE| 刪除工作區                 | workspace-controller.js/workspace.js | 是     | 0        |
+| /api/workspace/active/:workspaceId  | POST | 設定當前活動工作區         | workspace-controller.js/workspace.js | 是     | 0        |
+| /api/intake/chat                    | POST | 與 AI 接待助理對話         | intakeController.js/intakeService | 否     | 0        |
+| /api/intake/sessions                | GET  | 獲取使用者歷史對話列表     | intakeController.js/conversationService | 否     | 0        |
+| /api/intake/session                 | POST | 獲取單一對話 Session       | intakeController.js/conversationService | 否     | 0        |
+| /api/intake/new                     | POST | 準備一個新對話 Session     | intakeController.js/conversationService | 否     | 0        |
+| /api/ezship/return                  | POST | 代理申請 ezShip 退貨編號   | ezship.js                         | 否     | 0        |
 
 ---
 
@@ -380,6 +451,65 @@ node index.js
 | aiProcessedAt       | timestamp | AI 分析完成時間                        |
 | lastUpdated         | timestamp | 文件最後更新時間                       |
 | processingError     | string    | AI 分析失敗時的錯誤訊息                |
+
+### Firestore `orders` 文件結構
+
+| 欄位                | 型別      | 說明                                   |
+|---------------------|-----------|----------------------------------------|
+| merchantOrderNo     | string    | 平台產生的唯一訂單號 (文件 ID)         |
+| userId              | string    | 使用者 UID                             |
+| itemId              | string    | 商品 ID (如 `advanced` 或 `credits_100`) |
+| itemType            | string    | 商品類型 (`plan` 或 `package`)         |
+| amount              | number    | 訂單金額                               |
+| itemDescription     | string    | 商品描述 (如 "進階方案-月繳")          |
+| billingCycle        | string    | 付款週期 (`monthly` 或 `annually`)     |
+| status              | string    | 訂單狀態 (PENDING_PAYMENT, PAID, FAILED) |
+| paymentGateway      | string    | 支付閘道 (如 `newebpay`)               |
+| gatewayTradeNo      | string    | 金流平台交易序號 (付款成功後更新)      |
+| createdAt           | timestamp | 建立時間                               |
+| updatedAt           | timestamp | 最後更新時間                           |
+
+### Firestore `intake_sessions` 文件結構
+
+| 欄位                | 型別      | 說明                                   |
+|---------------------|-----------|----------------------------------------|
+| sessionId           | string    | 唯一的對話 ID (文件 ID)                |
+| anonymousUserId     | string    | 匿名使用者 ID                          |
+| caseInfo            | object    | AI 收集到的結構化案件資訊              |
+| conversationHistory | array     | 對話歷史紀錄 (user/assistant)          |
+| status              | string    | 對話狀態 (`in_progress`, `completed`)  |
+| createdAt           | timestamp | 建立時間                               |
+| updatedAt           | timestamp | 最後更新時間                           |
+
+### Firestore `contact_submissions` 文件結構
+
+| 欄位                | 型別      | 說明                                   |
+|---------------------|-----------|----------------------------------------|
+| name                | string    | 聯絡人姓名                             |
+| email               | string    | 聯絡人 Email                           |
+| topic               | string    | 聯繫主題                               |
+| message             | string    | 訊息內容                               |
+| organization        | string    | 公司/組織 (可選)                       |
+| userId              | string    | 使用者 UID (如果已登入)                |
+| attachmentUrl       | string    | 附件在 Firebase Storage 的簽名 URL     |
+| attachmentFileName  | string    | 附件原始檔名                           |
+| status              | string    | 處理狀態 (`new`, `in_progress`, `closed`) |
+| submittedAt         | timestamp | 提交時間                               |
+
+### Firestore `users/{userId}/workspaces` 子集合文件結構
+
+| 欄位                | 型別      | 說明                                   |
+|---------------------|-----------|----------------------------------------|
+| id                  | string    | 工作區 ID (文件 ID)                    |
+| name                | string    | 工作區名稱                             |
+| description         | string    | 工作區描述                             |
+| searchState         | object    | 最後的搜尋條件狀態                     |
+| tabs                | array     | 開啟的分頁籤列表                       |
+| activeTabId         | string    | 當前活動分頁籤 ID                      |
+| stats               | object    | 工作區統計資訊 (如搜尋次數)            |
+| createdAt           | timestamp | 建立時間                               |
+| updatedAt           | timestamp | 最後更新時間                           |
+| lastAccessedAt      | timestamp | 最後存取時間                           |
 
 ### Elasticsearch 案件欄位設計
 
@@ -438,14 +568,6 @@ node index.js
 #### caseTypeAnalysis
 ```json
 {
-### 判決書代理存取（judgmentProxy）
-
-- 路由："/api/judgment-proxy"、"/proxy/*"
-- 功能：代理司法官網判決書、靜態資源、AJAX、術語解釋等，處理跨域、資源重寫與 CORS，供前端安全存取外部司法資料。
-- 回傳型態：依原始資源格式（HTML、JSON、圖片、字型等）動態轉發，無固定資料結構。
-- 典型用途：前端嵌入判決書全文、載入術語解釋、取得原始 PDF/圖片等。
-
-如需擴充代理規則，請參考 [`routes/judgmentProxy.js`](routes/judgmentProxy.js)。
   "civil": {
     "count": 60,
     "plaintiffClaimFullySupportedRate": 0.5,
@@ -457,25 +579,6 @@ node index.js
     "averageClaimAmount": 100000,
     "averageGrantedAmount": 80000,
     "overallGrantedToClaimRatio": 80
-### 點數消耗與用途對照表
-
-| 功能/用途                      | 常數名稱                  | 點數消耗 |
-|-------------------------------|--------------------------|---------|
-| 判決書搜尋                    | SEARCH_JUDGEMENT         | 1       |
-| 查看判決書詳情                | VIEW_JUDGEMENT_DETAIL    | 1       |
-| 查詢律師基本資料與案件列表    | LAWYER_PROFILE_BASIC     | 1       |
-| 查詢律師案件分布              | LAWYER_CASES_DISTRIBUTION| 1       |
-| 查詢律師AI優劣勢分析          | LAWYER_AI_ANALYSIS       | 2       |
-| 法官AI分析與統計              | JUDGE_AI_ANALYTICS       | 3       |
-| AI勝訴關鍵分析                | AI_SUCCESS_ANALYSIS      | 5       |
-| 註冊獎勵                      | SIGNUP_BONUS             | +N      |
-| 訂閱每月點數（基本/進階）     | SUBSCRIPTION_MONTHLY_GRANT_BASIC / ADVANCED | +N |
-| 購買點數包                    | PURCHASE_CREDITS_PKG_20  | +N      |
-| 管理員補發                    | ADMIN_GRANT              | +N      |
-| 退款/調整                     | REFUND_ADJUSTMENT        | ±N      |
-
-- 以上設定詳見 [`config/creditCosts.js`](config/creditCosts.js)。
-- CREDIT_COSTS 代表各功能消耗點數，CREDIT_PURPOSES 代表點數異動用途，請於開發新功能時參考並維護此設定。
   }
 }
 ```
@@ -534,6 +637,35 @@ node index.js
   }
 ]
 ```
+
+### 判決書代理存取（judgmentProxy）
+
+- 路由："/api/judgment-proxy"、"/proxy/*"
+- 功能：代理司法官網判決書、靜態資源、AJAX、術語解釋等，處理跨域、資源重寫與 CORS，供前端安全存取外部司法資料。
+- 回傳型態：依原始資源格式（HTML、JSON、圖片、字型等）動態轉發，無固定資料結構。
+- 典型用途：前端嵌入判決書全文、載入術語解釋、取得原始 PDF/圖片等。
+
+如需擴充代理規則，請參考 [`routes/judgmentProxy.js`](routes/judgmentProxy.js)。
+
+### 點數消耗與用途對照表
+
+| 功能/用途                      | 常數名稱                  | 點數消耗 |
+|-------------------------------|--------------------------|---------|
+| 判決書搜尋                    | SEARCH_JUDGEMENT         | 1       |
+| 查看判決書詳情                | VIEW_JUDGEMENT_DETAIL    | 1       |
+| 查詢律師基本資料與案件列表    | LAWYER_PROFILE_BASIC     | 1       |
+| 查詢律師案件分布              | LAWYER_CASES_DISTRIBUTION| 1       |
+| 查詢律師AI優劣勢分析          | LAWYER_AI_ANALYSIS       | 2       |
+| 法官AI分析與統計              | JUDGE_AI_ANALYTICS       | 3       |
+| AI勝訴關鍵分析                | AI_SUCCESS_ANALYSIS      | 5       |
+| 註冊獎勵                      | SIGNUP_BONUS             | +N      |
+| 訂閱每月點數（基本/進階）     | SUBSCRIPTION_MONTHLY_GRANT_BASIC / ADVANCED | +N |
+| 購買點數包                    | PURCHASE_CREDITS_PKG_20  | +N      |
+| 管理員補發                    | ADMIN_GRANT              | +N      |
+| 退款/調整                     | REFUND_ADJUSTMENT        | ±N      |
+
+- 以上設定詳見 [`config/creditCosts.js`](config/creditCosts.js)。
+- CREDIT_COSTS 代表各功能消耗點數，CREDIT_PURPOSES 代表點數異動用途，請於開發新功能時參考並維護此設定。
 
 ---
 
@@ -683,7 +815,7 @@ Boooook 後端 API 是一個具備良好基礎的專案，但也存在一些可�
 
 ### Elasticsearch Mapping 詳細說明
 
-本專案 search-boooook 索引的最新 mapping 結構如下，涵蓋所有重要欄位、型別、複合欄位、analyzer、tokenizer、synonym filter 等設計：
+本專案 `search-boooook` 索引的最新 mapping 結構如下，涵蓋所有重要欄位、型別、複合欄位、analyzer、tokenizer、synonym filter 等設計：
 
 ```json
 {
@@ -691,16 +823,14 @@ Boooook 後端 API 是一個具備良好基礎的專案，但也存在一些可�
     "aliases": {},
     "mappings": {
       "properties": {
+        "CourtInsightsEND": { "type": "keyword", "index": false },
+        "CourtInsightsStart": { "type": "keyword", "index": false },
         "JCASE": { "type": "keyword" },
-        "JDATE": { "type": "keyword" },
+        "JDATE": { "type": "date" },
         "JFULL": {
           "type": "text",
-          "fields": {
-            "cjk": { "type": "text", "analyzer": "chinese_combined_analyzer" },
-            "edge_ngram": { "type": "text", "analyzer": "edge_ngram_analyzer", "search_analyzer": "standard" },
-            "legal": { "type": "text", "analyzer": "legal_search_analyzer" },
-            "ngram": { "type": "text", "analyzer": "ngram_analyzer", "search_analyzer": "standard" }
-          }
+          "fields": { "legal": { "type": "text", "analyzer": "legal_search_analyzer" } },
+          "analyzer": "chinese_combined_analyzer"
         },
         "JID": { "type": "keyword" },
         "JNO": { "type": "keyword" },
@@ -708,23 +838,15 @@ Boooook 後端 API 是一個具備良好基礎的專案，但也存在一些可�
         "JTITLE": {
           "type": "text",
           "fields": {
-            "cjk": { "type": "text", "analyzer": "chinese_combined_analyzer" },
-            "edge_ngram": { "type": "text", "analyzer": "edge_ngram_analyzer", "search_analyzer": "standard" },
-            "exact": { "type": "keyword" }
-          }
+            "edge_ngram": { "type": "text", "analyzer": "edge_ngram_analyzer" },
+            "exact": { "type": "keyword" },
+            "legal": { "type": "text", "analyzer": "legal_search_analyzer" }
+          },
+          "analyzer": "chinese_combined_analyzer"
         },
         "JYEAR": { "type": "keyword" },
         "SCORE": { "type": "integer" },
-        "analysis_version": {
-          "type": "text",
-          "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } }
-        },
         "appellant": {
-          "type": "text",
-          "fields": { "exact": { "type": "keyword" } },
-          "analyzer": "chinese_combined_analyzer"
-        },
-        "appellant_lawyers": {
           "type": "text",
           "fields": { "exact": { "type": "keyword" } },
           "analyzer": "edge_ngram_analyzer"
@@ -732,30 +854,56 @@ Boooook 後端 API 是一個具備良好基礎的專案，但也存在一些可�
         "appellee": {
           "type": "text",
           "fields": { "exact": { "type": "keyword" } },
-          "analyzer": "chinese_combined_analyzer"
-        },
-        "appellee_lawyers": {
-          "type": "text",
-          "fields": { "exact": { "type": "keyword" } },
           "analyzer": "edge_ngram_analyzer"
         },
         "case_type": { "type": "keyword" },
+        "challenged_administrative_action": {
+          "type": "text",
+          "fields": { "legal": { "type": "text", "analyzer": "legal_search_analyzer" } },
+          "analyzer": "chinese_combined_analyzer"
+        },
+        "charges": { "type": "keyword" },
+        "citable_paragraphs": {
+          "type": "nested",
+          "properties": {
+            "para_id": { "type": "keyword" },
+            "paragraph_text": {
+              "type": "text",
+              "fields": { "legal": { "type": "text", "analyzer": "legal_search_analyzer" } },
+              "analyzer": "chinese_combined_analyzer"
+            }
+          }
+        },
+        "citation_analysis": {
+          "type": "nested",
+          "properties": {
+            "citation": { "type": "keyword" },
+            "occurrences": {
+              "type": "nested",
+              "properties": {
+                "location": { "type": "keyword" },
+                "paragraph": { "type": "text", "analyzer": "chinese_combined_analyzer" },
+                "reason": { "type": "text", "analyzer": "chinese_combined_analyzer" }
+              }
+            }
+          }
+        },
+        "citation_analysis_date": { "type": "date" },
         "citations": { "type": "keyword" },
         "court": {
           "type": "text",
           "fields": { "exact": { "type": "keyword" } },
           "analyzer": "chinese_combined_analyzer"
         },
+        "court_level": { "type": "keyword" },
         "data_quality_score": { "type": "float" },
         "defendant": {
           "type": "text",
           "fields": { "exact": { "type": "keyword" } },
-          "analyzer": "chinese_combined_analyzer"
+          "analyzer": "edge_ngram_analyzer"
         },
         "defendant_defenses_summary": { "type": "text", "analyzer": "chinese_combined_analyzer" },
-        "defendant_type": { "type": "keyword" },
         "embedding_model": { "type": "keyword" },
-        "embedding_token_count": { "type": "integer" },
         "indexed_at": { "type": "date" },
         "is_complex_case": { "type": "boolean" },
         "is_procedural": { "type": "boolean" },
@@ -763,88 +911,101 @@ Boooook 後端 API 是一個具備良好基礎的專案，但也存在一些可�
         "judges": {
           "type": "text",
           "fields": { "exact": { "type": "keyword" } },
-          "analyzer": "edge_ngram_analyzer",
-          "search_analyzer": "standard"
+          "analyzer": "edge_ngram_analyzer"
         },
-        "lawyerperformance": {
-          "type": "nested",
+        "key_metrics": {
           "properties": {
-            "claim_amount": { "type": "float", "ignore_malformed": true },
-            "claim_type": { "type": "keyword" },
-            "comment": { "type": "text", "analyzer": "chinese_combined_analyzer" },
-            "defense_effectiveness": { "type": "keyword" },
-            "final_verdict": { "type": "text", "analyzer": "chinese_combined_analyzer" },
-            "granted_amount": { "type": "float", "ignore_malformed": true },
-            "is_procedural": { "type": "boolean" },
-            "lawyer": {
-              "type": "text",
-              "fields": { "exact": { "type": "keyword" } },
-              "analyzer": "edge_ngram_analyzer"
-            },
-            "lawyer_type": { "type": "keyword" },
-            "percentage_awarded": { "type": "float", "ignore_malformed": true },
-            "prosecutor_demand": { "type": "text", "analyzer": "chinese_combined_analyzer" },
-            "side": { "type": "keyword" },
-            "verdict": { "type": "keyword" }
+            "administrative_metrics": { "properties": { "action_revoked": { "type": "keyword" } } },
+            "civil_metrics": { "properties": { "claim_amount": { "type": "float" }, "granted_amount": { "type": "float" } } },
+            "criminal_metrics": { "properties": { "final_verdict_raw": { "type": "text", "index": false }, "prosecutor_demand_raw": { "type": "text", "index": false } } }
+          }
+        },
+        "law_domain": { "type": "keyword" },
+        "lawyer_assessment": {
+          "properties": {
+            "defendant_side_comment": { "type": "text", "analyzer": "ai_analysis_analyzer" },
+            "plaintiff_side_comment": { "type": "text", "analyzer": "ai_analysis_analyzer" }
           }
         },
         "lawyers": {
           "type": "text",
           "fields": { "exact": { "type": "keyword" } },
-          "analyzer": "edge_ngram_analyzer",
-          "search_analyzer": "standard"
+          "analyzer": "edge_ngram_analyzer"
         },
         "lawyersdef": {
           "type": "text",
           "fields": { "exact": { "type": "keyword" } },
-          "analyzer": "edge_ngram_analyzer",
-          "search_analyzer": "standard"
+          "analyzer": "edge_ngram_analyzer"
         },
-        "legal_basis": {
-          "type": "keyword",
-          "fields": { "text": { "type": "text", "analyzer": "chinese_combined_analyzer" } }
-        },
-        "main_reasons_ai": {
+        "legal_basis": { "type": "keyword" },
+        "legal_claim_basis": {
           "type": "text",
-          "fields": { "tags": { "type": "keyword" } },
+          "fields": {
+            "exact": { "type": "keyword" },
+            "legal": { "type": "text", "analyzer": "legal_search_analyzer" }
+          },
           "analyzer": "chinese_combined_analyzer"
         },
-        "outcome_reasoning_strength": { "type": "keyword" },
+        "legal_issues": {
+          "type": "nested",
+          "properties": {
+            "answer": {
+              "type": "text",
+              "fields": { "legal": { "type": "text", "analyzer": "legal_search_analyzer" } },
+              "analyzer": "chinese_combined_analyzer"
+            },
+            "cited_para_id": { "type": "keyword" },
+            "question": {
+              "type": "text",
+              "fields": {
+                "exact": { "type": "keyword" },
+                "legal": { "type": "text", "analyzer": "legal_search_analyzer" }
+              },
+              "analyzer": "chinese_combined_analyzer"
+            }
+          }
+        },
+        "legal_issues_count": { "type": "integer" },
+        "legal_issues_embedding": {
+          "type": "dense_vector", "dims": 1536, "index": true, "similarity": "cosine",
+          "index_options": { "type": "int8_hnsw", "m": 32, "ef_construction": 128 }
+        },
+        "legal_issues_embedding_model": { "type": "keyword" },
+        "legal_issues_embedding_token_count": { "type": "integer" },
+        "main_reasons_ai": { "type": "keyword" },
         "plaintiff": {
           "type": "text",
           "fields": { "exact": { "type": "keyword" } },
-          "analyzer": "chinese_combined_analyzer"
+          "analyzer": "edge_ngram_analyzer"
         },
         "plaintiff_claims_summary": { "type": "text", "analyzer": "chinese_combined_analyzer" },
-        "plaintiff_type": { "type": "keyword" },
         "procedural_focus": { "type": "keyword" },
+        "prosecutor": {
+          "type": "text",
+          "fields": { "exact": { "type": "keyword" } },
+          "analyzer": "edge_ngram_analyzer"
+        },
+        "schema_version": { "type": "keyword" },
         "summary_ai": {
           "type": "text",
-          "fields": {
-            "cjk": { "type": "text", "analyzer": "chinese_combined_analyzer" },
-            "edge_ngram": { "type": "text", "analyzer": "edge_ngram_analyzer", "search_analyzer": "ai_analysis_analyzer" },
-            "exact": { "type": "keyword" }
-          }
+          "fields": { "legal": { "type": "text", "analyzer": "legal_search_analyzer" } },
+          "analyzer": "chinese_combined_analyzer"
         },
         "summary_ai_full": {
           "type": "text",
-          "fields": {
-            "cjk": { "type": "text", "analyzer": "chinese_combined_analyzer" },
-            "legal": { "type": "text", "analyzer": "legal_search_analyzer" }
-          }
-        },
-        "tags": {
-          "type": "text",
-          "fields": { "keyword": { "type": "keyword" } },
+          "fields": { "legal": { "type": "text", "analyzer": "legal_search_analyzer" } },
           "analyzer": "chinese_combined_analyzer"
         },
+        "tags": { "type": "keyword" },
         "text_embedding": {
-          "type": "dense_vector",
-          "dims": 1536,  // 採用 OpenAI text-embedding-3-large，1536維
-          "index": true,
-          "similarity": "cosine",
-          "index_options": { "type": "int8_hnsw", "m": 16, "ef_construction": 100 }
+          "type": "dense_vector", "dims": 1536, "index": true, "similarity": "cosine",
+          "index_options": { "type": "int8_hnsw", "m": 32, "ef_construction": 128 }
         },
+        "text_embedding_model": {
+          "type": "text",
+          "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } }
+        },
+        "text_embedding_token_count": { "type": "integer" },
         "verdict_type": { "type": "keyword" }
       }
     },
@@ -855,15 +1016,15 @@ Boooook 後端 API 是一個具備良好基礎的專案，但也存在一些可�
             "legal_synonym": {
               "type": "synonym",
               "synonyms": [
-                // ...（此處省略，請見原始 JSON 以獲得完整同義詞設計）
+                "此處為法律同義詞庫，內容已省略..."
               ]
             },
             "ai_analysis_filter": {
               "type": "synonym",
               "synonyms": [
                 "AI分析,人工智慧分析,智能分析",
-                "律師績效,辯護效果,訴訟表現",
-                "判決預測,勝訴預測,案件預測"
+                "律師績效,辯護效果,訴訟表現,策略評估",
+                "判決預測,勝訴預測,案件預測,風險評估"
               ]
             }
           },
@@ -899,7 +1060,7 @@ Boooook 後端 API 是一個具備良好基礎的專案，但也存在一些可�
               "token_chars": ["letter", "digit", "punctuation", "symbol"],
               "min_gram": "1",
               "type": "edge_ngram",
-              "max_gram": "5"
+              "max_gram": "10"
             },
             "ngram_tokenizer": {
               "token_chars": ["letter", "digit"],
@@ -917,58 +1078,30 @@ Boooook 後端 API 是一個具備良好基礎的專案，但也存在一些可�
 
 #### 主要欄位型別設計
 
-- `keyword`：精確比對（如 JID, JCASE, JDATE, JNO, case_type, legal_basis, verdict_type, is_ruling, ...）
-- `text`：全文檢索（如 JFULL, JTITLE, court, defendant, plaintiff, reason_text, main_text, summary_ai, ...）
-- `nested`：巢狀結構（如 lawyerperformance，內含 claim_amount, lawyer, side, comment, ...）
-- `integer`/`float`/`boolean`：數值與布林（如 JYEAR, SCORE, detention_days, claim_amount, ...）
+- `keyword`：用於精確比對的欄位，如 `JID`, `JCASE`, `case_type`, `law_domain` 等。
+- `text`：用於全文檢索的欄位，通常會搭配不同的分析器（analyzer）以支援中文分詞、法律同義詞、邊緣N-gram等。例如 `JFULL`, `JTITLE`, `summary_ai`。
+- `nested`：用於處理巢狀結構的資料，例如 `citable_paragraphs`（可引用段落）和 `legal_issues`（法律爭點），允許對巢狀物件內的欄位進行獨立查詢。
+- `dense_vector`：用於儲存向量資料（如 `text_embedding`），以支援向量相似度搜尋。
+- `date`, `integer`, `float`, `boolean`：標準的日期、數值與布林型別。
 
 #### 重要複合欄位與 analyzer
 
-- `JFULL`, `JTITLE`, `summary_ai` 等欄位設有多重 analyzer（cjk、edge_ngram、ngram），支援中文分詞、模糊查詢、前綴查詢。
-- `judges`, `lawyers`, `lawyersdef` 欄位同時有 text（支援模糊/分詞）與 raw（keyword，支援精確比對），便於法官/律師名單查詢。
-- `lawyerperformance` 為 nested 結構，便於複雜聚合與條件查詢。
+- **多重分析器**：`JFULL`, `JTITLE`, `summary_ai` 等核心文本欄位，通常會定義一個預設的中文分析器 (`chinese_combined_analyzer`)，並在 `fields` 中額外定義一個使用法律同義詞庫的分析器 (`legal_search_analyzer`)，以同時滿足一般性搜尋與專業領域搜尋的需求。
+- **精確比對與模糊查詢並存**：`judges`, `lawyers`, `appellant` 等實體名稱欄位，通常會設定一個用於模糊查詢的 `edge_ngram_analyzer`，並在 `fields` 中額外定義一個 `exact` 的 `keyword` 欄位，以便進行精確的名稱比對。
+- **巢狀結構 (Nested)**：新的 mapping 大量使用 `nested` 型別來組織複雜的關聯資料，如 `citable_paragraphs` 和 `legal_issues`。這使得我們可以對「某個法律爭點的答案」或「某個可引用段落的內文」進行精確查詢，而不會因為被扁平化而失去關聯性。
+- **向量欄位 (Dense Vector)**：`text_embedding` 和 `legal_issues_embedding` 欄位用於儲存由 AI 模型（如 OpenAI）產生的語意向量，以實現基於語意相似度的進階搜尋功能。
 
 #### 重要分析器設計
 
-- `legal_synonym` filter：大量法律、犯罪、民事、行政、金融、社會等領域同義詞，提升查詢涵蓋率。
-- `chinese_combined_analyzer`：結合 cjk_bigram、cjk_width、asciifolding，優化中文與混合文本檢索。
-- `edge_ngram_analyzer`/`ngram_analyzer`：支援前綴、模糊、部分字詞查詢，提升使用者體驗。
+- `legal_synonym` filter：此同義詞過濾器是法律專業搜尋的核心，包含了大量法律術語的同義詞，能大幅提升查詢的涵蓋率與準確性。（註：此處省略詳細列表）
+- `chinese_combined_analyzer`：結合了 `cjk_bigram`（中文二元分詞）、`cjk_width`（全形半形轉換）等，是優化中文檢索的基礎分析器。
+- `edge_ngram_analyzer`：用於實現「輸入即搜尋」(search-as-you-type) 的前綴模糊查詢功能，提升使用者體驗。
 
 #### 查詢應用建議
 
-- 精確查詢（如 JID、JCASE、verdict_type）請用 keyword/raw 欄位。
-- 模糊/全文查詢（如 JFULL, JTITLE, summary_ai）請用 text 欄位，並可指定 analyzer。
-- 法官、律師查詢建議用 `judges.raw`、`lawyers.raw` 精確比對，或用 text 欄位支援模糊搜尋。
-- 巢狀查詢（如 lawyerperformance）請用 nested query。
-
-#### mapping 片段（重點欄位）
-
-```json
-"JFULL": {
-  "type": "text",
-  "fields": {
-    "cjk": { "type": "text", "analyzer": "chinese_combined_analyzer" },
-    "edge_ngram": { "type": "text", "analyzer": "edge_ngram_analyzer", "search_analyzer": "standard" },
-    "ngram": { "type": "text", "analyzer": "ngram_analyzer", "search_analyzer": "standard" }
-  }
-},
-"judges": {
-  "type": "text",
-  "fields": { "raw": { "type": "keyword" } },
-  "analyzer": "edge_ngram_analyzer",
-  "search_analyzer": "standard"
-},
-"lawyerperformance": {
-  "type": "nested",
-  "properties": {
-    "lawyer": { "type": "text", "analyzer": "edge_ngram_analyzer" },
-    "side": { "type": "keyword" },
-    "claim_amount": { "type": "float", "ignore_malformed": true },
-    "granted_amount": { "type": "float", "ignore_malformed": true },
-    "comment": { "type": "text", "analyzer": "chinese_combined_analyzer" }
-    // ... 其餘欄位略
-  }
-}
-```
+- **精確查詢**：當需要比對法官/律師姓名、案號、案件類型等確定性資訊時，應使用 `.exact` 結尾的 `keyword` 欄位，例如 `judges.exact: "王小明"`。
+- **法律概念查詢**：當查詢法律概念或條文時，應優先使用 `.legal` 結尾的 `text` 欄位，以利用 `legal_search_analyzer` 的同義詞擴充功能。
+- **巢狀查詢 (Nested Query)**：查詢 `legal_issues` 或 `citable_paragraphs` 等巢狀欄位時，必須使用 `nested` 查詢語法，以確保查詢條件作用在同一個巢狀物件內。
+- **向量搜尋 (Vector Search)**：當需要尋找語意相似的案件或法律爭點時，應使用 `knn` 查詢語法，對 `text_embedding` 或 `legal_issues_embedding` 欄位進行查詢。
 
 ---
