@@ -13,63 +13,54 @@ function parseQueryString(query) {
   const orRegex = /\s*(\|\||OR)\s*/i; // 匹配 || 或 OR (不分大小寫)
   if (orRegex.test(query)) {
     const terms = query.split(orRegex).filter(t => t && !orRegex.test(t));
-    terms.forEach(term => {
-      shouldClauses.push(buildSubQuery(term.trim()));
-    });
+    terms.forEach(term => shouldClauses.push(buildSubQuery(term.trim())));
     return { mustClauses, shouldClauses };
   }
 
   // 2. 檢測 AND 邏輯 (預設)
   const andRegex = /\s*(\+|&| )\s*/; // 匹配 +, &, 或空格
   const terms = query.split(andRegex).filter(t => t && !andRegex.test(t));
-  terms.forEach(term => {
-    mustClauses.push(buildSubQuery(term.trim()));
-  });
+  terms.forEach(term => mustClauses.push(buildSubQuery(term.trim())));
 
   return { mustClauses, shouldClauses };
 }
 
 /**
  * 為單一關鍵詞或詞組構建 ES 查詢子句。
- * @param {string} term - 單一查詢詞，例如 "漏水" 或 ""不當得利""。
+ * 這個版本統一使用 match_phrase 來實現精準詞組搜尋。
+ * @param {string} term - 單一查詢詞，例如 "無因管理" 或 ""不當得利""。
  * @returns {object} - 一個 bool query 物件。
  */
 function buildSubQuery(term) {
-  // ===== 核心修正 #1: 更新所有查詢欄位名稱，移除 .cjk 後綴，並修正 tags 欄位 =====
-  if (term.startsWith('"') && term.endsWith('"')) {
-    const exactPhrase = term.slice(1, -1);
-    // 對於精確詞組，我們使用 match_phrase
-    return {
-      bool: {
-        should: [
-          { match_phrase: { "JFULL": { query: exactPhrase, boost: 5.0 } } },
-          { match_phrase: { "JTITLE": { query: exactPhrase, boost: 6.0 } } },
-          { match_phrase: { "summary_ai": { query: exactPhrase, boost: 4.0 } } },
-          { match_phrase: { "main_reasons_ai": { query: exactPhrase, boost: 3.0 } } }, // main_reasons_ai 是 keyword，match_phrase 也能用
-          { match_phrase: { "tags": { query: exactPhrase, boost: 2.0 } } } // tags 是 keyword
-        ],
-        minimum_should_match: 1
-      }
-    };
-  } else {
-    // 對於單一關鍵字，使用 multi_match 進行跨多個欄位的查詢
-    // 這樣更簡潔，且能更好地處理不同分析器
-    return {
-        multi_match: {
-            query: term,
-            fields: [
-                "JFULL^3",          // 全文，權重 3
-                "JTITLE^4",         // 標題，權重 4
-                "summary_ai^2",     // AI摘要，權重 2
-                "main_reasons_ai^2",// AI判決理由，權重 2
-                "tags^1.5",         // 標籤，權重 1.5
-                "lawyers.exact^8",  // 律師 (精確)，權重 8
-                "judges.exact^8"    // 法官 (精確)，權重 8
-            ],
-            type: "best_fields" // 採用分數最高的欄位的得分
-        }
-    };
+  let searchTerm = term.trim();
+
+  // 如果使用者用了引號，我們尊重它並移除引號，搜尋引號內的內容
+  if (searchTerm.startsWith('"') && searchTerm.endsWith('"')) {
+    searchTerm = searchTerm.slice(1, -1);
   }
+
+  // 如果處理後 searchTerm 為空，則返回一個不會匹配任何東西的查詢
+  if (!searchTerm) {
+    return { bool: { must_not: { match_all: {} } } };
+  }
+
+  // ===== 核心修改：統一使用 match_phrase =====
+  // 不論使用者是否加引號，都執行精準的詞組匹配。
+  return {
+    bool: {
+      should: [
+        { match_phrase: { "JFULL":           { query: searchTerm, boost: 3 } } },
+        { match_phrase: { "JTITLE":          { query: searchTerm, boost: 4 } } },
+        { match_phrase: { "summary_ai":      { query: searchTerm, boost: 2 } } },
+        { match_phrase: { "main_reasons_ai": { query: searchTerm, boost: 2 } } },
+        { match_phrase: { "tags":            { query: searchTerm, boost: 1.5 } } },
+        // 對於 .exact (keyword) 欄位, match_phrase 等同於 term 查詢，行為正確
+        { match_phrase: { "lawyers.exact":   { query: searchTerm, boost: 8 } } },
+        { match_phrase: { "judges.exact":    { query: searchTerm, boost: 8 } } }
+      ],
+      minimum_should_match: 1
+    }
+  };
 }
 
 
@@ -101,16 +92,9 @@ export function buildEsQuery(filters = {}) {
 
   // ==================== 關鍵字查詢重構 ====================
   if (query) {
-    const { mustClauses, shouldClauses } = parseQueryString(query);
-
-    if (mustClauses.length > 0) {
-      must.push(...mustClauses);
-    }
-    
-    if (shouldClauses.length > 0) {
-      // 對於 OR 邏輯，直接將它們放入最外層的 should 陣列
-      should.push(...shouldClauses);
-    }
+    const { mustClauses, shouldClauses } = parseQueryString(query); // parseQueryString 保持不變
+    if (mustClauses.length > 0) must.push(...mustClauses);
+    if (shouldClauses.length > 0) should.push(...shouldClauses);
   }
   // =======================================================
 
@@ -218,19 +202,13 @@ export function buildEsQuery(filters = {}) {
 
   // 構建最終查詢
   const esQueryBody = { bool: {} };
-  
-  // 處理 AND (must) 和 OR (should) 邏輯
   if (must.length > 0) esQueryBody.bool.must = must;
   if (should.length > 0) {
     esQueryBody.bool.should = should;
-    // 如果有 should 子句，通常需要設定 minimum_should_match
-    // 但如果同時有 must 或 filter，則不需要，因為它們已經限制了範圍
-    // 僅在只有 should 的情況下，才需要它來強制匹配
     if (must.length === 0 && filter.length === 0) {
       esQueryBody.bool.minimum_should_match = 1;
     }
   }
-
   if (filter.length > 0) esQueryBody.bool.filter = filter;
 
   if (must.length === 0 && should.length === 0 && filter.length === 0) {
