@@ -1,75 +1,41 @@
-// utils/response-formatter.js (步驟一：新增 para_id)
+// utils/response-formatter.js (最終、最簡潔穩健版)
 
 /**
  * 格式化來自 Elasticsearch 的搜尋回應。
+ * 這個版本只做最基礎的數據合併，將所有複雜邏輯交給前端處理。
  * @param {object} esResult - Elasticsearch client.search 返回的原始結果。
  * @param {number} pageSize - 用於計算總頁數的每頁大小。
  * @returns {object} 包含 total, hits, totalPages, aggregations 的格式化後物件。
  */
 export function formatEsResponse(esResult, pageSize = 10) {
+  // 防禦性檢查，確保 esResult 和其內部結構存在
   if (!esResult || !esResult.hits) {
-    console.warn("formatEsResponse: 無效的 esResult 物件。");
+    console.warn("[Formatter] 無效的 esResult 物件，返回空結構。");
     return { total: 0, hits: [], totalPages: 0, aggregations: {} };
   }
 
   const hits = (esResult.hits.hits || []).map(hit => {
     const source = hit._source || {};
     const highlight = hit.highlight || {};
-
+    
+    // 建立一個包含所有原始資料的物件
+    // 這樣前端就能獲取到 JFULL, citable_paragraphs, CourtInsightsStart 等所有需要的欄位
     const processedItem = {
       id: hit._id,
       score: hit._score,
       ...source,
-      JTITLE_highlighted: highlight['JTITLE']?.[0] || source.JTITLE,
-      summary_ai_highlighted: highlight['summary_ai']?.[0] || source.summary_ai,
     };
-    
-    // ========== 核心修改點：更穩健的 para_id 匹配邏輯 ==========
-    
-    const originalHighlights = highlight['JFULL'] || [];
-    const citableParagraphs = source.citable_paragraphs || [];
 
-    if (citableParagraphs.length === 0) {
-        processedItem.JFULL_highlights = originalHighlights.map(fragment => ({
-            fragment: fragment,
-            para_id: null
-        }));
-    } else {
-        processedItem.JFULL_highlights = originalHighlights.map(fragment => {
-            // 1. 從高亮片段中提取出真正的關鍵詞
-            const match = fragment.match(/<em class='search-highlight'>(.*?)<\/em>/);
-            const keyword = match ? match[1] : null;
+    // 處理 JTITLE 的高亮標題
+    // 如果有高亮，則使用高亮版本；否則，回退到原始 source 的標題
+    processedItem.JTITLE_highlighted = highlight['JTITLE']?.[0] || source.JTITLE;
 
-            let sourceParaId = null;
+    // 處理 summary_ai 的高亮摘要
+    processedItem.summary_ai_highlighted = highlight['summary_ai']?.[0] || source.summary_ai;
 
-            // 2. 如果能提取出關鍵詞，就用關鍵詞去尋找來源段落
-            if (keyword) {
-                const sourceParagraph = citableParagraphs.find(p => 
-                    p.paragraph_text && p.paragraph_text.includes(keyword)
-                );
-                if (sourceParagraph) {
-                    sourceParaId = sourceParagraph.para_id;
-                }
-            }
-            
-            // 3. 如果用關鍵詞找不到（極端情況），再用舊的、較不穩定的方法做一次備用查找
-            if (!sourceParaId) {
-                const cleanFragment = fragment.replace(/<em class='search-highlight'>/g, '').replace(/<\/em>/g, '');
-                const fallbackParagraph = citableParagraphs.find(p => 
-                    p.paragraph_text && p.paragraph_text.includes(cleanFragment)
-                );
-                if (fallbackParagraph) {
-                    sourceParaId = fallbackParagraph.para_id;
-                }
-            }
-            
-            return {
-                fragment: fragment,
-                para_id: sourceParaId // 返回找到的 ID，找不到則為 null
-            };
-        });
-    }
-    // =================================================================
+    // 處理 JFULL 的高亮匹配段落
+    // 直接返回從 ES 獲取的、未經處理的字串陣列
+    processedItem.JFULL_highlights = highlight['JFULL'] || [];
 
     return processedItem;
   });
@@ -84,6 +50,6 @@ export function formatEsResponse(esResult, pageSize = 10) {
     total: totalResults,
     hits: hits,
     totalPages: pageSize > 0 ? Math.ceil(totalResults / pageSize) : 1,
-    aggregations: allAggregations
+    aggregations: allAggregations,
   };
 }
