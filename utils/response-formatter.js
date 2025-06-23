@@ -19,19 +19,16 @@ export function formatEsResponse(esResult, pageSize = 10) {
     const processedItem = {
       id: hit._id,
       score: hit._score,
-      ...source, // 包含 JFULL, citable_paragraphs, CourtInsightsStart 等所有原始欄位
-      
-      // 添加高亮欄位
+      ...source,
       JTITLE_highlighted: highlight['JTITLE']?.[0] || source.JTITLE,
       summary_ai_highlighted: highlight['summary_ai']?.[0] || source.summary_ai,
     };
     
-    // ========== 核心修改點：為 JFULL_highlights 附加 para_id ==========
+    // ========== 核心修改點：更穩健的 para_id 匹配邏輯 ==========
     
     const originalHighlights = highlight['JFULL'] || [];
     const citableParagraphs = source.citable_paragraphs || [];
 
-    // 如果沒有可引用的段落，我們無法進行匹配，直接返回原始片段
     if (citableParagraphs.length === 0) {
         processedItem.JFULL_highlights = originalHighlights.map(fragment => ({
             fragment: fragment,
@@ -39,25 +36,41 @@ export function formatEsResponse(esResult, pageSize = 10) {
         }));
     } else {
         processedItem.JFULL_highlights = originalHighlights.map(fragment => {
-            // 為了匹配，我們需要一個沒有高亮標籤的純文字版本
-            const cleanFragment = fragment.replace(/<em class='search-highlight'>/g, '').replace(/<\/em>/g, '');
+            // 1. 從高亮片段中提取出真正的關鍵詞
+            const match = fragment.match(/<em class='search-highlight'>(.*?)<\/em>/);
+            const keyword = match ? match[1] : null;
+
+            let sourceParaId = null;
+
+            // 2. 如果能提取出關鍵詞，就用關鍵詞去尋找來源段落
+            if (keyword) {
+                const sourceParagraph = citableParagraphs.find(p => 
+                    p.paragraph_text && p.paragraph_text.includes(keyword)
+                );
+                if (sourceParagraph) {
+                    sourceParaId = sourceParagraph.para_id;
+                }
+            }
             
-            // 在 citable_paragraphs 陣列中尋找包含這個乾淨片段的段落
-            // 我們使用 find 來找到第一個匹配的段落
-            const sourceParagraph = citableParagraphs.find(p => 
-                p.paragraph_text && p.paragraph_text.includes(cleanFragment)
-            );
+            // 3. 如果用關鍵詞找不到（極端情況），再用舊的、較不穩定的方法做一次備用查找
+            if (!sourceParaId) {
+                const cleanFragment = fragment.replace(/<em class='search-highlight'>/g, '').replace(/<\/em>/g, '');
+                const fallbackParagraph = citableParagraphs.find(p => 
+                    p.paragraph_text && p.paragraph_text.includes(cleanFragment)
+                );
+                if (fallbackParagraph) {
+                    sourceParaId = fallbackParagraph.para_id;
+                }
+            }
             
-            // 返回新的物件結構，包含 fragment 和 para_id
             return {
                 fragment: fragment,
-                para_id: sourceParagraph ? sourceParagraph.para_id : null 
+                para_id: sourceParaId // 返回找到的 ID，找不到則為 null
             };
         });
     }
     // =================================================================
 
-    // 不再在這裡進行排序和計數，這些邏輯已經轉移到前端
     return processedItem;
   });
 
