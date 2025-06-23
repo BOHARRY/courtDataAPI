@@ -63,8 +63,8 @@ export async function performSearch(searchFilters, page, pageSize) {
         fields: {
           // ===== 修正 #2: 移除 .cjk 後綴，直接對主欄位進行高亮 =====
           "JFULL": {
-            fragment_size: 100, // 每個片段的長度
-            number_of_fragments: 3, // 最多返回 3 個片段
+            fragment_size: 120,       // 稍微增加片段長度，獲取更多上下文
+            number_of_fragments: 20,  // 從 3 大幅增加到 20
             no_match_size: 120 // 如果沒有匹配，從頭截取 120 字元作為摘要
           },
           "JTITLE": {
