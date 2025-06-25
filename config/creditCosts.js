@@ -15,6 +15,7 @@ export const CREDIT_COSTS = {
   JUDGE_AI_ANALYTICS: 3,         // 法官AI分析與統計 (包含AI)
 
   AI_SUCCESS_ANALYSIS: 5,
+  SEMANTIC_SEARCH: 3, // 新增語意搜尋功能，消耗 3 積分
 
   // 其他未來可能的功能
   // EXAMPLE_FEATURE_A: 1,
@@ -29,6 +30,7 @@ export const CREDIT_PURPOSES = {
   LAWYER_CASES_DISTRIBUTION: 'lawyer_cases_distribution',
   LAWYER_AI_ANALYSIS: 'lawyer_ai_analysis',
   JUDGE_AI_ANALYTICS: 'judge_ai_analytics',
+  SEMANTIC_SEARCH: 'SEMANTIC_SEARCH',  // 新增語意搜尋用途
   // ... 其他 purpose ...
 
   // 積分增加的 purpose

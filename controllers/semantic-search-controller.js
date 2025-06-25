@@ -40,7 +40,7 @@ export async function performSemanticSearchController(req, res, next) {
             parseInt(pageSize, 10)
         );
 
-        // 扣除積分（語意搜尋消耗 3 積分）
+        // 加入積分資訊（從中間件傳遞過來）
         results.creditsDeducted = req.creditDeducted || 3;
         results.userCreditsRemaining = req.userCreditsAfter;
 
