@@ -171,7 +171,15 @@ function buildHybridQuery(queryVector, enhancedData, caseType, filters = {}) {
         query_vector: queryVector,
         k: 50,  // 增加候選數量
         num_candidates: 100,
-        filter: filterClauses
+        filter: filterClauses,
+        // 使用 inner_hits 來獲取匹配的巢狀文件的向量
+        inner_hits: {
+            size: 1,
+            _source: false,
+            docvalue_fields: [
+                "legal_issues.legal_issues_embedding"
+            ]
+        }
     };
 
     // 關鍵字加強查詢
@@ -294,10 +302,6 @@ export async function performSemanticSearch(userQuery, caseType, filters = {}, p
                     "main_reasons_ai", "tags"
                 ]
             },
-            // 使用 docvalue_fields 來抓取未儲存在 _source 中的向量
-            docvalue_fields: [
-                "legal_issues.legal_issues_embedding"
-            ],
             highlight: {
                 fields: {
                     "legal_issues.question": {
@@ -340,11 +344,15 @@ export async function performSemanticSearch(userQuery, caseType, filters = {}, p
         // 提取有向量的結果用於分群
         const hitsWithVectors = rawHits
             .map((hit, index) => {
-                // 從 doc_values 中提取向量
-                const vector = hit.fields?.['legal_issues.legal_issues_embedding']?.[0];
+                // 從 inner_hits 中提取向量
+                const innerHit = hit.inner_hits?.legal_issues?.hits?.hits?.[0];
+                const vector = innerHit?.fields?.['legal_issues.legal_issues_embedding']?.[0];
+
                 if (index < 5) { // 只印出前 5 筆的詳細日誌
                     console.log(`[SemanticSearch] 處理 HIT #${index}:`);
-                    console.log(`  - 從 fields 中提取的向量長度: ${vector?.length || '未定義'}`);
+                    console.log(`  - inner_hits 存在: ${!!hit.inner_hits?.legal_issues}`);
+                    console.log(`  - inner_hit[0] 存在: ${!!innerHit}`);
+                    console.log(`  - 從 inner_hit fields 中提取的向量長度: ${vector?.length || '未定義'}`);
                 }
                 return {
                     hit: hit,
