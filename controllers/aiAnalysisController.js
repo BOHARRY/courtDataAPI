@@ -19,19 +19,36 @@ export const analyzeSuccessFactorsController = async (req, res, next) => {
     }
 };
 
-// 新增的 Controller
+// 修改後的 Controller，現在只負責啟動任務
 export const summarizeCommonPointsController = async (req, res, next) => {
     try {
         const { judgementIds } = req.body;
+        const userId = req.user.uid;
 
         if (!judgementIds || !Array.isArray(judgementIds) || judgementIds.length === 0) {
             return res.status(400).json({ message: 'judgementIds 必須是一個包含判決書 ID 的陣列。' });
         }
 
-        const result = await summarizeCommonPoints(judgementIds);
+        const { taskId } = await startCommonPointsAnalysis(judgementIds, userId);
+        res.status(202).json({ message: '分析任務已啟動', taskId }); // 202 Accepted
+    } catch (error) {
+        next(error);
+    }
+};
+
+// 新增的 Controller，用於查詢結果
+export const getAnalysisResultController = async (req, res, next) => {
+    try {
+        const { taskId } = req.params;
+        const userId = req.user.uid;
+
+        if (!taskId) {
+            return res.status(400).json({ message: '缺少任務 ID。' });
+        }
+
+        const result = await getAnalysisResult(taskId, userId);
         res.status(200).json(result);
     } catch (error) {
-        // next(error) 會將錯誤傳遞給 express 的錯誤處理中介軟體
         next(error);
     }
 };
