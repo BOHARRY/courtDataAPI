@@ -128,7 +128,8 @@ async function executeAnalysisInBackground(taskId, judgementIds, userId) {
         }
 
         // 3. 第二階段：綜整
-        let synthesisContext = "你是一位頂尖的台灣法律分析師..."; // (Prompt 內容不變)
+        let synthesisContext = "你是一位頂尖的台灣法律分析師。你的任務是分析以下多篇判決書的資料，並撰寫一份帶有原文引用的綜合分析報告。\n\n";
+        
         foundDocs.forEach((doc, index) => {
             synthesisContext += `--- 判決書 ${index + 1} (ID: ${doc.JID}) ---\n`;
             synthesisContext += `【AI 預處理摘要】:\n${doc.summary_ai_full || '無提供 AI 摘要。'}\n\n`;
@@ -137,7 +138,23 @@ async function executeAnalysisInBackground(taskId, judgementIds, userId) {
             synthesisContext += `- 爭點: "${extractedContents[index].legalIssues || '未提取到'}"\n`;
             synthesisContext += `- 理由: "${extractedContents[index].reasons || '未提取到'}"\n---\n\n`;
         });
-        synthesisContext += `【你的任務】: ...`; // (Prompt 結尾不變)
+
+        synthesisContext += `【你的任務】:
+請基於以上所有資料，撰寫一段流暢的分析報告。在報告中，當你引用任何來自【原文核心段落】的內容時，必須在該處插入一個引用標記 [n] (例如 [1], [2]...)。
+最後，你必須提供一個 citations 物件，其中包含每個引用標記的來源。請嚴格遵循以下 JSON 格式輸出，並確保你的回應是一個合法的 JSON 物件：
+
+{
+  "report": {
+    "summaryText": "你的分析報告...",
+    "citations": {
+      "1": {
+        "judgementId": "來源判決書的ID",
+        "originalText": "被引用的原文片段..."
+      }
+    }
+  }
+}
+`;
 
         console.log(`[summarizeCommonPointsService] [Stage 2] Starting synthesis using ${SYNTHESIS_MODEL}`);
         const synthesisResponse = await openai.chat.completions.create({
