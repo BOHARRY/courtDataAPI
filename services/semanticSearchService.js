@@ -167,7 +167,7 @@ function buildHybridQuery(queryVector, enhancedData, caseType, filters = {}) {
 
     // KNN 向量搜尋配置
     const knnQuery = {
-        field: "legal_issues_embedding",
+        field: "legal_issues.legal_issues_embedding",
         query_vector: queryVector,
         k: 50,  // 增加候選數量
         num_candidates: 100,
