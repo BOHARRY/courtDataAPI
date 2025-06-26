@@ -230,7 +230,7 @@ export async function performSemanticSearch(userQuery, caseType, filters = {}, p
             script_fields: {
                 "cosine_similarity": {
                     "script": {
-                        "source": "cosineSimilarity(params.query_vector, 'legal_issues_embedding') + 1.0",
+                        "source": "cosineSimilarity(params.query_vector, doc['legal_issues_embedding']) + 1.0",
                         "params": {
                             "query_vector": queryVector
                         }
