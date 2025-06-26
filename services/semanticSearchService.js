@@ -2,6 +2,7 @@
 import esClient from '../config/elasticsearch.js';
 import { OpenAI } from 'openai';
 import { OPENAI_API_KEY, OPENAI_MODEL_NAME_EMBEDDING } from '../config/environment.js';
+import { kmeans } from 'ml-kmeans';
 
 const openai = new OpenAI({
     apiKey: OPENAI_API_KEY,
@@ -50,6 +51,48 @@ async function enhanceQuery(userQuery, caseType) {
         throw new Error(`查詢優化失敗: ${error.message}`);
     }
 }
+
+/**
+ * 從 AI 獲取多個分類的名稱
+ */
+async function getClusterNamesFromAI(representativeIssues, userQuery, caseType) {
+    try {
+        const issuesText = representativeIssues.map((issue, index) => `${index + 1}. ${issue.question}`).join('\n');
+        const prompt = `你是台灣法律搜尋助手。使用者查詢了關於「${userQuery}」的${caseType}問題。
+以下是從搜尋結果中自動分出的 ${representativeIssues.length} 個爭點群組的代表性問題：
+---
+${issuesText}
+---
+請為這 ${representativeIssues.length} 個群組，各生成一個最精煉、最準確的分類名稱（限 10 字內）。
+請嚴格按照以下 JSON 格式回應，key 是從 "0" 到 "${representativeIssues.length - 1}" 的字串：
+{
+  "0": "分類名稱一",
+  "1": "分類名稱二"
+}`;
+
+        const response = await openai.chat.completions.create({
+            model: "gpt-4o-mini",
+            messages: [{ role: "user", content: prompt }],
+            temperature: 0.5,
+            max_tokens: 500,
+            response_format: { type: "json_object" }
+        });
+
+        const clusterNames = JSON.parse(response.choices[0].message.content);
+        console.log(`[SemanticSearch] AI 命名分類結果:`, clusterNames);
+        return clusterNames;
+
+    } catch (error) {
+        console.error('[SemanticSearch] AI 命名分類失敗:', error);
+        // 如果失敗，返回預設名稱
+        const fallbackNames = {};
+        for (let i = 0; i < representativeIssues.length; i++) {
+            fallbackNames[i] = `爭點類別 ${i + 1}`;
+        }
+        return fallbackNames;
+    }
+}
+
 
 /**
  * 獲取文本的向量表示
@@ -174,6 +217,42 @@ function buildHybridQuery(queryVector, enhancedData, caseType, filters = {}) {
     };
 }
 
+// 新增：將 hit 格式化的輔助函數
+function formatHit(hit) {
+    const source = hit._source;
+    const highlight = hit.highlight || {};
+    
+    let matchedIssue = null;
+    if (source.legal_issues?.length > 0) {
+        if (highlight['legal_issues.question']?.[0] || highlight['legal_issues.answer']?.[0]) {
+            matchedIssue = {
+                question: highlight['legal_issues.question']?.[0] || source.legal_issues[0].question,
+                answer: highlight['legal_issues.answer']?.[0] || source.legal_issues[0].answer,
+                cited_para_id: source.legal_issues[0].cited_para_id,
+                legal_issues_embedding: source.legal_issues[0].legal_issues_embedding // 確保向量被傳遞
+            };
+        } else {
+            matchedIssue = source.legal_issues[0];
+        }
+    }
+
+    return {
+        id: source.JID || source.id,
+        title: source.JTITLE,
+        court: source.court,
+        date: source.JDATE,
+        caseType: Array.isArray(source.case_type) ? source.case_type[0] : source.case_type,
+        verdict: source.verdict_type,
+        summary: source.summary_ai,
+        tags: source.tags || [],
+        mainReasons: source.main_reasons_ai || [],
+        relevanceScore: hit._score,
+        matchedIssue: matchedIssue,
+        allIssues: source.legal_issues || []
+    };
+}
+
+
 /**
  * 執行語意搜尋
  */
@@ -201,7 +280,6 @@ export async function performSemanticSearch(userQuery, caseType, filters = {}, p
         
         // 步驟 5: 執行搜尋
         console.log(`[SemanticSearch] 執行 ES 搜尋...`);
-        const from = (page - 1) * pageSize;
         
         const searchBody = {
             // min_score: 1.5, // 移除絕對分數門檻，改用排名限制
@@ -212,7 +290,8 @@ export async function performSemanticSearch(userQuery, caseType, filters = {}, p
                 includes: [
                     "id", "JID", "JTITLE", "JDATE", "court",
                     "case_type", "verdict_type", "summary_ai",
-                    "legal_issues", "main_reasons_ai", "tags"
+                    "legal_issues.question", "legal_issues.answer", "legal_issues.cited_para_id", "legal_issues.legal_issues_embedding", // 精確指定需要的 nested 欄位
+                    "main_reasons_ai", "tags"
                 ]
             },
             highlight: {
@@ -241,56 +320,106 @@ export async function performSemanticSearch(userQuery, caseType, filters = {}, p
         const elapsedTime = Date.now() - startTime;
         console.log(`[SemanticSearch] 搜尋完成，耗時 ${elapsedTime}ms`);
 
-        // 步驟 6: 處理結果
-        const hits = esResult.hits.hits.map(hit => {
-            const source = hit._source;
-            const highlight = hit.highlight || {};
-            
-            // 找出最相關的爭點
-            let matchedIssue = null;
-            if (source.legal_issues?.length > 0) {
-                // 如果有高亮，使用高亮的爭點
-                if (highlight['legal_issues.question']?.[0] || highlight['legal_issues.answer']?.[0]) {
-                    matchedIssue = {
-                        question: highlight['legal_issues.question']?.[0] || source.legal_issues[0].question,
-                        answer: highlight['legal_issues.answer']?.[0] || source.legal_issues[0].answer,
-                        cited_para_id: source.legal_issues[0].cited_para_id
-                    };
-                } else {
-                    // 否則取第一個爭點
-                    matchedIssue = source.legal_issues[0];
-                }
-            }
+        // 步驟 6: 處理與分類結果
+        const rawHits = esResult.hits.hits;
+        const total = esResult.hits.total.value;
 
+        // 如果結果太少，不進行分類，直接返回
+        if (rawHits.length < 10) {
+            const results = rawHits.map(hit => formatHit(hit));
             return {
-                id: source.JID || source.id,
-                title: source.JTITLE,
-                court: source.court,
-                date: source.JDATE,
-                caseType: Array.isArray(source.case_type) ? source.case_type[0] : source.case_type,
-                verdict: source.verdict_type,
-                summary: source.summary_ai,
-                tags: source.tags || [],
-                mainReasons: source.main_reasons_ai || [],
-                relevanceScore: hit._score,
-                matchedIssue: matchedIssue,
-                allIssues: source.legal_issues || []
+                success: true,
+                results: results,
+                total: total,
+                totalPages: Math.ceil(total / pageSize),
+                currentPage: page,
+                searchMode: 'semantic',
+                originalQuery: userQuery,
+                enhancedQuery: enhancedData,
+                executionTime: elapsedTime,
+                message: `找到 ${total} 個相關爭點的判決`
             };
+        }
+
+        // 提取向量用於分群
+        const hitsWithVectors = rawHits.map(hit => ({ 
+            hit: hit, 
+            vector: hit._source.legal_issues?.[0]?.legal_issues_embedding 
+        })).filter(item => item.vector && Array.isArray(item.vector));
+        
+        if (hitsWithVectors.length < 10) {
+             const results = rawHits.map(hit => formatHit(hit));
+             return {
+                success: true,
+                results: results,
+                total: total,
+                totalPages: Math.ceil(total / pageSize),
+                currentPage: page,
+                searchMode: 'semantic',
+                originalQuery: userQuery,
+                enhancedQuery: enhancedData,
+                executionTime: elapsedTime,
+                message: `找到 ${total} 個相關爭點的判決`
+            };
+        }
+
+        const vectors = hitsWithVectors.map(item => item.vector);
+
+        // 執行 K-Means 分群
+        const kmeansResult = kmeans(vectors, 10, { initialization: 'kmeans++' });
+        
+        // 初始化群組
+        const clusters = Array.from({ length: 10 }, () => ({ clusterName: '', items: [] }));
+        
+        hitsWithVectors.forEach((item, index) => {
+            const clusterIndex = kmeansResult.clusters[index];
+            if (clusterIndex !== undefined) {
+                clusters[clusterIndex].items.push(formatHit(item.hit));
+            }
         });
 
-        const total = esResult.hits.total.value;
+        // 為每個群組找出代表性爭點並請求 AI 命名
+        const representativeIssues = clusters
+            .map(cluster => cluster.items[0]?.matchedIssue)
+            .filter(issue => issue); // 過濾掉沒有代表的空群組
+
+        if (representativeIssues.length === 0) {
+            // 如果沒有任何代表性爭點，也直接返回扁平結果
+            const results = rawHits.map(hit => formatHit(hit));
+            return {
+               success: true,
+               results: results,
+               total: total,
+               totalPages: Math.ceil(total / pageSize),
+               currentPage: page,
+               searchMode: 'semantic',
+               originalQuery: userQuery,
+               enhancedQuery: enhancedData,
+               executionTime: elapsedTime,
+               message: `找到 ${total} 個相關爭點的判決`
+           };
+        }
+
+        const clusterNames = await getClusterNamesFromAI(representativeIssues, userQuery, caseType);
+
+        // 將 AI 返回的名稱賦給群組
+        let nameIndex = 0;
+        clusters.forEach((cluster) => {
+            if(cluster.items.length > 0) {
+                cluster.clusterName = clusterNames[nameIndex] || `爭點類別 ${nameIndex + 1}`;
+                nameIndex++;
+            }
+        });
 
         return {
             success: true,
-            results: hits,
-            total: total,
-            totalPages: Math.ceil(total / pageSize),
-            currentPage: page,
-            searchMode: 'semantic',
+            totalResults: rawHits.length,
+            searchMode: 'semantic_clustered',
+            clusters: clusters.filter(c => c.items.length > 0), // 過濾掉空群組
             originalQuery: userQuery,
             enhancedQuery: enhancedData,
             executionTime: elapsedTime,
-            message: `找到 ${total} 個相關爭點的判決`
+            message: `找到 ${rawHits.length} 個相關判決，並分為 ${clusters.filter(c => c.items.length > 0).length} 個爭點類別`
         };
 
     } catch (error) {
@@ -298,6 +427,7 @@ export async function performSemanticSearch(userQuery, caseType, filters = {}, p
         throw error;
     }
 }
+
 
 /**
  * 獲取相關爭點建議（用於自動完成）
