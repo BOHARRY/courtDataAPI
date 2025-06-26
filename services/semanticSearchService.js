@@ -168,7 +168,7 @@ function buildHybridQuery(queryVector, enhancedData, caseType, filters = {}) {
         query: keywordQueries.length > 0 ? {
             bool: {
                 should: keywordQueries,
-                minimum_should_match: 0
+                minimum_should_match: 1 // 必須至少匹配一個關鍵字條件
             }
         } : undefined
     };
