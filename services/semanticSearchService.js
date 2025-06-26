@@ -23,9 +23,9 @@ async function enhanceQuery(userQuery, caseType) {
 用戶問題：「${userQuery}」
 
 請提供：
-1. 3-5個核心法律概念關鍵字
-2. 可能相關的法條（如有）
-3. 擴充後的語意描述（限30字內，用於向量搜尋）
+1.  3-5個核心法律概念關鍵字（例如 "修繕義務", "不完全給付", "瑕疵擔保"）。請避免使用 "民法", "刑法" 等籠統的法典名稱。
+2.  可能相關的具體法條（例如 "民法第429條"）。
+3.  一句擴充後的精準語意描述（限30字內，用於向量搜尋）。
 
 請確保回應是有效的 JSON 格式：
 {
@@ -37,7 +37,7 @@ async function enhanceQuery(userQuery, caseType) {
         const response = await openai.chat.completions.create({
             model: "gpt-4o-mini",
             messages: [{ role: "user", content: prompt }],
-            temperature: 0.3,
+            temperature: 0.2,
             max_tokens: 200,
             response_format: { type: "json_object" }
         });
@@ -187,8 +187,8 @@ function buildHybridQuery(queryVector, enhancedData, caseType, filters = {}) {
                         multi_match: {
                             query: keyword,
                             fields: ["legal_issues.question^2", "legal_issues.answer"],
-                            type: "phrase",
-                            boost: 1.5
+                            type: "best_fields", // 優化：使用 best_fields 提高精準度
+                            boost: 0.5 // 優化：降低關鍵字權重
                         }
                     }
                 }
@@ -201,7 +201,7 @@ function buildHybridQuery(queryVector, enhancedData, caseType, filters = {}) {
         keywordQueries.push({
             terms: {
                 "legal_basis": enhancedData.laws,
-                boost: 2.0
+                boost: 1.5 // 優化：略微降低法條權重
             }
         });
     }
@@ -211,7 +211,7 @@ function buildHybridQuery(queryVector, enhancedData, caseType, filters = {}) {
         query: keywordQueries.length > 0 ? {
             bool: {
                 should: keywordQueries,
-                minimum_should_match: 1 // 必須至少匹配一個關鍵字條件
+                minimum_should_match: 1
             }
         } : undefined
     };
@@ -356,7 +356,6 @@ export async function performSemanticSearch(userQuery, caseType, filters = {}, p
         // 動態決定 K 值
         const numClusters = Math.max(2, Math.min(Math.floor(hitsWithVectors.length / 3), 8));
         
-        // 修正：解開多餘的陣列包裝
         const vectors = hitsWithVectors.map(item => item.vector[0]);
         
         console.log(`[SemanticSearch] 執行 K-Means 分群，K=${numClusters}`);
