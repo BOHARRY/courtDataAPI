@@ -204,10 +204,10 @@ export async function performSemanticSearch(userQuery, caseType, filters = {}, p
         const from = (page - 1) * pageSize;
         
         const searchBody = {
-            min_score: 1.5, // 為融合後的分數設定一個合理的最低門檻
+            // min_score: 1.5, // 移除絕對分數門檻，改用排名限制
             knn: hybridQuery.knn,
-            from: from,
-            size: pageSize,
+            from: 0, // 從第一個結果開始
+            size: 100, // 一次性獲取前 100 名的結果
             _source: {
                 includes: [
                     "id", "JID", "JTITLE", "JDATE", "court",
