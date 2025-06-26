@@ -7,7 +7,6 @@
     "start": "node index.js"
   },
   "dependencies": {
-    "@dnd-kit/core": "^6.3.1",
     "@elastic/elasticsearch": "^8.13.0",
     "axios": "^1.9.0",
     "cors": "^2.8.5",
@@ -18,7 +17,6 @@
     "multer": "^2.0.0",
     "nodemailer": "^7.0.3",
     "openai": "^4.99.0",
-    "reactflow": "^11.11.4",
     "uuid": "^11.1.0"
   }
 }
