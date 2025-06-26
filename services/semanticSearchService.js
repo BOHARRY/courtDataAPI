@@ -204,7 +204,7 @@ export async function performSemanticSearch(userQuery, caseType, filters = {}, p
         const from = (page - 1) * pageSize;
         
         const searchBody = {
-            min_score: 0.91, // 設定最低相似度分數門檻
+            // min_score: 0.91, // 頂層 min_score 對 knn 結果無效，暫時移除
             knn: hybridQuery.knn,
             from: from,
             size: pageSize,
@@ -226,6 +226,16 @@ export async function performSemanticSearch(userQuery, caseType, filters = {}, p
                         number_of_fragments: 1
                     }
                 }
+            },
+            script_fields: {
+                "cosine_similarity": {
+                    "script": {
+                        "source": "cosineSimilarity(params.query_vector, 'legal_issues_embedding') + 1.0",
+                        "params": {
+                            "query_vector": queryVector
+                        }
+                    }
+                }
             }
         };
 
@@ -242,7 +252,14 @@ export async function performSemanticSearch(userQuery, caseType, filters = {}, p
         console.log(`[SemanticSearch] 搜尋完成，耗時 ${elapsedTime}ms`);
 
         // 步驟 6: 處理結果
-        const hits = esResult.hits.hits.map(hit => {
+        const hits = esResult.hits.hits
+            .filter(hit => {
+                // 在後端進行嚴格的二次篩選
+                const cosineScore = hit.fields?.cosine_similarity?.[0];
+                // 餘弦相似度原始範圍是-1到1，ES腳本+1.0後變為0到2。所以1.91對應原始的0.91
+                return cosineScore ? cosineScore >= 1.91 : false;
+            })
+            .map(hit => {
             const source = hit._source;
             const highlight = hit.highlight || {};
             
