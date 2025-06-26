@@ -167,19 +167,11 @@ function buildHybridQuery(queryVector, enhancedData, caseType, filters = {}) {
 
     // KNN 向量搜尋配置
     const knnQuery = {
-        field: "legal_issues.legal_issues_embedding",
+        field: "legal_issues_embedding",
         query_vector: queryVector,
-        k: 50,  // 增加候選數量
+        k: 50,
         num_candidates: 100,
-        filter: filterClauses,
-        // 使用 inner_hits 來獲取匹配的巢狀文件的向量
-        inner_hits: {
-            size: 1,
-            _source: false,
-            docvalue_fields: [
-                "legal_issues.legal_issues_embedding"
-            ]
-        }
+        filter: filterClauses
     };
 
     // 關鍵字加強查詢
@@ -216,8 +208,12 @@ function buildHybridQuery(queryVector, enhancedData, caseType, filters = {}) {
 
     return {
         knn: knnQuery,
-        // Temporarily disable keyword search for diagnostics
-        query: undefined
+        query: keywordQueries.length > 0 ? {
+            bool: {
+                should: keywordQueries,
+                minimum_should_match: 1 // 必須至少匹配一個關鍵字條件
+            }
+        } : undefined
     };
 }
 
@@ -232,8 +228,7 @@ function formatHit(hit) {
             matchedIssue = {
                 question: highlight['legal_issues.question']?.[0] || source.legal_issues[0].question,
                 answer: highlight['legal_issues.answer']?.[0] || source.legal_issues[0].answer,
-                cited_para_id: source.legal_issues[0].cited_para_id,
-                legal_issues_embedding: source.legal_issues[0].legal_issues_embedding // 確保向量被傳遞
+                cited_para_id: source.legal_issues[0].cited_para_id
             };
         } else {
             matchedIssue = source.legal_issues[0];
@@ -286,10 +281,9 @@ export async function performSemanticSearch(userQuery, caseType, filters = {}, p
         console.log(`[SemanticSearch] 執行 ES 搜尋...`);
         
         const searchBody = {
-            // min_score: 1.5, // 移除絕對分數門檻，改用排名限制
             knn: hybridQuery.knn,
-            from: 0, // 從第一個結果開始
-            size: 100, // 一次性獲取前 100 名的結果
+            from: 0,
+            size: 100,
             _source: {
                 includes: [
                     "id", "JID", "JTITLE", "JDATE", "court",
@@ -298,6 +292,9 @@ export async function performSemanticSearch(userQuery, caseType, filters = {}, p
                     "main_reasons_ai", "tags"
                 ]
             },
+            docvalue_fields: [
+                "legal_issues_embedding"
+            ],
             highlight: {
                 fields: {
                     "legal_issues.question": {
@@ -328,19 +325,9 @@ export async function performSemanticSearch(userQuery, caseType, filters = {}, p
         const rawHits = esResult.hits.hits;
         const total = esResult.hits.total.value;
 
-        // 提取有向量的結果用於分群
         const hitsWithVectors = rawHits
-            .map((hit, index) => {
-                // 從 inner_hits 中提取向量
-                const innerHit = hit.inner_hits?.legal_issues?.hits?.hits?.[0];
-                const vector = innerHit?.fields?.['legal_issues.legal_issues_embedding']?.[0];
-
-                if (index < 5) { // 只印出前 5 筆的詳細日誌
-                    console.log(`[SemanticSearch] 處理 HIT #${index}:`);
-                    console.log(`  - inner_hits 存在: ${!!hit.inner_hits?.legal_issues}`);
-                    console.log(`  - inner_hit[0] 存在: ${!!innerHit}`);
-                    console.log(`  - 從 inner_hit fields 中提取的向量長度: ${vector?.length || '未定義'}`);
-                }
+            .map((hit) => {
+                const vector = hit.fields?.['legal_issues_embedding'];
                 return {
                     hit: hit,
                     vector: vector
