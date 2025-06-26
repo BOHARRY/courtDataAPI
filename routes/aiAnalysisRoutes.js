@@ -1,6 +1,6 @@
 // routes/aiAnalysisRoutes.js
 import express from 'express';
-import { analyzeSuccessFactorsController } from '../controllers/aiAnalysisController.js'; // 等下會創建
+import { analyzeSuccessFactorsController, summarizeCommonPointsController } from '../controllers/aiAnalysisController.js';
 import { verifyToken } from '../middleware/auth.js';
 import { checkAndDeductCredits } from '../middleware/credit.js';
 import { CREDIT_COSTS, CREDIT_PURPOSES } from '../config/creditCosts.js';
@@ -16,10 +16,23 @@ router.post(
         CREDIT_PURPOSES.AI_SUCCESS_ANALYSIS,
         {
             description: 'AI勝訴案由分析',
-            // relatedIdKey: 'body.case_summary_text' // 考慮是否需要記錄關聯ID，例如摘要的前幾個字
         }
     ),
     analyzeSuccessFactorsController
+);
+
+// POST /api/ai/summarize-common-points
+router.post(
+    '/summarize-common-points',
+    verifyToken,
+    checkAndDeductCredits(
+        CREDIT_COSTS.SUMMARIZE_COMMON_POINTS,
+        CREDIT_PURPOSES.SUMMARIZE_COMMON_POINTS,
+        {
+            description: '(圖板) AI歸納判例共同點',
+        }
+    ),
+    summarizeCommonPointsController
 );
 
 export default router;

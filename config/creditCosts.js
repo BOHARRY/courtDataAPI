@@ -16,6 +16,7 @@ export const CREDIT_COSTS = {
 
   AI_SUCCESS_ANALYSIS: 5,
   SEMANTIC_SEARCH: 3, // 新增語意搜尋功能，消耗 3 積分
+  SUMMARIZE_COMMON_POINTS: 4, // (圖板) AI歸納判例共同點
 
   // 其他未來可能的功能
   // EXAMPLE_FEATURE_A: 1,
@@ -31,6 +32,8 @@ export const CREDIT_PURPOSES = {
   LAWYER_AI_ANALYSIS: 'lawyer_ai_analysis',
   JUDGE_AI_ANALYTICS: 'judge_ai_analytics',
   SEMANTIC_SEARCH: 'SEMANTIC_SEARCH',  // 新增語意搜尋用途
+  AI_SUCCESS_ANALYSIS: 'ai_success_analysis',
+  SUMMARIZE_COMMON_POINTS: 'summarize_common_points', // (圖板) AI歸納判例共同點
   // ... 其他 purpose ...
 
   // 積分增加的 purpose
@@ -40,7 +43,6 @@ export const CREDIT_PURPOSES = {
   PURCHASE_CREDITS_PKG_20: 'purchase_credits_PKG_20', // 範例
   ADMIN_GRANT: 'admin_grant',
   REFUND_ADJUSTMENT: 'refund_adjustment',
-  AI_SUCCESS_ANALYSIS: 'ai_success_analysis',
   PURCHASE_CREDITS_PKG_PREFIX: 'purchase_credit_package_', // 前綴，後面會跟 package_id
   SUBSCRIPTION_GRANT_PREFIX: 'subscription_grant_', // 前綴，後面會跟 plan_id
   SUBSCRIPTION_RENEWAL_GRANT: 'subscription_renewal_grant_', // 前綴，後面會跟 plan_id
