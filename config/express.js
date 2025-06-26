@@ -13,10 +13,10 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-// 解析 JSON body
-app.use(express.json());
-// 解析 URL-encoded body
-app.use(express.urlencoded({ extended: true }));
+// 解析 JSON body，並增加大小限制
+app.use(express.json({ limit: '50mb' }));
+// 解析 URL-encoded body，並增加大小限制
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // 基本的日誌中間件 (可選, 只是示例)
 app.use((req, res, next) => {

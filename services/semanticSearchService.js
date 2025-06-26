@@ -330,8 +330,8 @@ export async function performSemanticSearch(userQuery, caseType, filters = {}, p
             return {
                 success: true,
                 results: results,
-                total: total,
-                totalPages: Math.ceil(total / pageSize),
+                total: results.length, // 使用實際返回的結果數量
+                totalPages: Math.ceil(results.length / pageSize),
                 currentPage: page,
                 searchMode: 'semantic',
                 originalQuery: userQuery,
@@ -352,8 +352,8 @@ export async function performSemanticSearch(userQuery, caseType, filters = {}, p
              return {
                 success: true,
                 results: results,
-                total: total,
-                totalPages: Math.ceil(total / pageSize),
+                total: results.length, // 使用實際返回的結果數量
+                totalPages: Math.ceil(results.length / pageSize),
                 currentPage: page,
                 searchMode: 'semantic',
                 originalQuery: userQuery,
@@ -389,8 +389,8 @@ export async function performSemanticSearch(userQuery, caseType, filters = {}, p
             return {
                success: true,
                results: results,
-               total: total,
-               totalPages: Math.ceil(total / pageSize),
+               total: results.length, // 使用實際返回的結果數量
+               totalPages: Math.ceil(results.length / pageSize),
                currentPage: page,
                searchMode: 'semantic',
                originalQuery: userQuery,
@@ -413,7 +413,7 @@ export async function performSemanticSearch(userQuery, caseType, filters = {}, p
 
         return {
             success: true,
-            totalResults: rawHits.length,
+            totalResults: hitsWithVectors.length, // 使用分群前的實際數量
             searchMode: 'semantic_clustered',
             clusters: clusters.filter(c => c.items.length > 0), // 過濾掉空群組
             originalQuery: userQuery,
