@@ -355,9 +355,16 @@ export async function performSemanticSearch(userQuery, caseType, filters = {}, p
 
         // 動態決定 K 值
         const numClusters = Math.max(2, Math.min(Math.floor(hitsWithVectors.length / 3), 8));
-        console.log(`[SemanticSearch] 執行 K-Means 分群，K=${numClusters}`);
-
+        
         const vectors = hitsWithVectors.map(item => item.vector);
+        
+        // 診斷日誌：檢查第一個向量的結構
+        if (vectors.length > 0) {
+            console.log('[SemanticSearch] 準備分群的第一個向量 (前10個維度):', vectors[0].slice(0, 10));
+            console.log('[SemanticSearch] 第一個向量的類型:', typeof vectors[0][0]);
+        }
+
+        console.log(`[SemanticSearch] 執行 K-Means 分群，K=${numClusters}`);
         const kmeansResult = kmeans(vectors, numClusters, { initialization: 'kmeans++' });
 
         // 初始化群組
