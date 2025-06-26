@@ -44,8 +44,9 @@ export async function performSemanticSearchController(req, res, next) {
         results.creditsDeducted = req.creditDeducted || 3;
         results.userCreditsRemaining = req.userCreditsAfter;
 
-        console.log(`[SemanticSearchController] 語意搜尋成功，返回 ${results.results.length} 筆結果`);
+        console.log(`[SemanticSearchController] 語意搜尋成功，模式: ${results.searchMode}，返回 ${results.results?.length || results.clusters?.length || 0} 筆結果/分類`);
         
+        // 直接回傳 service 層的結果，它已經包含了 searchMode
         res.status(200).json(results);
 
     } catch (error) {

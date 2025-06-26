@@ -324,13 +324,22 @@ export async function performSemanticSearch(userQuery, caseType, filters = {}, p
         const rawHits = esResult.hits.hits;
         const total = esResult.hits.total.value;
 
-        // 如果結果太少，不進行分類，直接返回
-        if (rawHits.length < 10) {
+        // 提取有向量的結果用於分群
+        const hitsWithVectors = rawHits
+            .map(hit => ({
+                hit: hit,
+                vector: hit._source.legal_issues?.[0]?.legal_issues_embedding
+            }))
+            .filter(item => item.vector && Array.isArray(item.vector) && item.vector.length > 0);
+
+        // 如果可用於分群的結果太少，直接返回扁平結果
+        if (hitsWithVectors.length < 5) {
+            console.log(`[SemanticSearch] 可分群結果不足 (${hitsWithVectors.length})，返回扁平結果。`);
             const results = rawHits.map(hit => formatHit(hit));
             return {
                 success: true,
                 results: results,
-                total: results.length, // 使用實際返回的結果數量
+                total: results.length,
                 totalPages: Math.ceil(results.length / pageSize),
                 currentPage: page,
                 searchMode: 'semantic',
@@ -341,85 +350,65 @@ export async function performSemanticSearch(userQuery, caseType, filters = {}, p
             };
         }
 
-        // 提取向量用於分群
-        const hitsWithVectors = rawHits.map(hit => ({ 
-            hit: hit, 
-            vector: hit._source.legal_issues?.[0]?.legal_issues_embedding 
-        })).filter(item => item.vector && Array.isArray(item.vector));
-        
-        if (hitsWithVectors.length < 10) {
-             const results = rawHits.map(hit => formatHit(hit));
-             return {
-                success: true,
-                results: results,
-                total: results.length, // 使用實際返回的結果數量
-                totalPages: Math.ceil(results.length / pageSize),
-                currentPage: page,
-                searchMode: 'semantic',
-                originalQuery: userQuery,
-                enhancedQuery: enhancedData,
-                executionTime: elapsedTime,
-                message: `找到 ${total} 個相關爭點的判決`
-            };
-        }
+        // 動態決定 K 值
+        const numClusters = Math.max(2, Math.min(Math.floor(hitsWithVectors.length / 3), 8));
+        console.log(`[SemanticSearch] 執行 K-Means 分群，K=${numClusters}`);
 
         const vectors = hitsWithVectors.map(item => item.vector);
+        const kmeansResult = kmeans(vectors, numClusters, { initialization: 'kmeans++' });
 
-        // 執行 K-Means 分群
-        const kmeansResult = kmeans(vectors, 10, { initialization: 'kmeans++' });
-        
         // 初始化群組
-        const clusters = Array.from({ length: 10 }, () => ({ clusterName: '', items: [] }));
-        
+        const clusters = Array.from({ length: numClusters }, () => ({ clusterName: '', items: [] }));
+
         hitsWithVectors.forEach((item, index) => {
             const clusterIndex = kmeansResult.clusters[index];
             if (clusterIndex !== undefined) {
                 clusters[clusterIndex].items.push(formatHit(item.hit));
             }
         });
+        
+        // 過濾掉可能產生的空群組
+        const populatedClusters = clusters.filter(c => c.items.length > 0);
 
         // 為每個群組找出代表性爭點並請求 AI 命名
-        const representativeIssues = clusters
+        const representativeIssues = populatedClusters
             .map(cluster => cluster.items[0]?.matchedIssue)
-            .filter(issue => issue); // 過濾掉沒有代表的空群組
+            .filter(issue => issue);
 
+        // 如果沒有代表性爭點，也返回扁平結果
         if (representativeIssues.length === 0) {
-            // 如果沒有任何代表性爭點，也直接返回扁平結果
-            const results = rawHits.map(hit => formatHit(hit));
-            return {
-               success: true,
-               results: results,
-               total: results.length, // 使用實際返回的結果數量
-               totalPages: Math.ceil(results.length / pageSize),
-               currentPage: page,
-               searchMode: 'semantic',
-               originalQuery: userQuery,
-               enhancedQuery: enhancedData,
-               executionTime: elapsedTime,
-               message: `找到 ${total} 個相關爭點的判決`
-           };
+             console.log(`[SemanticSearch] 分群後無代表性爭點，返回扁平結果。`);
+             const results = rawHits.map(hit => formatHit(hit));
+             return {
+                success: true,
+                results: results,
+                total: results.length,
+                totalPages: Math.ceil(results.length / pageSize),
+                currentPage: page,
+                searchMode: 'semantic',
+                originalQuery: userQuery,
+                enhancedQuery: enhancedData,
+                executionTime: elapsedTime,
+                message: `找到 ${total} 個相關爭點的判決`
+            };
         }
 
         const clusterNames = await getClusterNamesFromAI(representativeIssues, userQuery, caseType);
 
         // 將 AI 返回的名稱賦給群組
-        let nameIndex = 0;
-        clusters.forEach((cluster) => {
-            if(cluster.items.length > 0) {
-                cluster.clusterName = clusterNames[nameIndex] || `爭點類別 ${nameIndex + 1}`;
-                nameIndex++;
-            }
+        populatedClusters.forEach((cluster, index) => {
+            cluster.clusterName = clusterNames[index] || `爭點類別 ${index + 1}`;
         });
 
         return {
             success: true,
-            totalResults: hitsWithVectors.length, // 使用分群前的實際數量
+            totalResults: hitsWithVectors.length,
             searchMode: 'semantic_clustered',
-            clusters: clusters.filter(c => c.items.length > 0), // 過濾掉空群組
+            clusters: populatedClusters,
             originalQuery: userQuery,
             enhancedQuery: enhancedData,
             executionTime: elapsedTime,
-            message: `找到 ${rawHits.length} 個相關判決，並分為 ${clusters.filter(c => c.items.length > 0).length} 個爭點類別`
+            message: `找到 ${rawHits.length} 個相關判決，並分為 ${populatedClusters.length} 個爭點類別`
         };
 
     } catch (error) {
