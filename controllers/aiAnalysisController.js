@@ -1,6 +1,6 @@
 // controllers/aiAnalysisController.js
 import { analyzeSuccessFactors } from '../services/aiSuccessAnalysisService.js';
-import { summarizeCommonPoints } from '../services/summarizeCommonPointsService.js';
+import { startCommonPointsAnalysis, getAnalysisResult } from '../services/summarizeCommonPointsService.js';
 
 // 現有的 Controller
 export const analyzeSuccessFactorsController = async (req, res, next) => {

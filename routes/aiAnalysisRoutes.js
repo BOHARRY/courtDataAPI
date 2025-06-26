@@ -1,6 +1,6 @@
 // routes/aiAnalysisRoutes.js
 import express from 'express';
-import { analyzeSuccessFactorsController, summarizeCommonPointsController } from '../controllers/aiAnalysisController.js';
+import { analyzeSuccessFactorsController, summarizeCommonPointsController, getAnalysisResultController } from '../controllers/aiAnalysisController.js';
 import { verifyToken } from '../middleware/auth.js';
 import { checkAndDeductCredits } from '../middleware/credit.js';
 import { CREDIT_COSTS, CREDIT_PURPOSES } from '../config/creditCosts.js';
@@ -33,6 +33,13 @@ router.post(
         }
     ),
     summarizeCommonPointsController
+);
+
+// GET /api/ai/analysis-result/:taskId
+router.get(
+    '/analysis-result/:taskId',
+    verifyToken,
+    getAnalysisResultController
 );
 
 export default router;
