@@ -11,6 +11,7 @@ export const FIREBASE_SERVICE_ACCOUNT_KEY_JSON = process.env.FIREBASE_SERVICE_AC
 export const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 export const OPENAI_MODEL_NAME_EMBEDDING = 'text-embedding-3-large';
 export const OPENAI_MODEL_NAME_CHAT = 'gpt-4.1';
+export const OPENAI_MODEL_NAME_NANO = process.env.OPENAI_MODEL_NAME_NANO || 'gpt-4.1-nano';
 export const GMAIL_APP_USER = process.env.GMAIL_APP_USER;
 export const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD;
 export const CONTACT_FORM_RECIPIENT_EMAIL = process.env.CONTACT_FORM_RECIPIENT_EMAIL;
