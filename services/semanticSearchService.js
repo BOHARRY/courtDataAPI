@@ -311,6 +311,8 @@ export async function performSemanticSearch(userQuery, caseType, filters = {}, p
         if (hybridQuery.query) {
             searchBody.query = hybridQuery.query;
         }
+        
+        console.log("[SemanticSearch] ES 查詢語句:", JSON.stringify(searchBody, null, 2));
 
         const esResult = await esClient.search({
             index: ES_INDEX_NAME,
@@ -324,12 +326,29 @@ export async function performSemanticSearch(userQuery, caseType, filters = {}, p
         const rawHits = esResult.hits.hits;
         const total = esResult.hits.total.value;
 
+        // 增加詳細日誌
+        console.log("[SemanticSearch] 收到原始 HITS 數量:", rawHits.length);
+        if (rawHits.length > 0) {
+            console.log("[SemanticSearch] 第一筆 HIT 的 _source 結構:", JSON.stringify(rawHits[0]._source, null, 2));
+        }
+
+
         // 提取有向量的結果用於分群
         const hitsWithVectors = rawHits
-            .map(hit => ({
-                hit: hit,
-                vector: hit._source.legal_issues?.[0]?.legal_issues_embedding
-            }))
+            .map((hit, index) => {
+                const vector = hit._source.legal_issues?.[0]?.legal_issues_embedding;
+                if (index < 5) { // 只印出前 5 筆的詳細日誌
+                    console.log(`[SemanticSearch] 處理 HIT #${index}:`);
+                    console.log(`  - legal_issues 存在: ${!!hit._source.legal_issues}`);
+                    console.log(`  - legal_issues[0] 存在: ${!!hit._source.legal_issues?.[0]}`);
+                    console.log(`  - legal_issues_embedding 存在: ${!!hit._source.legal_issues?.[0]?.legal_issues_embedding}`);
+                    console.log(`  - 提取的向量長度: ${vector?.length || '未定義'}`);
+                }
+                return {
+                    hit: hit,
+                    vector: vector
+                };
+            })
             .filter(item => item.vector && Array.isArray(item.vector) && item.vector.length > 0);
 
         // 如果可用於分群的結果太少，直接返回扁平結果
