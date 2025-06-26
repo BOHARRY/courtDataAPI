@@ -216,12 +216,8 @@ function buildHybridQuery(queryVector, enhancedData, caseType, filters = {}) {
 
     return {
         knn: knnQuery,
-        query: keywordQueries.length > 0 ? {
-            bool: {
-                should: keywordQueries,
-                minimum_should_match: 1 // 必須至少匹配一個關鍵字條件
-            }
-        } : undefined
+        // Temporarily disable keyword search for diagnostics
+        query: undefined
     };
 }
 
@@ -319,8 +315,6 @@ export async function performSemanticSearch(userQuery, caseType, filters = {}, p
         if (hybridQuery.query) {
             searchBody.query = hybridQuery.query;
         }
-        
-        console.log("[SemanticSearch] ES 查詢語句:", JSON.stringify(searchBody, null, 2));
 
         const esResult = await esClient.search({
             index: ES_INDEX_NAME,
@@ -333,13 +327,6 @@ export async function performSemanticSearch(userQuery, caseType, filters = {}, p
         // 步驟 6: 處理與分類結果
         const rawHits = esResult.hits.hits;
         const total = esResult.hits.total.value;
-
-        // 增加詳細日誌
-        console.log("[SemanticSearch] 收到原始 HITS 數量:", rawHits.length);
-        if (rawHits.length > 0) {
-            console.log("[SemanticSearch] 第一筆 HIT 的 _source 結構:", JSON.stringify(rawHits[0]._source, null, 2));
-        }
-
 
         // 提取有向量的結果用於分群
         const hitsWithVectors = rawHits
