@@ -290,10 +290,14 @@ export async function performSemanticSearch(userQuery, caseType, filters = {}, p
                 includes: [
                     "id", "JID", "JTITLE", "JDATE", "court",
                     "case_type", "verdict_type", "summary_ai",
-                    "legal_issues.question", "legal_issues.answer", "legal_issues.cited_para_id", "legal_issues.legal_issues_embedding", // 精確指定需要的 nested 欄位
+                    "legal_issues.question", "legal_issues.answer", "legal_issues.cited_para_id",
                     "main_reasons_ai", "tags"
                 ]
             },
+            // 使用 docvalue_fields 來抓取未儲存在 _source 中的向量
+            docvalue_fields: [
+                "legal_issues.legal_issues_embedding"
+            ],
             highlight: {
                 fields: {
                     "legal_issues.question": {
@@ -336,13 +340,11 @@ export async function performSemanticSearch(userQuery, caseType, filters = {}, p
         // 提取有向量的結果用於分群
         const hitsWithVectors = rawHits
             .map((hit, index) => {
-                const vector = hit._source.legal_issues?.[0]?.legal_issues_embedding;
+                // 從 doc_values 中提取向量
+                const vector = hit.fields?.['legal_issues.legal_issues_embedding']?.[0];
                 if (index < 5) { // 只印出前 5 筆的詳細日誌
                     console.log(`[SemanticSearch] 處理 HIT #${index}:`);
-                    console.log(`  - legal_issues 存在: ${!!hit._source.legal_issues}`);
-                    console.log(`  - legal_issues[0] 存在: ${!!hit._source.legal_issues?.[0]}`);
-                    console.log(`  - legal_issues_embedding 存在: ${!!hit._source.legal_issues?.[0]?.legal_issues_embedding}`);
-                    console.log(`  - 提取的向量長度: ${vector?.length || '未定義'}`);
+                    console.log(`  - 從 fields 中提取的向量長度: ${vector?.length || '未定義'}`);
                 }
                 return {
                     hit: hit,
