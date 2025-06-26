@@ -126,7 +126,7 @@ function buildHybridQuery(queryVector, enhancedData, caseType, filters = {}) {
     const knnQuery = {
         field: "legal_issues_embedding",
         query_vector: queryVector,
-        k: 20,  // 先抓 20 個候選
+        k: 50,  // 增加候選數量
         num_candidates: 100,
         filter: filterClauses
     };
@@ -204,6 +204,7 @@ export async function performSemanticSearch(userQuery, caseType, filters = {}, p
         const from = (page - 1) * pageSize;
         
         const searchBody = {
+            min_score: 0.91, // 設定最低相似度分數門檻
             knn: hybridQuery.knn,
             from: from,
             size: pageSize,
