@@ -7,10 +7,26 @@ import judgmentProxyRouter from '../routes/judgmentProxy.js';
 const app = express();
 
 // CORS 配置
+// 定義允許的來源白名單
+const allowedOrigins = [
+  'http://localhost:3000', // 開發環境
+  'http://localhost:3001', // 另一個開發環境 (如果有)
+  'https://frontend-court-search-web.vercel.app/', // 生產環境 (假設)
+];
+
 app.use(cors({
-  origin: '*', // 允許所有來源，生產環境建議限制特定域名
+  origin: function (origin, callback) {
+    // 允許沒有 origin 的請求 (例如 Postman 或伺服器間請求)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) === -1) {
+      const msg = '此來源的 CORS 政策不允許存取: ' + origin;
+      return callback(new Error(msg), false);
+    }
+    return callback(null, true);
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true // 允許帶有憑證的請求
 }));
 
 // 解析 JSON body，並增加大小限制
