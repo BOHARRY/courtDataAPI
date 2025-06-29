@@ -21,11 +21,34 @@
 
 Boooook 是一個司法資訊檢索與分析平台，後端採用 Node.js + Express，支援判決書檢索、律師/法官分析、AI 特徵分析、點數機制與使用者管理。
 
+### 🆕 最新功能亮點（2025.06 更新）
+
+1. **語意搜尋系統**：整合 OpenAI embedding 技術，提供基於語意相似度的判決書檢索，支援自然語言查詢與智能爭點建議。
+
+2. **AI 歸納判例共同點**：採用兩階段 AI 分析流程，能夠比較多篇判決書並生成帶引用的綜合分析報告，適用於法律研究與案例比較。
+
+3. **增強的 AI 分析能力**：
+   - 支援多種 OpenAI 模型（GPT-4.1、GPT-4.1-nano、GPT-4o-mini）
+   - 優化的查詢處理與結果聚類
+   - 背景任務執行與狀態追蹤
+
+4. **完整的金流整合**：藍新金流（Newebpay）完整串接，支援訂閱與積分包購買。
+
+5. **豐富的通訊功能**：聯絡表單、郵件通知、檔案附件上傳等完整實作。
+
 **技術棧：**
 - Node.js + Express
 - Firebase Firestore（資料儲存、認證、點數）
-- Elasticsearch（判決書索引）
-- OpenAI API（AI 分析）
+- Firebase Storage（檔案附件儲存）
+- Elasticsearch（判決書索引、向量搜尋）
+- OpenAI API（AI 分析、語意搜尋、文本向量化）
+  - GPT-4.1（綜合分析）
+  - GPT-4.1-nano（文本萃取）
+  - GPT-4o-mini（查詢優化）
+  - text-embedding-3-large（語意向量化）
+- 藍新金流（Newebpay）
+- Nodemailer（郵件通知）
+- ML-KMeans（結果聚類）
 - 前後端分離設計
 
 ---
@@ -50,11 +73,14 @@ Boooook 是一個司法資訊檢索與分析平台，後端採用 Node.js + Expr
 │   └── adminAuth.js          # 管理員權限驗證
 ├── services/                 # 商業邏輯
 │   ├── search.js             # 判決書搜尋
+│   ├── semanticSearchService.js # 語意搜尋服務
 │   ├── lawyer.js             # 律師分析
 │   ├── credit.js             # 點數管理
 │   ├── judgment.js           # 判決書詳情
 │   ├── user.js               # 使用者管理
 │   ├── aiAnalysisService.js  # 案件AI特徵分析
+│   ├── aiSuccessAnalysisService.js # AI 勝訴關鍵分析服務
+│   ├── summarizeCommonPointsService.js # AI 歸納判例共同點服務
 │   ├── judgeService.js       # 法官分析與聚合
 │   ├── newebpayService.js    # 藍新金流加解密與參數組裝
 │   ├── complaintService.js   # 民眾申訴處理
@@ -74,6 +100,7 @@ Boooook 是一個司法資訊檢索與分析平台，後端採用 Node.js + Expr
 ├── routes/                   # API 路由
 │   ├── index.js              # 主路由
 │   ├── search.js             # 搜尋
+│   ├── semantic-search.js    # 語意搜尋路由
 │   ├── judgment.js           # 判決書詳情
 │   ├── lawyer.js             # 律師
 │   ├── user.js               # 使用者
@@ -90,6 +117,7 @@ Boooook 是一個司法資訊檢索與分析平台，後端採用 Node.js + Expr
 │   └── ezship.js             # ezShip 物流代理路由
 ├── controllers/              # 控制器
 │   ├── search-controller.js      # 處理判決書搜尋請求
+│   ├── semantic-search-controller.js # 處理語意搜尋請求
 │   ├── judgment-controller.js    # 處理單一判決書詳情請求
 │   ├── lawyer-controller.js      # 處理律師分析相關請求
 │   ├── user-controller.js        # 處理使用者資料、歷史紀錄、訂閱等請求
@@ -227,6 +255,8 @@ Boooook 是一個司法資訊檢索與分析平台，後端採用 Node.js + Expr
 
 - `controllers/aiAnalysisController.js`：AI 勝訴關鍵分析 API 控制器，負責驗證輸入並調用 AI 分析服務，回傳案件摘要與勝訴關鍵分析結果。
 - `services/aiSuccessAnalysisService.js`：AI 勝訴率/判決結果分析服務，負責呼叫 OpenAI API 取得文本 embedding（採用 text-embedding-3-large，維度1536），並結合案件資料進行勝訴關鍵分析。
+- `services/semanticSearchService.js`：語意搜尋核心服務，整合 OpenAI embedding 與 Elasticsearch 向量搜尋，提供基於語意相似度的判決書檢索功能。支援查詢優化、混合搜尋、結果聚類等進階功能。
+- `services/summarizeCommonPointsService.js`：AI 歸納判例共同點服務，採用兩階段分析流程：第一階段使用 GPT-4.1-nano 萃取判決書核心段落，第二階段使用 GPT-4.1 進行綜合分析並生成帶引用的報告。支援背景執行與任務狀態追蹤。
 - `utils/case-analyzer.js`：案件類型判斷與資料標準化工具，根據 Elasticsearch 資料自動判斷案件主類型（民事、刑事、行政），並處理欄位標準化。
 - `utils/constants.js`：專案常數定義，包含案件關鍵字、判決結果標準化代碼等，供多個模組引用。
 - `utils/judgeAnalysisUtils.js`：法官案件聚合分析工具，提供案件類型分布、判決結果分類、代表案件挑選等聚合統計輔助函式。
@@ -266,7 +296,9 @@ Boooook 是一個司法資訊檢索與分析平台，後端採用 Node.js + Expr
 ### 其他
 
 - `routes/ezship.js`：一個獨立的後端代理，專門用於串接台灣物流服務「ezShip」的退貨 API，處理其特殊的請求與回應格式。
-- `routes/aiAnalysisRoutes.js`：定義 `/api/ai/success-analysis` 路由，並掛載了身分驗證與點數扣除中介軟體。
+- `routes/aiAnalysisRoutes.js`：定義 AI 分析相關路由，包含 `/api/ai/success-analysis`（勝訴關鍵分析）、`/api/ai/summarize-common-points`（歸納判例共同點）、`/api/ai/analysis-result/:taskId`（查詢分析結果），並掛載了身分驗證與點數扣除中介軟體。
+- `routes/semantic-search.js`：語意搜尋路由，提供 `/api/semantic-search/legal-issues`（執行語意搜尋）和 `/api/semantic-search/suggestions`（獲取爭點建議）兩個端點。
+- `controllers/semantic-search-controller.js`：語意搜尋控制器，處理語意搜尋請求驗證、服務調用與錯誤處理。
 
 ---
 
@@ -277,16 +309,95 @@ Boooook 是一個司法資訊檢索與分析平台，後端採用 Node.js + Expr
 npm install
 ```
 
+### 語意搜尋 API 輸入/輸出格式
+
+#### 執行語意搜尋
+- 路由：`POST /api/semantic-search/legal-issues`
+- 需授權（JWT/Firebase Token）
+- 消耗積分：3 點
+
+##### Request Body 範例
+```json
+{
+  "query": "房東是否有義務修繕租賃物的瑕疵，如果房東拒絕修繕，承租人可以採取什麼法律行動？",
+  "caseType": "民事",
+  "filters": {
+    "court": "台北地方法院",
+    "dateRange": {
+      "start": "2020-01-01",
+      "end": "2023-12-31"
+    }
+  },
+  "page": 1,
+  "pageSize": 10
+}
+```
+
+##### 成功回傳範例
+```json
+{
+  "success": true,
+  "searchMode": "hybrid",
+  "totalHits": 45,
+  "results": [
+    {
+      "id": "TPDV,112,租,123",
+      "title": "台北地方法院112年度租字第123號民事判決",
+      "court": "台北地方法院",
+      "date": "20231215",
+      "caseType": "民事",
+      "verdict": "原告勝訴",
+      "summary": "房東對於租賃物之修繕義務...",
+      "relevanceScore": 0.89,
+      "matchedIssue": {
+        "question": "房東修繕義務之範圍為何？",
+        "answer": "依民法第429條規定..."
+      }
+    }
+  ],
+  "enhancedQuery": {
+    "keywords": ["修繕義務", "租賃瑕疵", "承租人權利"],
+    "laws": ["民法第429條", "民法第435條"],
+    "enhanced": "房東租賃物修繕義務與承租人救濟權利"
+  },
+  "creditsDeducted": 3,
+  "userCreditsRemaining": 47
+}
+```
+
+#### 獲取爭點建議
+- 路由：`GET /api/semantic-search/suggestions?query=修繕&caseType=民事`
+- 需授權（JWT/Firebase Token）
+- 不消耗積分
+
+##### 成功回傳範例
+```json
+{
+  "success": true,
+  "suggestions": [
+    {
+      "text": "房東修繕義務之範圍為何？",
+      "count": 15
+    },
+    {
+      "text": "修繕費用應由何人負擔？",
+      "count": 8
+    }
+  ]
+}
+```
+
 ### AI 勝訴關鍵分析 API 輸入/輸出格式
 
-- 路由：`POST /api/ai-analysis/success-factors`
+- 路由：`POST /api/ai/success-analysis`
 - 需授權（JWT/Firebase Token）
+- 消耗積分：5 點
 
 #### Request Body 範例
 ```json
 {
-  "case_type_selected": "民事",
-  "case_summary_text": "原告主張被告於2022年1月1日借款新台幣10萬元，至今未償還..."
+  "caseType": "民事",
+  "caseSummary": "原告主張被告於2022年1月1日借款新台幣10萬元，至今未償還..."
 }
 ```
 
@@ -297,11 +408,61 @@ npm install
 ```json
 {
   "status": "failed",
-  "message": "缺少必要參數：case_type_selected 和 case_summary_text 為必填。",
+  "message": "缺少必要參數：caseType 和 caseSummary 為必填。",
   "details": { "internal_code": "EMPTY_INPUT_TEXT" }
 }
 ```
 - 可能錯誤原因：缺少參數、案件類型錯誤、摘要過短、OpenAI 服務錯誤等。
+
+### AI 歸納判例共同點 API 輸入/輸出格式
+
+#### 啟動分析任務
+- 路由：`POST /api/ai/summarize-common-points`
+- 需授權（JWT/Firebase Token）
+- 消耗積分：4 點
+
+##### Request Body 範例
+```json
+{
+  "judgementIds": ["TPDV,112,租,123", "TPDV,111,租,456", "TCDV,112,租,789"]
+}
+```
+
+##### 成功回傳範例
+```json
+{
+  "success": true,
+  "taskId": "task_abc123def456",
+  "message": "分析任務已啟動，請使用 taskId 查詢結果",
+  "creditsDeducted": 4,
+  "userCreditsRemaining": 43
+}
+```
+
+#### 查詢分析結果
+- 路由：`GET /api/ai/analysis-result/:taskId`
+- 需授權（JWT/Firebase Token）
+- 不消耗積分
+
+##### 成功回傳範例（完成）
+```json
+{
+  "success": true,
+  "status": "complete",
+  "result": {
+    "analyzedCount": 3,
+    "report": {
+      "summaryText": "經分析三件租賃糾紛案例，發現共同爭點主要集中在房東修繕義務...[1]...",
+      "citations": {
+        "1": {
+          "judgementId": "TPDV,112,租,123",
+          "originalText": "房東對於租賃物應負修繕義務，此為民法第429條明文規定..."
+        }
+      }
+    }
+  }
+}
+```
 ### 訂閱方案資料結構
 
 ```json
@@ -375,9 +536,20 @@ npm install
 FIREBASE_PROJECT_ID=xxx
 FIREBASE_CLIENT_EMAIL=xxx
 FIREBASE_PRIVATE_KEY=xxx
-ELASTICSEARCH_NODE=http://localhost:9200
+ES_URL=http://localhost:9200
+ES_API_KEY=xxx
 OPENAI_API_KEY=sk-xxx
-OPENAI_MODEL_NAME=gpt-4.1
+OPENAI_MODEL_NAME_CHAT=gpt-4.1
+OPENAI_MODEL_NAME_NANO=gpt-4.1-nano
+GMAIL_APP_USER=xxx@gmail.com
+GMAIL_APP_PASSWORD=xxx
+CONTACT_FORM_RECIPIENT_EMAIL=xxx@example.com
+FIREBASE_STORAGE_BUCKET_NAME=xxx.appspot.com
+NEWEBPAY_MERCHANT_ID=xxx
+NEWEBPAY_HASH_KEY=xxx
+NEWEBPAY_HASH_IV=xxx
+APP_BASE_URL=http://localhost:3000
+BACKEND_API_URL=https://your-backend-api.com
 ```
 
 ### 啟動
@@ -405,11 +577,15 @@ node index.js
 |-------------------------------------|------|----------------------------|-----------------------------------|--------|----------|
 | /api/search                        | GET  | 判決書搜尋                 | search-controller.js/searchService| 是     | 1        |
 | /api/search/filters                | GET  | 搜尋篩選器                 | search-controller.js/searchService| 否     | 0        |
+| /api/semantic-search/legal-issues  | POST | 語意搜尋判決爭點           | semantic-search-controller.js/semanticSearchService| 是     | 3        |
+| /api/semantic-search/suggestions   | GET  | 獲取爭點建議               | semantic-search-controller.js/semanticSearchService| 是     | 0        |
 | /api/judgments/:id                 | GET  | 判決書詳情                 | judgment-controller.js/judgment.js| 是     | 1        |
 | /api/lawyers/:name                 | GET  | 律師分析                   | lawyer-controller.js/lawyer.js    | 是     | 1~2      |
 | /api/lawyers/:name/cases-distribution | GET | 律師案件分布               | lawyer-controller.js/lawyer.js    | 是     | 1        |
 | /api/lawyers/:name/analysis        | GET  | 律師優劣勢分析             | lawyer-controller.js/lawyer.js    | 是     | 2        |
-| /api/ai/success-analysis           | POST  | AI 勝訴關鍵分析             | aiAnalysisController.js/aiSuccessAnalysisService.js | 是     | 2        |
+| /api/ai/success-analysis           | POST  | AI 勝訴關鍵分析             | aiAnalysisController.js/aiSuccessAnalysisService.js | 是     | 5        |
+| /api/ai/summarize-common-points    | POST  | AI 歸納判例共同點           | aiAnalysisController.js/summarizeCommonPointsService.js | 是     | 4        |
+| /api/ai/analysis-result/:taskId    | GET   | 查詢分析任務結果           | aiAnalysisController.js/summarizeCommonPointsService.js | 是     | 0        |
 | /api/users/lawyer-search-history   | GET  | 律師搜尋歷史               | user-controller.js/user.js        | 是     | 0        |
 | /api/users/credit-history          | GET  | 點數交易紀錄查詢           | user-controller.js/user.js        | 是     | 0        |
 | /api/users/update-subscription     | POST | 更新訂閱方案               | user-controller.js/user.js        | 是     | 0        |
@@ -451,6 +627,18 @@ node index.js
 | aiProcessedAt       | timestamp | AI 分析完成時間                        |
 | lastUpdated         | timestamp | 文件最後更新時間                       |
 | processingError     | string    | AI 分析失敗時的錯誤訊息                |
+
+### Firestore `aiAnalysisTasks` 文件結構
+
+| 欄位                | 型別      | 說明                                   |
+|---------------------|-----------|----------------------------------------|
+| taskId              | string    | 任務唯一識別碼 (文件 ID)               |
+| userId              | string    | 使用者 UID                             |
+| judgementIds        | array     | 待分析的判決書 ID 列表                 |
+| status              | string    | 任務狀態 (`pending`, `complete`, `failed`) |
+| createdAt           | timestamp | 任務建立時間                           |
+| completedAt         | timestamp | 任務完成時間                           |
+| result              | object    | 分析結果（包含 analyzedCount 和 report） |
 
 ### Firestore `orders` 文件結構
 
@@ -658,6 +846,8 @@ node index.js
 | 查詢律師AI優劣勢分析          | LAWYER_AI_ANALYSIS       | 2       |
 | 法官AI分析與統計              | JUDGE_AI_ANALYTICS       | 3       |
 | AI勝訴關鍵分析                | AI_SUCCESS_ANALYSIS      | 5       |
+| 語意搜尋判決爭點              | SEMANTIC_SEARCH          | 3       |
+| AI歸納判例共同點              | SUMMARIZE_COMMON_POINTS  | 4       |
 | 註冊獎勵                      | SIGNUP_BONUS             | +N      |
 | 訂閱每月點數（基本/進階）     | SUBSCRIPTION_MONTHLY_GRANT_BASIC / ADVANCED | +N |
 | 購買點數包                    | PURCHASE_CREDITS_PKG_20  | +N      |
@@ -713,6 +903,30 @@ node index.js
   - utils/judgeAnalysisUtils.js：法官案件聚合與統計
   - utils/win-rate-calculator.js：勝訴率與案件結果計算
 - 功能：根據用戶輸入的案件類型與摘要，結合 AI 與歷史資料，分析勝訴關鍵因素與預測勝率，回傳分析報告。
+
+### 8. 語意搜尋系統
+
+- 路由：`POST /api/semantic-search/legal-issues`、`GET /api/semantic-search/suggestions`
+- 控制器：semantic-search-controller.js
+- 服務：services/semanticSearchService.js
+- 功能：
+  - 使用 GPT-4o-mini 優化用戶查詢，提取核心法律概念
+  - 結合 OpenAI text-embedding-3-large 進行語意向量化
+  - 執行 Elasticsearch 混合搜尋（向量搜尋 + 關鍵字搜尋）
+  - 支援結果聚類分析與爭點建議功能
+  - 提供基於語意相似度的判決書檢索
+
+### 9. AI 歸納判例共同點
+
+- 路由：`POST /api/ai/summarize-common-points`、`GET /api/ai/analysis-result/:taskId`
+- 控制器：aiAnalysisController.js
+- 服務：services/summarizeCommonPointsService.js
+- 功能：
+  - 兩階段 AI 分析：第一階段萃取核心段落，第二階段綜合分析
+  - 支援多篇判決書比較分析
+  - 生成帶引用標記的綜合分析報告
+  - 背景執行與任務狀態追蹤
+  - 適用於法律研究與案例比較
   - 控制器：user-controller.js
   - 服務：services/user.js
   - 功能：用戶可更新訂閱方案（如升級、降級、取消），需登入授權。請於 request body 傳入新方案資訊，後端將同步更新 Firestore 內的訂閱狀態。
@@ -808,6 +1022,7 @@ Boooook 後端 API 是一個具備良好基礎的專案，但也存在一些可�
 
 ## 版本/更新紀錄
 
+- 2025/06：新增語意搜尋系統、AI 歸納判例共同點功能，更新環境變數配置與 API 路由說明。
 - 2025/05：重構文件，補充 AI/法官分析、資料結構、API 路由、維護建議等章節。
 - 2024/xx：初版文件。
 
