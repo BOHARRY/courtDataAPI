@@ -11,7 +11,7 @@ const app = express();
 const allowedOrigins = [
   'http://localhost:3000', // 開發環境
   'http://localhost:3001', // 另一個開發環境 (如果有)
-  'https://frontend-court-search-web.vercel.app/', // 生產環境 (假設)
+  'https://frontend-court-search-web.vercel.app', // 生產環境 (假設)
 ];
 
 app.use(cors({
