@@ -10,6 +10,22 @@ const openai = new OpenAI({
 const ES_INDEX_NAME = 'law_boook';
 const EMBEDDING_MODEL = OPENAI_MODEL_NAME_EMBEDDING || 'text-embedding-3-large';
 
+// 法典名稱對應表 - 處理 GPT 回傳的完整名稱與資料庫簡稱的對應
+const LAW_CODE_MAPPING = {
+    '勞動基準法': '勞基法',
+    '消費者保護法': '消保法',
+    '租賃住宅市場發展及管理條例': '租賃條例',
+    '道路交通管理處罰條例': '道交條例',
+    '公寓大廈管理條例': '公寓大廈條例',
+    '個人資料保護法': '個資法',
+    '著作權法': '著作權法', // 保持一致
+    '民法': '民法',
+    '刑法': '刑法',
+    '憲法': '憲法',
+    '行政程序法': '行政程序法',
+    '公平交易法': '公平法'
+};
+
 /**
  * 使用 GPT-4o-mini 優化法條查詢
  */
@@ -17,25 +33,67 @@ async function enhanceLawQuery(userQuery, context = '') {
     try {
         console.log(`[LawSearch] 使用 GPT-4o-mini 優化法條查詢: "${userQuery}"`);
         
-        const prompt = `你是台灣法律搜尋助手。請針對以下法律問題，直接推薦最相關的台灣法條。
+        const prompt = `你是專業的台灣法律搜尋助手。請針對以下法律問題進行深度分析，並推薦最相關的台灣法條。
 
 **重要：請務必使用繁體中文回應，不可使用簡體中文。**
 
 用戶問題：「${userQuery}」
 ${context ? `額外上下文：「${context}」` : ''}
 
-請提供：
-1. 10個最相關的具體台灣法條（例如 "民法第425條", "刑法第306條", "憲法第12條"）
-2. 3-5個補充關鍵字（用於找不到推薦法條時的備用搜尋）
-3. 一句精準的搜尋描述（限30字內）
+## 分析步驟：
+1. **識別法律關係類型**：
+   - 契約關係（買賣、租賃、僱傭、承攬等）
+   - 侵權行為（故意、過失、特殊侵權）
+   - 物權關係（所有權、用益物權、擔保物權）
+   - 身分關係（婚姻、親子、繼承）
+   - 公法關係（行政、刑事、憲法）
 
-**注意：所有回應內容必須使用繁體中文，包括法條名稱和說明文字。**
+2. **確定適用法律領域**：
+   - 民法（總則、債權、物權、親屬、繼承）
+   - 特別法（消保法、勞基法、公寓大廈管理條例等）
+   - 刑法（分則各罪）
+   - 行政法規
+   - 憲法基本權利
+
+3. **精準定位相關條文**：
+   - 優先推薦直接適用的條文
+   - 避免推薦無關領域的條文
+   - 考慮條文的適用順序和重要性
+
+## 請提供：
+1. **10個最相關的具體台灣法條**（按重要性排序，請使用以下標準格式）：
+   - 勞動基準法 → 使用 "勞基法第XX條"
+   - 消費者保護法 → 使用 "消保法第XX條"
+   - 租賃住宅市場發展及管理條例 → 使用 "租賃條例第XX條"
+   - 道路交通管理處罰條例 → 使用 "道交條例第XX條"
+   - 個人資料保護法 → 使用 "個資法第XX條"
+   - 公平交易法 → 使用 "公平法第XX條"
+   - 其他法典保持原名（如 "民法第XX條", "刑法第XX條"）
+2. **3-5個精準的補充關鍵字**（用於備用搜尋）
+3. **一句精準的搜尋描述**（限30字內）
+
+**注意事項：**
+- 所有回應內容必須使用繁體中文
+- 請確保推薦的法條與問題的法律關係直接相關
+- 避免推薦不同法律領域的無關條文
+- 優先推薦特別法，再推薦一般法
 
 請確保回應是有效的 JSON 格式：
 {
-  "recommended_articles": ["民法第425條", "刑法第306條", "民法第423條", "憲法第12條", "土地法第100條", "民法第184條", "刑法第315-1條", "民法第195條", "民法第424條", "租賃住宅市場發展及管理條例第8條"],
-  "backup_keywords": ["關鍵字1", "關鍵字2"],
-  "enhanced": "精準描述"
+  "recommended_articles": [
+    "消保法第19條",
+    "民法第354條",
+    "消保法第7條",
+    "民法第359條",
+    "刑法第339條",
+    "民法第365條",
+    "公平法第21條",
+    "民法第184條",
+    "消保法第51條",
+    "民法第195條"
+  ],
+  "backup_keywords": ["消費者權益", "商品瑕疵", "網路購物"],
+  "enhanced": "網路購物商品瑕疵退貨法律責任"
 }`;
 
         const response = await openai.chat.completions.create({
@@ -303,13 +361,23 @@ function buildSemanticLawQuery(queryVector, enhancedData) {
             // 解析法條格式，例如 "民法第425條"
             const match = article.match(/^(.+?)第(.+?)條$/);
             if (match) {
-                const codeName = match[1];
+                const originalCodeName = match[1];
                 const articleNumber = match[2];
+
+                // 使用對應表轉換法典名稱
+                const mappedCodeName = LAW_CODE_MAPPING[originalCodeName] || originalCodeName;
 
                 queries.push({
                     bool: {
                         must: [
-                            { term: { "code_name": codeName } },
+                            {
+                                bool: {
+                                    should: [
+                                        { term: { "code_name": mappedCodeName } },
+                                        { term: { "code_name": originalCodeName } }  // 也嘗試原始名稱
+                                    ]
+                                }
+                            },
                             {
                                 bool: {
                                     should: [
