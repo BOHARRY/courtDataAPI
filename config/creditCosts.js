@@ -18,6 +18,10 @@ export const CREDIT_COSTS = {
   SEMANTIC_SEARCH: 3, // 新增語意搜尋功能，消耗 3 積分
   SUMMARIZE_COMMON_POINTS: 4, // (圖板) AI歸納判例共同點
 
+  // 法條搜索相關
+  LAW_SEARCH_BASIC: 1,    // 法條基礎搜索
+  LAW_SEARCH_SEMANTIC: 3, // 法條語意搜索
+
   // 其他未來可能的功能
   // EXAMPLE_FEATURE_A: 1,
   // EXAMPLE_FEATURE_B: 2,
@@ -34,6 +38,10 @@ export const CREDIT_PURPOSES = {
   SEMANTIC_SEARCH: 'SEMANTIC_SEARCH',  // 新增語意搜尋用途
   AI_SUCCESS_ANALYSIS: 'ai_success_analysis',
   SUMMARIZE_COMMON_POINTS: 'summarize_common_points', // (圖板) AI歸納判例共同點
+
+  // 法條搜索相關
+  LAW_SEARCH_BASIC: 'law_search_basic',
+  LAW_SEARCH_SEMANTIC: 'law_search_semantic',
   // ... 其他 purpose ...
 
   // 積分增加的 purpose

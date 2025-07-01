@@ -256,6 +256,7 @@ Boooook 是一個司法資訊檢索與分析平台，後端採用 Node.js + Expr
 - `controllers/aiAnalysisController.js`：AI 勝訴關鍵分析 API 控制器，負責驗證輸入並調用 AI 分析服務，回傳案件摘要與勝訴關鍵分析結果。
 - `services/aiSuccessAnalysisService.js`：AI 勝訴率/判決結果分析服務，負責呼叫 OpenAI API 取得文本 embedding（採用 text-embedding-3-large，維度1536），並結合案件資料進行勝訴關鍵分析。
 - `services/semanticSearchService.js`：語意搜尋核心服務，整合 OpenAI embedding 與 Elasticsearch 向量搜尋，提供基於語意相似度的判決書檢索功能。支援查詢優化、混合搜尋、結果聚類等進階功能。
+- `services/lawSearchService.js`：法條搜索核心服務，提供法條精準搜索和語意搜索功能。整合 OpenAI embedding 技術，支援自然語言查詢理解、向量搜索和智能建議。
 - `services/summarizeCommonPointsService.js`：AI 歸納判例共同點服務，採用兩階段分析流程：第一階段使用 GPT-4.1-nano 萃取判決書核心段落，第二階段使用 GPT-4.1 進行綜合分析並生成帶引用的報告。支援背景執行與任務狀態追蹤。
 - `utils/case-analyzer.js`：案件類型判斷與資料標準化工具，根據 Elasticsearch 資料自動判斷案件主類型（民事、刑事、行政），並處理欄位標準化。
 - `utils/constants.js`：專案常數定義，包含案件關鍵字、判決結果標準化代碼等，供多個模組引用。
@@ -299,6 +300,8 @@ Boooook 是一個司法資訊檢索與分析平台，後端採用 Node.js + Expr
 - `routes/aiAnalysisRoutes.js`：定義 AI 分析相關路由，包含 `/api/ai/success-analysis`（勝訴關鍵分析）、`/api/ai/summarize-common-points`（歸納判例共同點）、`/api/ai/analysis-result/:taskId`（查詢分析結果），並掛載了身分驗證與點數扣除中介軟體。
 - `routes/semantic-search.js`：語意搜尋路由，提供 `/api/semantic-search/legal-issues`（執行語意搜尋）和 `/api/semantic-search/suggestions`（獲取爭點建議）兩個端點。
 - `controllers/semantic-search-controller.js`：語意搜尋控制器，處理語意搜尋請求驗證、服務調用與錯誤處理。
+- `routes/law-search.js`：法條搜索路由，提供法條精準搜索、語意搜索、詳細內容查詢和搜索建議功能。
+- `controllers/law-search-controller.js`：法條搜索控制器，處理法條搜索相關的請求驗證、服務調用與錯誤處理。
 
 ---
 
@@ -579,6 +582,10 @@ node index.js
 | /api/search/filters                | GET  | 搜尋篩選器                 | search-controller.js/searchService| 否     | 0        |
 | /api/semantic-search/legal-issues  | POST | 語意搜尋判決爭點           | semantic-search-controller.js/semanticSearchService| 是     | 3        |
 | /api/semantic-search/suggestions   | GET  | 獲取爭點建議               | semantic-search-controller.js/semanticSearchService| 是     | 0        |
+| /api/law-search/articles           | GET  | 法條精準搜索               | law-search-controller.js/lawSearchService| 是     | 1        |
+| /api/law-search/semantic           | POST | 法條語意搜索               | law-search-controller.js/lawSearchService| 是     | 3        |
+| /api/law-search/articles/:id       | GET  | 法條詳細內容               | law-search-controller.js/lawSearchService| 是     | 0        |
+| /api/law-search/suggestions        | GET  | 法條搜索建議               | law-search-controller.js/lawSearchService| 否     | 0        |
 | /api/judgments/:id                 | GET  | 判決書詳情                 | judgment-controller.js/judgment.js| 是     | 1        |
 | /api/lawyers/:name                 | GET  | 律師分析                   | lawyer-controller.js/lawyer.js    | 是     | 1~2      |
 | /api/lawyers/:name/cases-distribution | GET | 律師案件分布               | lawyer-controller.js/lawyer.js    | 是     | 1        |
@@ -916,7 +923,25 @@ node index.js
   - 支援結果聚類分析與爭點建議功能
   - 提供基於語意相似度的判決書檢索
 
-### 9. AI 歸納判例共同點
+### 9. 法條搜索系統
+
+- 路由：`GET /api/law-search/articles`、`POST /api/law-search/semantic`、`GET /api/law-search/articles/:id`、`GET /api/law-search/suggestions`
+- 控制器：law-search-controller.js
+- 服務：services/lawSearchService.js
+- 資料來源：Elasticsearch `law_book` index
+- 功能：
+  - **精準搜索**：支援條號、法典名稱、關鍵字等多種搜索方式
+  - **語意搜索**：使用 GPT-4o-mini 優化查詢，結合 OpenAI text-embedding-3-large 進行向量搜索
+  - **智能建議**：提供法典名稱和條號的自動完成建議
+  - **詳細內容**：獲取法條的完整資訊，包含原文、白話解釋、典型適用場景
+  - **高亮顯示**：搜索結果中關鍵字高亮，提升閱讀體驗
+- 技術特色：
+  - 混合搜索架構（關鍵字 + 向量搜索）
+  - AI 查詢意圖理解與優化
+  - 多維度篩選（法典、章節、條號）
+  - 高精度向量搜索（1536維 cosine 相似度）
+
+### 10. AI 歸納判例共同點
 
 - 路由：`POST /api/ai/summarize-common-points`、`GET /api/ai/analysis-result/:taskId`
 - 控制器：aiAnalysisController.js
