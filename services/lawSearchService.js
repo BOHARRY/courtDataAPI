@@ -332,6 +332,20 @@ function buildSemanticLawQuery(queryVector, enhancedData) {
         });
     }
 
+    // 加入條號提示查詢
+    if (enhancedData.article_hints?.length > 0) {
+        enhancedData.article_hints.forEach(hint => {
+            keywordQueries.push({
+                multi_match: {
+                    query: hint,
+                    fields: ["article_number^3", "article_number_str^3"],
+                    type: "phrase",
+                    boost: 10.0  // 條號匹配給予最高權重
+                }
+            });
+        });
+    }
+
     let hybridQuery = { knn: knnQuery };
 
     // 如果有關鍵字查詢，加入混合搜索
@@ -339,7 +353,7 @@ function buildSemanticLawQuery(queryVector, enhancedData) {
         hybridQuery.query = {
             bool: {
                 should: keywordQueries,
-                minimum_should_match: 0
+                minimum_should_match: 1
             }
         };
     }
