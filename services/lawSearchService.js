@@ -7,7 +7,7 @@ const openai = new OpenAI({
     apiKey: OPENAI_API_KEY,
 });
 
-const ES_INDEX_NAME = 'law_book';
+const ES_INDEX_NAME = 'law_boook';
 const EMBEDDING_MODEL = OPENAI_MODEL_NAME_EMBEDDING || 'text-embedding-3-large';
 
 /**
