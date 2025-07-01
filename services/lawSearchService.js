@@ -297,8 +297,8 @@ function buildSemanticLawQuery(queryVector, enhancedData) {
     const knnQuery = {
         field: "embedding_vector",
         query_vector: queryVector,
-        k: 50,
-        num_candidates: 100
+        k: 5,
+        num_candidates: 10
     };
 
     // 關鍵字加強查詢
@@ -312,7 +312,7 @@ function buildSemanticLawQuery(queryVector, enhancedData) {
                     query: keyword,
                     fields: ["text_original^2", "plain_explanation^1.5", "typical_scenarios"],
                     type: "best_fields",
-                    boost: 0.3
+                    boost: 5.0
                 }
             });
         });
