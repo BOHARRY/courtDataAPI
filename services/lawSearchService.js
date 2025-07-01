@@ -335,14 +335,32 @@ function buildSemanticLawQuery(queryVector, enhancedData) {
     // 加入條號提示查詢
     if (enhancedData.article_hints?.length > 0) {
         enhancedData.article_hints.forEach(hint => {
-            keywordQueries.push({
-                multi_match: {
-                    query: hint,
-                    fields: ["article_number^3", "article_number_str^3"],
-                    type: "phrase",
-                    boost: 10.0  // 條號匹配給予最高權重
+            // 處理範圍格式，例如 "第423條至第429條"
+            const rangeMatch = hint.match(/第(\d+)條至第(\d+)條/);
+            if (rangeMatch) {
+                const start = parseInt(rangeMatch[1]);
+                const end = parseInt(rangeMatch[2]);
+                for (let i = start; i <= end; i++) {
+                    keywordQueries.push({
+                        bool: {
+                            should: [
+                                { term: { "article_number": { value: `第${i}條`, boost: 15.0 } } },
+                                { term: { "article_number_str": { value: i.toString(), boost: 15.0 } } }
+                            ]
+                        }
+                    });
                 }
-            });
+            } else {
+                // 處理單一條號
+                keywordQueries.push({
+                    multi_match: {
+                        query: hint,
+                        fields: ["article_number^10", "article_number_str^10"],
+                        type: "phrase",
+                        boost: 15.0
+                    }
+                });
+            }
         });
     }
 
