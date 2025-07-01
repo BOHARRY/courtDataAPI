@@ -31,7 +31,7 @@ const LAW_CODE_MAPPING = {
  */
 async function enhanceLawQuery(userQuery, context = '') {
     try {
-        console.log(`[LawSearch] 使用 GPT-4o 優化法條查詢: "${userQuery}"`);
+        console.log(`[LawSearch] 使用 gpt-4.5-preview 優化法條查詢: "${userQuery}"`);
         
         const prompt = `你是專業的台灣法律搜尋助手，請分析以下問題並推薦最相關的台灣法條。
 
@@ -43,6 +43,7 @@ ${context ? `額外上下文：「${context}」` : ''}
 ## 分析要求：
 1. 識別問題涉及的法律爭議類型（刑事、民事侵權、契約、行政等）
 2. 判斷各方當事人可能的法律責任
+3. **注意是否有針對特定情形的特別規定**（如租賃的火災條款、買賣的瑕疵擔保等）
 
 ## 法條排序原則： 以相關性為最高原則，越相關放越前面
 
@@ -60,7 +61,7 @@ ${context ? `額外上下文：「${context}」` : ''}
 }`;
 
         const response = await openai.chat.completions.create({
-            model: "gpt-4o",
+            model: "gpt-4.5-preview",
             messages: [{ role: "user", content: prompt }],
             temperature: 0.2,
             max_tokens: 2000,
