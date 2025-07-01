@@ -61,14 +61,17 @@ ${context ? `額外上下文：「${context}」` : ''}
    - 考慮條文的適用順序和重要性
 
 ## 請提供：
-1. **10個最相關的具體台灣法條**（按重要性排序，請使用以下標準格式）：
-   - 勞動基準法 → 使用 "勞基法第XX條"
-   - 消費者保護法 → 使用 "消保法第XX條"
-   - 租賃住宅市場發展及管理條例 → 使用 "租賃條例第XX條"
-   - 道路交通管理處罰條例 → 使用 "道交條例第XX條"
-   - 個人資料保護法 → 使用 "個資法第XX條"
-   - 公平交易法 → 使用 "公平法第XX條"
-   - 其他法典保持原名（如 "民法第XX條", "刑法第XX條"）
+1. **10個最相關的具體台灣法條**（**請按照與問題的直接相關性由高到低排序**）：
+   - 排序原則：最直接適用的法條排在最前面
+   - 例如：針對「房東換鎖」問題，刑法第306條（侵入住宅）比民法第422條（租賃定義）更相關
+   - 請使用以下標準格式：
+     * 勞動基準法 → "勞基法第XX條"
+     * 消費者保護法 → "消保法第XX條"
+     * 租賃住宅市場發展及管理條例 → "租賃條例第XX條"
+     * 道路交通管理處罰條例 → "道交條例第XX條"
+     * 個人資料保護法 → "個資法第XX條"
+     * 公平交易法 → "公平法第XX條"
+     * 其他法典保持原名（如 "民法第XX條", "刑法第XX條"）
 2. **3-5個精準的補充關鍵字**（用於備用搜尋）
 3. **一句精準的搜尋描述**（限30字內）
 
@@ -343,11 +346,12 @@ export async function performSemanticLawSearch(userQuery, context, page, pageSiz
 
 /**
  * 構建基於推薦法條的精準搜索查詢
+ * 完全信任 GPT-4.1-mini 的推薦順序，絕對優先顯示 recommended_articles
  */
 function buildSemanticLawQuery(queryVector, enhancedData) {
     const queries = [];
 
-    // 1. 優先搜尋推薦的法條
+    // 1. 絕對優先：按 GPT 推薦順序搜尋法條
     if (enhancedData.recommended_articles?.length > 0) {
         enhancedData.recommended_articles.forEach((article, index) => {
             // 解析法條格式，例如 "民法第425條"
@@ -366,7 +370,7 @@ function buildSemanticLawQuery(queryVector, enhancedData) {
                                 bool: {
                                     should: [
                                         { term: { "code_name": mappedCodeName } },
-                                        { term: { "code_name": originalCodeName } }  // 也嘗試原始名稱
+                                        { term: { "code_name": originalCodeName } }
                                     ]
                                 }
                             },
@@ -379,47 +383,39 @@ function buildSemanticLawQuery(queryVector, enhancedData) {
                                 }
                             }
                         ],
-                        boost: 20.0 - index  // 按推薦順序給予權重
+                        boost: 100.0 - index  // 大幅提高權重，確保按順序排列
                     }
                 });
             }
         });
     }
 
-    // 2. 如果推薦法條不足，用備用關鍵字補充
-    if (enhancedData.backup_keywords?.length > 0) {
+    // 2. 只有在找不到任何推薦法條時，才用備用關鍵字
+    if (queries.length === 0 && enhancedData.backup_keywords?.length > 0) {
         enhancedData.backup_keywords.forEach(keyword => {
             queries.push({
                 multi_match: {
                     query: keyword,
                     fields: ["text_original^2", "plain_explanation^1.5", "typical_scenarios"],
                     type: "best_fields",
-                    boost: 2.0
+                    boost: 1.0  // 低權重
                 }
             });
         });
     }
 
-    // 3. 向量搜尋作為最後的補充（權重很低）
+    // 3. 構建查詢，不使用向量搜尋
     const hybridQuery = {
         query: {
             bool: {
                 should: queries,
-                minimum_should_match: 1
+                minimum_should_match: queries.length > 0 ? 1 : 0
             }
-        }
+        },
+        sort: [
+            { "_score": { "order": "desc" } }  // 按分數排序，確保權重生效
+        ]
     };
-
-    // 只有在推薦法條很少時才加入向量搜尋
-    if (enhancedData.recommended_articles?.length < 5) {
-        hybridQuery.knn = {
-            field: "embedding_vector",
-            query_vector: queryVector,
-            k: 3,
-            num_candidates: 5,
-            boost: 0.1  // 很低的權重
-        };
-    }
 
     return hybridQuery;
 }
