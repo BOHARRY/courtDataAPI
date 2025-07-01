@@ -81,26 +81,18 @@ ${context ? `額外上下文：「${context}」` : ''}
 請確保回應是有效的 JSON 格式：
 {
   "recommended_articles": [
-    "消保法第19條",
-    "民法第354條",
-    "消保法第7條",
-    "民法第359條",
-    "刑法第339條",
-    "民法第365條",
-    "公平法第21條",
-    "民法第184條",
-    "消保法第51條",
-    "民法第195條"
+    "消保法第x條",
+    "民法第x條"
   ],
   "backup_keywords": ["消費者權益", "商品瑕疵", "網路購物"],
   "enhanced": "網路購物商品瑕疵退貨法律責任"
 }`;
 
         const response = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
+            model: "gpt-4.1-mini",
             messages: [{ role: "user", content: prompt }],
             temperature: 0.2,
-            max_tokens: 300,
+            max_tokens: 2000,
             response_format: { type: "json_object" }
         });
 
