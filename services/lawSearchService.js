@@ -17,23 +17,21 @@ async function enhanceLawQuery(userQuery, context = '') {
     try {
         console.log(`[LawSearch] 使用 GPT-4o-mini 優化法條查詢: "${userQuery}"`);
         
-        const prompt = `你是台灣法律搜尋助手。請將以下法律問題擴充為更精準的法條搜尋查詢。
+        const prompt = `你是台灣法律搜尋助手。請針對以下法律問題，直接推薦最相關的台灣法條。
 
 用戶問題：「${userQuery}」
 ${context ? `額外上下文：「${context}」` : ''}
 
 請提供：
-1. 3-5個核心法律概念關鍵字（例如 "侵權行為", "損害賠償", "契約責任"）
-2. 可能相關的法典名稱（例如 "民法", "刑法", "行政程序法"）
-3. 可能的條號範圍（例如 "第184條至第191條"）
-4. 一句擴充後的精準語意描述（限30字內，用於向量搜尋）
+1. 10個最相關的具體法條（例如 "民法第425條", "刑法第306條", "憲法第12條"）
+2. 3-5個補充關鍵字（用於找不到推薦法條時的備用搜尋）
+3. 一句精準的搜尋描述（限30字內）
 
 請確保回應是有效的 JSON 格式：
 {
-  "keywords": ["關鍵字1", "關鍵字2"],
-  "codes": ["法典名稱1", "法典名稱2"],
-  "article_hints": ["條號提示"],
-  "enhanced": "擴充後的精準描述"
+  "recommended_articles": ["民法第425條", "刑法第306條", "民法第423條", "憲法第12條", "土地法第100條", "民法第184條", "刑法第315-1條", "民法第195條", "民法第424條", "租賃住宅市場發展及管理條例第8條"],
+  "backup_keywords": ["關鍵字1", "關鍵字2"],
+  "enhanced": "精準描述"
 }`;
 
         const response = await openai.chat.completions.create({
@@ -290,89 +288,72 @@ export async function performSemanticLawSearch(userQuery, context, page, pageSiz
 }
 
 /**
- * 構建語意搜索的混合查詢
+ * 構建基於推薦法條的精準搜索查詢
  */
 function buildSemanticLawQuery(queryVector, enhancedData) {
-    // KNN 向量搜尋配置
-    const knnQuery = {
-        field: "embedding_vector",
-        query_vector: queryVector,
-        k: 5,
-        num_candidates: 10
-    };
+    const queries = [];
 
-    // 關鍵字加強查詢
-    const keywordQueries = [];
+    // 1. 優先搜尋推薦的法條
+    if (enhancedData.recommended_articles?.length > 0) {
+        enhancedData.recommended_articles.forEach((article, index) => {
+            // 解析法條格式，例如 "民法第425條"
+            const match = article.match(/^(.+?)第(.+?)條$/);
+            if (match) {
+                const codeName = match[1];
+                const articleNumber = match[2];
 
-    // 加入關鍵字查詢
-    if (enhancedData.keywords?.length > 0) {
-        enhancedData.keywords.forEach(keyword => {
-            keywordQueries.push({
-                multi_match: {
-                    query: keyword,
-                    fields: ["text_original^2", "plain_explanation^1.5", "typical_scenarios"],
-                    type: "best_fields",
-                    boost: 5.0
-                }
-            });
-        });
-    }
-
-    // 加入法典名稱查詢
-    if (enhancedData.codes?.length > 0) {
-        enhancedData.codes.forEach(code => {
-            keywordQueries.push({
-                term: {
-                    "code_name": {
-                        value: code,
-                        boost: 0.5
-                    }
-                }
-            });
-        });
-    }
-
-    // 加入條號提示查詢
-    if (enhancedData.article_hints?.length > 0) {
-        enhancedData.article_hints.forEach(hint => {
-            // 處理範圍格式，例如 "第423條至第429條"
-            const rangeMatch = hint.match(/第(\d+)條至第(\d+)條/);
-            if (rangeMatch) {
-                const start = parseInt(rangeMatch[1]);
-                const end = parseInt(rangeMatch[2]);
-                for (let i = start; i <= end; i++) {
-                    keywordQueries.push({
-                        bool: {
-                            should: [
-                                { term: { "article_number": { value: `第${i}條`, boost: 15.0 } } },
-                                { term: { "article_number_str": { value: i.toString(), boost: 15.0 } } }
-                            ]
-                        }
-                    });
-                }
-            } else {
-                // 處理單一條號
-                keywordQueries.push({
-                    multi_match: {
-                        query: hint,
-                        fields: ["article_number^10", "article_number_str^10"],
-                        type: "phrase",
-                        boost: 15.0
+                queries.push({
+                    bool: {
+                        must: [
+                            { term: { "code_name": codeName } },
+                            {
+                                bool: {
+                                    should: [
+                                        { term: { "article_number_str": articleNumber } },
+                                        { term: { "article_number": `第${articleNumber}條` } }
+                                    ]
+                                }
+                            }
+                        ],
+                        boost: 20.0 - index  // 按推薦順序給予權重
                     }
                 });
             }
         });
     }
 
-    let hybridQuery = { knn: knnQuery };
+    // 2. 如果推薦法條不足，用備用關鍵字補充
+    if (enhancedData.backup_keywords?.length > 0) {
+        enhancedData.backup_keywords.forEach(keyword => {
+            queries.push({
+                multi_match: {
+                    query: keyword,
+                    fields: ["text_original^2", "plain_explanation^1.5", "typical_scenarios"],
+                    type: "best_fields",
+                    boost: 2.0
+                }
+            });
+        });
+    }
 
-    // 如果有關鍵字查詢，加入混合搜索
-    if (keywordQueries.length > 0) {
-        hybridQuery.query = {
+    // 3. 向量搜尋作為最後的補充（權重很低）
+    const hybridQuery = {
+        query: {
             bool: {
-                should: keywordQueries,
+                should: queries,
                 minimum_should_match: 1
             }
+        }
+    };
+
+    // 只有在推薦法條很少時才加入向量搜尋
+    if (enhancedData.recommended_articles?.length < 5) {
+        hybridQuery.knn = {
+            field: "embedding_vector",
+            query_vector: queryVector,
+            k: 3,
+            num_candidates: 5,
+            boost: 0.1  // 很低的權重
         };
     }
 
