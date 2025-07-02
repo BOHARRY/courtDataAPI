@@ -77,8 +77,8 @@ async function searchSimilarCases(caseDescription, courtLevel, caseType, thresho
         const knnQuery = {
             field: "text_embedding",
             query_vector: queryVector,
-            k: 500, // 獲取更多結果用於統計分析
-            num_candidates: 1000
+            k: 200, // 平衡統計意義和性能 (200個案例足夠進行異常檢測)
+            num_candidates: 500 // 候選數量適中
         };
 
         console.log(`[casePrecedentAnalysisService] 執行 KNN 向量搜索，k=${knnQuery.k}`);
@@ -89,7 +89,7 @@ async function searchSimilarCases(caseDescription, courtLevel, caseType, thresho
                 'JID', 'JTITLE', 'summary_ai_full', 'legal_issues',
                 'verdict_type', 'court', 'case_type', 'JDATE', 'JYEAR'
             ],
-            size: 500
+            size: 200 // 與 k 保持一致
         });
 
         // 修正回應結構處理 - 參考 semanticSearchService.js 的成功模式
@@ -235,22 +235,42 @@ async function executeAnalysisInBackground(taskId, analysisData, userId) {
             anomalyAnalysis = await analyzeAnomalies(mainCases, anomalyCases, analysisData.caseDescription);
         }
         
-        // 4. 準備結果
+        // 4. 準備結果 - 保持與現有分析結果格式一致
+        const summaryText = `案例判決傾向分析完成！
+
+📊 分析了 ${similarCases.length} 個相似案例
+🎯 主流判決模式：${verdictAnalysis.mainPattern.verdict} (${verdictAnalysis.mainPattern.percentage}%)
+${verdictAnalysis.anomalies.length > 0 ?
+`⚠️ 發現 ${verdictAnalysis.anomalies.length} 種異常模式：${verdictAnalysis.anomalies.map(a => `${a.verdict} (${a.percentage}%)`).join(', ')}` :
+'✅ 未發現顯著異常模式'}
+
+${anomalyAnalysis ? `💡 關鍵洞察：${anomalyAnalysis.strategicInsights}` : ''}`;
+
         const result = {
-            analysisType: 'case_precedent_analysis',
-            totalSimilarCases: similarCases.length,
-            verdictDistribution: verdictAnalysis.distribution,
-            mainPattern: verdictAnalysis.mainPattern,
-            anomalies: verdictAnalysis.anomalies,
-            anomalyAnalysis,
-            representativeCases: similarCases.slice(0, 5).map(c => ({
-                id: c.id,
-                title: c.title,
-                verdictType: c.verdictType,
-                similarity: Math.round(c.similarity * 100),
-                summary: c.summary?.substring(0, 300)
-            })),
-            analysisParams: analysisData
+            // 保持與 summarizeCommonPointsService 一致的格式
+            report: {
+                summaryText,
+                citations: {} // 案例判決傾向分析不需要引用
+            },
+            analyzedCount: similarCases.length,
+
+            // 額外的案例判決傾向分析數據
+            casePrecedentData: {
+                analysisType: 'case_precedent_analysis',
+                totalSimilarCases: similarCases.length,
+                verdictDistribution: verdictAnalysis.distribution,
+                mainPattern: verdictAnalysis.mainPattern,
+                anomalies: verdictAnalysis.anomalies,
+                anomalyAnalysis,
+                representativeCases: similarCases.slice(0, 5).map(c => ({
+                    id: c.id,
+                    title: c.title,
+                    verdictType: c.verdictType,
+                    similarity: Math.round(c.similarity * 100),
+                    summary: c.summary?.substring(0, 300) || ''
+                })),
+                analysisParams: analysisData
+            }
         };
         
         // 5. 更新任務狀態為完成
