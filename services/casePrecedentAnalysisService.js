@@ -73,12 +73,12 @@ async function searchSimilarCases(caseDescription, courtLevel, caseType, thresho
         const queryVector = await generateEmbedding(caseDescription);
         const minScore = getThresholdValue(threshold);
 
-        // 2. 構建 ES KNN 查詢 - 減少數量避免超時
+        // 2. 構建 ES KNN 查詢 - 進一步減少數量避免記憶體問題
         const knnQuery = {
             field: "text_embedding",
             query_vector: queryVector,
-            k: 50, // 先減少到 50 個案例，確保穩定性
-            num_candidates: 100 // 減少候選數量
+            k: 20, // 進一步減少到 20 個案例
+            num_candidates: 50 // 減少候選數量
         };
 
         console.log(`[casePrecedentAnalysisService] 執行 KNN 向量搜索，k=${knnQuery.k}`);
@@ -88,10 +88,10 @@ async function searchSimilarCases(caseDescription, courtLevel, caseType, thresho
             index: ES_INDEX_NAME,
             knn: knnQuery,
             _source: [
-                'JID', 'JTITLE', 'summary_ai_full', 'legal_issues',
-                'verdict_type', 'court', 'case_type', 'JDATE', 'JYEAR'
+                'JID', 'JTITLE', 'verdict_type', 'court', 'JYEAR'
+                // 移除 summary_ai_full 和 legal_issues 減少數據量
             ],
-            size: 50, // 與 k 保持一致
+            size: 20, // 與 k 保持一致
             timeout: '30s' // 設定 ES 查詢超時
         });
 
@@ -109,13 +109,13 @@ async function searchSimilarCases(caseDescription, courtLevel, caseType, thresho
         return hits.map(hit => ({
             id: hit._source?.JID || 'unknown',
             title: hit._source?.JTITLE || '無標題',
-            summary: hit._source?.summary_ai_full || '',
-            legalIssues: hit._source?.legal_issues || '',
+            summary: '', // 移除詳細摘要減少記憶體使用
+            legalIssues: '', // 移除法律爭點減少記憶體使用
             verdictType: hit._source?.verdict_type || '未知',
             court: hit._source?.court || '未知法院',
-            caseType: hit._source?.case_type || '未知類型',
+            caseType: '', // 簡化案件類型
             year: hit._source?.JYEAR || '未知年份',
-            similarity: (hit._score || 0) - 1.0, // 減去 1.0 因為我們在 script 中加了 1.0
+            similarity: (hit._score || 0), // KNN 查詢不需要減 1.0
             source: hit._source || {}
         }));
     } catch (error) {
@@ -229,9 +229,14 @@ async function executeAnalysisInBackground(taskId, analysisData, userId) {
         }
         
         console.log(`[casePrecedentAnalysisService] 找到 ${similarCases.length} 個相似案例`);
-        
+
+        if (similarCases.length === 0) {
+            throw new Error('未找到符合條件的相似案例，請調整搜索條件');
+        }
+
         // 2. 分析判決分布
         const verdictAnalysis = analyzeVerdictDistribution(similarCases);
+        console.log(`[casePrecedentAnalysisService] 判決分布分析完成，主流模式: ${verdictAnalysis.mainPattern?.verdict}`);
         
         // 3. 分析異常案例 - 暫時跳過 AI 分析避免超時
         let anomalyAnalysis = null;
@@ -272,12 +277,12 @@ ${anomalyAnalysis ? `💡 關鍵洞察：${anomalyAnalysis.strategicInsights}` :
                 mainPattern: verdictAnalysis.mainPattern,
                 anomalies: verdictAnalysis.anomalies,
                 anomalyAnalysis,
-                representativeCases: similarCases.slice(0, 5).map(c => ({
+                representativeCases: similarCases.slice(0, 3).map(c => ({
                     id: c.id,
                     title: c.title,
                     verdictType: c.verdictType,
                     similarity: Math.round(c.similarity * 100),
-                    summary: c.summary?.substring(0, 300) || ''
+                    summary: `${c.court} ${c.year}年` // 簡化摘要
                 })),
                 analysisParams: analysisData
             }
