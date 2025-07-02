@@ -1,6 +1,7 @@
 // controllers/aiAnalysisController.js
 import { analyzeSuccessFactors } from '../services/aiSuccessAnalysisService.js';
 import { startCommonPointsAnalysis, getAnalysisResult } from '../services/summarizeCommonPointsService.js';
+import { startCasePrecedentAnalysis } from '../services/casePrecedentAnalysisService.js';
 
 // 現有的 Controller
 export const analyzeSuccessFactorsController = async (req, res, next) => {
@@ -48,6 +49,30 @@ export const getAnalysisResultController = async (req, res, next) => {
 
         const result = await getAnalysisResult(taskId, userId);
         res.status(200).json(result);
+    } catch (error) {
+        next(error);
+    }
+};
+
+// 案例判決傾向分析 Controller
+export const casePrecedentAnalysisController = async (req, res, next) => {
+    try {
+        const { caseDescription, courtLevel, caseType, threshold } = req.body;
+        const userId = req.user.uid;
+
+        if (!caseDescription || !caseDescription.trim()) {
+            return res.status(400).json({ message: '案件描述為必填欄位。' });
+        }
+
+        const analysisData = {
+            caseDescription: caseDescription.trim(),
+            courtLevel: courtLevel || '地方法院',
+            caseType: caseType || '民事',
+            threshold: threshold || 'medium'
+        };
+
+        const { taskId } = await startCasePrecedentAnalysis(analysisData, userId);
+        res.status(202).json({ message: '案例判決傾向分析任務已啟動', taskId }); // 202 Accepted
     } catch (error) {
         next(error);
     }

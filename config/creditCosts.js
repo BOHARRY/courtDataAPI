@@ -17,6 +17,7 @@ export const CREDIT_COSTS = {
   AI_SUCCESS_ANALYSIS: 5,
   SEMANTIC_SEARCH: 3, // 新增語意搜尋功能，消耗 3 積分
   SUMMARIZE_COMMON_POINTS: 4, // (圖板) AI歸納判例共同點
+  CASE_PRECEDENT_ANALYSIS: 4, // 案例判決傾向分析
 
   // 法條搜索相關
   LAW_SEARCH_BASIC: 1,    // 法條基礎搜索
@@ -38,6 +39,7 @@ export const CREDIT_PURPOSES = {
   SEMANTIC_SEARCH: 'SEMANTIC_SEARCH',  // 新增語意搜尋用途
   AI_SUCCESS_ANALYSIS: 'ai_success_analysis',
   SUMMARIZE_COMMON_POINTS: 'summarize_common_points', // (圖板) AI歸納判例共同點
+  CASE_PRECEDENT_ANALYSIS: 'case_precedent_analysis', // 案例判決傾向分析
 
   // 法條搜索相關
   LAW_SEARCH_BASIC: 'law_search_basic',

@@ -1,6 +1,6 @@
 // routes/aiAnalysisRoutes.js
 import express from 'express';
-import { analyzeSuccessFactorsController, summarizeCommonPointsController, getAnalysisResultController } from '../controllers/aiAnalysisController.js';
+import { analyzeSuccessFactorsController, summarizeCommonPointsController, getAnalysisResultController, casePrecedentAnalysisController } from '../controllers/aiAnalysisController.js';
 import { verifyToken } from '../middleware/auth.js';
 import { checkAndDeductCredits } from '../middleware/credit.js';
 import { CREDIT_COSTS, CREDIT_PURPOSES } from '../config/creditCosts.js';
@@ -33,6 +33,20 @@ router.post(
         }
     ),
     summarizeCommonPointsController
+);
+
+// POST /api/ai/case-precedent-analysis
+router.post(
+    '/case-precedent-analysis',
+    verifyToken,
+    checkAndDeductCredits(
+        CREDIT_COSTS.CASE_PRECEDENT_ANALYSIS,
+        CREDIT_PURPOSES.CASE_PRECEDENT_ANALYSIS,
+        {
+            description: '案例判決傾向分析',
+        }
+    ),
+    casePrecedentAnalysisController
 );
 
 // GET /api/ai/analysis-result/:taskId
