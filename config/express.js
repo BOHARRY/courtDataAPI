@@ -10,7 +10,15 @@ const app = express();
 // 定義允許的來源白名單
 const allowedOrigins = [
   'http://localhost:3000', // 開發環境
-  'http://localhost:3001', // 另一個開發環境 (如果有)
+  'http://localhost:3001', // 另一個開發環境
+  'http://localhost:3002', // 另一個開發環境
+  'http://localhost:5000', // 另一個開發環境
+  'http://localhost:5173', // Vite 預設端口
+  'http://127.0.0.1:3000', // 本地 IP
+  'http://127.0.0.1:3001', // 本地 IP
+  'http://127.0.0.1:3002', // 本地 IP
+  'http://127.0.0.1:5000', // 本地 IP
+  'http://127.0.0.1:5173', // 本地 IP
   'https://frontend-court-search-web.vercel.app', // 生產環境 (假設)
 ];
 
@@ -18,8 +26,17 @@ app.use(cors({
   origin: function (origin, callback) {
     // 允許沒有 origin 的請求 (例如 Postman 或伺服器間請求)
     if (!origin) return callback(null, true);
+
+    // 開發模式：允許所有 localhost 和 127.0.0.1 的請求
+    if (process.env.NODE_ENV !== 'production') {
+      if (origin && (origin.includes('localhost') || origin.includes('127.0.0.1'))) {
+        return callback(null, true);
+      }
+    }
+
     if (allowedOrigins.indexOf(origin) === -1) {
       const msg = '此來源的 CORS 政策不允許存取: ' + origin;
+      console.log(`CORS 錯誤: ${msg}`);
       return callback(new Error(msg), false);
     }
     return callback(null, true);
