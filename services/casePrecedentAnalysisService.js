@@ -73,36 +73,29 @@ async function searchSimilarCases(caseDescription, courtLevel, caseType, thresho
         const queryVector = await generateEmbedding(caseDescription);
         const minScore = getThresholdValue(threshold);
 
-        // 2. 構建 ES 查詢 - 修正查詢結構
-        const searchBody = {
-            size: 500, // 獲取更多結果用於統計分析
-            min_score: minScore,
-            query: {
-                script_score: {
-                    query: { match_all: {} },
-                    script: {
-                        source: "cosineSimilarity(params.query_vector, 'text_embedding') + 1.0",
-                        params: {
-                            query_vector: queryVector
-                        }
-                    }
-                }
-            },
+        // 2. 構建 ES KNN 查詢 - 參考 aiSuccessAnalysisService.js 的成功模式
+        const knnQuery = {
+            field: "text_embedding",
+            query_vector: queryVector,
+            k: 500, // 獲取更多結果用於統計分析
+            num_candidates: 1000
+        };
+
+        console.log(`[casePrecedentAnalysisService] 執行 KNN 向量搜索，k=${knnQuery.k}`);
+        const response = await esClient.search({
+            index: ES_INDEX_NAME,
+            knn: knnQuery,
             _source: [
                 'JID', 'JTITLE', 'summary_ai_full', 'legal_issues',
                 'verdict_type', 'court', 'case_type', 'JDATE', 'JYEAR'
-            ]
-        };
-
-        console.log(`[casePrecedentAnalysisService] 執行向量搜索，門檻: ${minScore}`);
-        const response = await esClient.search({
-            index: ES_INDEX_NAME,
-            body: searchBody
+            ],
+            size: 500
         });
 
-        // 修正回應結構處理
-        const hits = response.hits?.hits || response.body?.hits?.hits || [];
+        // 修正回應結構處理 - 參考 semanticSearchService.js 的成功模式
+        const hits = response.hits?.hits || [];
         console.log(`[casePrecedentAnalysisService] 搜索返回 ${hits.length} 個結果`);
+        console.log(`[casePrecedentAnalysisService] 完整回應結構:`, JSON.stringify(response, null, 2));
 
         return hits.map(hit => ({
             id: hit._source?.JID || 'unknown',
@@ -118,7 +111,7 @@ async function searchSimilarCases(caseDescription, courtLevel, caseType, thresho
         }));
     } catch (error) {
         console.error('[casePrecedentAnalysisService] ES 搜索失敗:', error);
-        console.error('[casePrecedentAnalysisService] 搜索查詢:', JSON.stringify(searchBody, null, 2));
+        console.error('[casePrecedentAnalysisService] KNN 查詢:', JSON.stringify(knnQuery, null, 2));
         throw new Error(`搜索相似案例時發生錯誤: ${error.message}`);
     }
 }
