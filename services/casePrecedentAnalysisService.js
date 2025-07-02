@@ -73,59 +73,53 @@ async function searchSimilarCases(caseDescription, courtLevel, caseType, thresho
         const queryVector = await generateEmbedding(caseDescription);
         const minScore = getThresholdValue(threshold);
 
-        // 2. 構建 ES 查詢
-        const searchQuery = {
-            index: ES_INDEX_NAME,
-            body: {
-                size: 500, // 獲取更多結果用於統計分析
-                min_score: minScore,
-                query: {
-                    bool: {
-                        must: [
-                            {
-                                script_score: {
-                                    query: { match_all: {} },
-                                    script: {
-                                        source: "cosineSimilarity(params.query_vector, 'text_embedding') + 1.0",
-                                        params: {
-                                            query_vector: queryVector
-                                        }
-                                    }
-                                }
-                            }
-                        ],
-                        filter: [
-                            // 根據實際 mapping，暫時不使用法院層級和案件類型篩選
-                            // 因為這些欄位在當前 mapping 中可能不存在或格式不同
-                            // 未來可以根據實際需求添加適當的篩選條件
-                        ]
+        // 2. 構建 ES 查詢 - 修正查詢結構
+        const searchBody = {
+            size: 500, // 獲取更多結果用於統計分析
+            min_score: minScore,
+            query: {
+                script_score: {
+                    query: { match_all: {} },
+                    script: {
+                        source: "cosineSimilarity(params.query_vector, 'text_embedding') + 1.0",
+                        params: {
+                            query_vector: queryVector
+                        }
                     }
-                },
-                _source: [
-                    'JID', 'JTITLE', 'summary_ai_full', 'legal_issues',
-                    'verdict_type', 'court', 'case_type', 'JDATE', 'JYEAR'
-                ]
-            }
+                }
+            },
+            _source: [
+                'JID', 'JTITLE', 'summary_ai_full', 'legal_issues',
+                'verdict_type', 'court', 'case_type', 'JDATE', 'JYEAR'
+            ]
         };
 
         console.log(`[casePrecedentAnalysisService] 執行向量搜索，門檻: ${minScore}`);
-        const response = await esClient.search(searchQuery);
+        const response = await esClient.search({
+            index: ES_INDEX_NAME,
+            body: searchBody
+        });
 
-        return response.body.hits.hits.map(hit => ({
-            id: hit._source.JID,
-            title: hit._source.JTITLE,
-            summary: hit._source.summary_ai_full,
-            legalIssues: hit._source.legal_issues,
-            verdictType: hit._source.verdict_type,
-            court: hit._source.court,
-            caseType: hit._source.case_type,
-            year: hit._source.JYEAR,
-            similarity: hit._score - 1.0, // 減去 1.0 因為我們在 script 中加了 1.0
-            source: hit._source
+        // 修正回應結構處理
+        const hits = response.hits?.hits || response.body?.hits?.hits || [];
+        console.log(`[casePrecedentAnalysisService] 搜索返回 ${hits.length} 個結果`);
+
+        return hits.map(hit => ({
+            id: hit._source?.JID || 'unknown',
+            title: hit._source?.JTITLE || '無標題',
+            summary: hit._source?.summary_ai_full || '',
+            legalIssues: hit._source?.legal_issues || '',
+            verdictType: hit._source?.verdict_type || '未知',
+            court: hit._source?.court || '未知法院',
+            caseType: hit._source?.case_type || '未知類型',
+            year: hit._source?.JYEAR || '未知年份',
+            similarity: (hit._score || 0) - 1.0, // 減去 1.0 因為我們在 script 中加了 1.0
+            source: hit._source || {}
         }));
     } catch (error) {
         console.error('[casePrecedentAnalysisService] ES 搜索失敗:', error);
-        throw new Error('搜索相似案例時發生錯誤');
+        console.error('[casePrecedentAnalysisService] 搜索查詢:', JSON.stringify(searchBody, null, 2));
+        throw new Error(`搜索相似案例時發生錯誤: ${error.message}`);
     }
 }
 
