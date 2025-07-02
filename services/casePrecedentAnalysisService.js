@@ -11,6 +11,20 @@ const openai = new OpenAI({
 const ES_INDEX_NAME = 'search-boooook';
 const ANALYSIS_MODEL = OPENAI_MODEL_NAME_CHAT || 'gpt-4.1';
 
+// 記憶體監控工具
+const logMemoryUsage = (step) => {
+    const used = process.memoryUsage();
+    const heapUsedMB = Math.round(used.heapUsed / 1024 / 1024);
+    const rssMB = Math.round(used.rss / 1024 / 1024);
+    const externalMB = Math.round(used.external / 1024 / 1024);
+    console.log(`[Memory-${step}] Heap: ${heapUsedMB}MB, RSS: ${rssMB}MB, External: ${externalMB}MB`);
+
+    // 警告記憶體使用過高
+    if (heapUsedMB > 400) {
+        console.warn(`⚠️ [Memory Warning] Heap usage high: ${heapUsedMB}MB`);
+    }
+};
+
 /**
  * 將相似度門檻轉換為數值
  */
@@ -69,8 +83,11 @@ async function generateEmbedding(text) {
  */
 async function searchSimilarCases(caseDescription, courtLevel, caseType, threshold) {
     try {
+        logMemoryUsage('Start-SearchSimilarCases');
+
         // 1. 生成查詢向量
         const queryVector = await generateEmbedding(caseDescription);
+        logMemoryUsage('After-GenerateEmbedding');
         const minScore = getThresholdValue(threshold);
 
         // 2. 構建 ES KNN 查詢 - 平衡統計意義和性能穩定性
@@ -100,6 +117,7 @@ async function searchSimilarCases(caseDescription, courtLevel, caseType, thresho
         );
 
         const response = await Promise.race([searchPromise, timeoutPromise]);
+        logMemoryUsage('After-ES-Search');
 
         // 修正回應結構處理 - 參考 semanticSearchService.js 的成功模式
         const hits = response.hits?.hits || [];
@@ -212,8 +230,9 @@ ${anomalyCases.map((c, i) => `${i+1}. 判決：${c.verdictType} - ${c.summary?.s
 async function executeAnalysisInBackground(taskId, analysisData, userId) {
     const db = admin.firestore();
     const taskRef = db.collection('aiAnalysisTasks').doc(taskId);
-    
+
     try {
+        logMemoryUsage('Start-Analysis');
         console.log(`[casePrecedentAnalysisService] 開始執行案例判決傾向分析，任務ID: ${taskId}`);
         
         // 1. 搜索相似案例
@@ -236,6 +255,7 @@ async function executeAnalysisInBackground(taskId, analysisData, userId) {
 
         // 2. 分析判決分布
         const verdictAnalysis = analyzeVerdictDistribution(similarCases);
+        logMemoryUsage('After-VerdictAnalysis');
         console.log(`[casePrecedentAnalysisService] 判決分布分析完成，主流模式: ${verdictAnalysis.mainPattern?.verdict}`);
         
         // 3. 分析異常案例 - 暫時跳過 AI 分析避免超時
