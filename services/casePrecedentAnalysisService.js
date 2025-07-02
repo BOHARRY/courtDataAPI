@@ -73,12 +73,12 @@ async function searchSimilarCases(caseDescription, courtLevel, caseType, thresho
         const queryVector = await generateEmbedding(caseDescription);
         const minScore = getThresholdValue(threshold);
 
-        // 2. 構建 ES KNN 查詢 - 進一步減少數量避免記憶體問題
+        // 2. 構建 ES KNN 查詢 - 平衡統計意義和性能穩定性
         const knnQuery = {
             field: "text_embedding",
             query_vector: queryVector,
-            k: 20, // 進一步減少到 20 個案例
-            num_candidates: 50 // 減少候選數量
+            k: 50, // 增加到 50 個案例，提供更好的統計意義
+            num_candidates: 100 // 適度增加候選數量
         };
 
         console.log(`[casePrecedentAnalysisService] 執行 KNN 向量搜索，k=${knnQuery.k}`);
@@ -91,7 +91,7 @@ async function searchSimilarCases(caseDescription, courtLevel, caseType, thresho
                 'JID', 'JTITLE', 'verdict_type', 'court', 'JYEAR'
                 // 移除 summary_ai_full 和 legal_issues 減少數據量
             ],
-            size: 20, // 與 k 保持一致
+            size: 50, // 與 k 保持一致
             timeout: '30s' // 設定 ES 查詢超時
         });
 
