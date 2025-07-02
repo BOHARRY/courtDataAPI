@@ -1,10 +1,15 @@
 // services/lawSearchService.js
 import esClient from '../config/elasticsearch.js';
 import { OpenAI } from 'openai';
+import Anthropic from '@anthropic-ai/sdk';
 import { OPENAI_API_KEY, OPENAI_MODEL_NAME_EMBEDDING } from '../config/environment.js';
 
 const openai = new OpenAI({
     apiKey: OPENAI_API_KEY,
+});
+
+const anthropic = new Anthropic({
+    apiKey: process.env.CLAUDE_API_KEY,
 });
 
 const ES_INDEX_NAME = 'law_boook';
@@ -31,7 +36,7 @@ const LAW_CODE_MAPPING = {
  */
 async function enhanceLawQuery(userQuery, context = '') {
     try {
-        console.log(`[LawSearch] 使用 gpt-4.5-preview 優化法條查詢: "${userQuery}"`);
+        console.log(`[LawSearch] 使用 claude-opus-4 優化法條查詢: "${userQuery}"`);
         
         const prompt = `你是專業的台灣法律搜尋助手，請分析以下問題並推薦最相關的台灣法條。
 
@@ -53,27 +58,31 @@ ${context ? `額外上下文：「${context}」` : ''}
 - 優先推薦能直接解決問題的條文
 - 法規簡稱：勞基法、消保法、租賃條例等
 
-回應格式（JSON）：
+請確保回應是有效的 JSON 格式，不要包含任何其他文字，只回傳純 JSON：
 {
   "recommended_articles": ["刑法第XX條", "民法第XX條"],
   "backup_keywords": ["關鍵字1", "關鍵字2", "關鍵字3"],
   "enhanced": "30字內精準描述"
 }`;
 
-        const response = await openai.chat.completions.create({
-            model: "gpt-4.5-preview",
-            messages: [{ role: "user", content: prompt }],
-            temperature: 0.2,
+        console.log(`[LawSearch] 使用 Claude Opus 4 優化法條查詢: "${userQuery}"`);
+
+        const response = await anthropic.messages.create({
+            model: "claude-opus-4-20250514",
             max_tokens: 2000,
-            response_format: { type: "json_object" }
+            temperature: 0.2,
+            messages: [{
+                role: "user",
+                content: prompt
+            }]
         });
 
-        const enhanced = JSON.parse(response.choices[0].message.content);
-        console.log(`[LawSearch] 查詢優化結果:`, enhanced);
+        const enhanced = JSON.parse(response.content[0].text);
+        console.log(`[LawSearch] Claude Opus 4 查詢優化結果:`, enhanced);
         return enhanced;
         
     } catch (error) {
-        console.error('[LawSearch] GPT 優化查詢失敗:', error);
+        console.error('[LawSearch] Claude 優化查詢失敗:', error);
         throw new Error(`查詢優化失敗: ${error.message}`);
     }
 }
