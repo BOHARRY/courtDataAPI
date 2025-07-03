@@ -450,7 +450,9 @@ async function generateAnomalyDetails(anomalies, allCases) {
             const detailedCases = await Promise.all(
                 anomalyCases.slice(0, 5).map(async (case_) => {
                     // 獲取完整的判決書數據
+                    console.log(`[generateAnomalyDetails] 正在獲取案例 ${case_.id} 的完整數據`);
                     const fullJudgmentData = await getJudgmentNodeData(case_.id);
+                    console.log(`[generateAnomalyDetails] 案例 ${case_.id} 數據獲取結果:`, fullJudgmentData ? '成功' : '失敗');
 
                     return {
                         // 基本信息（用於列表顯示）
