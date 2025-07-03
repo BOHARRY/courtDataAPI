@@ -1,7 +1,7 @@
 // controllers/aiAnalysisController.js
 import { analyzeSuccessFactors } from '../services/aiSuccessAnalysisService.js';
 import { startCommonPointsAnalysis, getAnalysisResult } from '../services/summarizeCommonPointsService.js';
-import { startCasePrecedentAnalysis } from '../services/casePrecedentAnalysisService.js';
+import { startCasePrecedentAnalysis, startMainstreamAnalysis } from '../services/casePrecedentAnalysisService.js';
 
 // 現有的 Controller
 export const analyzeSuccessFactorsController = async (req, res, next) => {
@@ -73,6 +73,23 @@ export const casePrecedentAnalysisController = async (req, res, next) => {
 
         const { taskId } = await startCasePrecedentAnalysis(analysisData, userId);
         res.status(202).json({ message: '案例判決傾向分析任務已啟動', taskId }); // 202 Accepted
+    } catch (error) {
+        next(error);
+    }
+};
+
+// 歸納主流判決 Controller
+export const mainstreamAnalysisController = async (req, res, next) => {
+    try {
+        const { originalTaskId } = req.body;
+        const userId = req.user.uid;
+
+        if (!originalTaskId || !originalTaskId.trim()) {
+            return res.status(400).json({ message: '原始分析任務ID為必填欄位。' });
+        }
+
+        const { taskId } = await startMainstreamAnalysis(originalTaskId.trim(), userId);
+        res.status(202).json({ message: '歸納主流判決任務已啟動', taskId }); // 202 Accepted
     } catch (error) {
         next(error);
     }

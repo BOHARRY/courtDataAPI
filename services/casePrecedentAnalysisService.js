@@ -588,3 +588,246 @@ function createTestAnomalyDetails(anomalies) {
 
     return testDetails;
 }
+
+/**
+ * 獲取主流判決案例的詳細數據（包含 summary_ai_full）
+ */
+async function getMainstreamCasesWithSummary(caseDescription, courtLevel, caseType, threshold, mainVerdictType) {
+    try {
+        console.log(`[getMainstreamCasesWithSummary] 開始獲取主流判決案例: ${mainVerdictType}`);
+
+        // 1. 重新執行向量搜索，但這次要獲取 summary_ai_full
+        const queryVector = await generateEmbedding(caseDescription);
+        const minScore = getThresholdValue(threshold);
+
+        const knnQuery = {
+            field: "text_embedding",
+            query_vector: queryVector,
+            k: 50,
+            num_candidates: 100
+        };
+
+        const response = await esClient.search({
+            index: ES_INDEX_NAME,
+            knn: knnQuery,
+            _source: [
+                'JID', 'JTITLE', 'verdict_type', 'court', 'JYEAR', 'summary_ai_full'
+            ],
+            size: 50,
+            timeout: '30s'
+        });
+
+        const hits = response.hits?.hits || [];
+
+        // 2. 篩選出主流判決類型且符合相似度閾值的案例
+        const mainStreamCases = hits
+            .filter(hit => {
+                const similarity = hit._score || 0;
+                const verdictType = hit._source?.verdict_type || '';
+                return similarity >= minScore && verdictType === mainVerdictType;
+            })
+            .slice(0, 10) // 取前10名
+            .map((hit, index) => ({
+                id: hit._source?.JID || 'unknown',
+                title: hit._source?.JTITLE || '無標題',
+                court: hit._source?.court || '未知法院',
+                year: hit._source?.JYEAR || '未知年份',
+                verdictType: hit._source?.verdict_type || '未知',
+                similarity: hit._score || 0,
+                summaryAiFull: hit._source?.summary_ai_full || '',
+                citationIndex: index + 1 // 用於引用編號 [1], [2], ...
+            }));
+
+        console.log(`[getMainstreamCasesWithSummary] 找到 ${mainStreamCases.length} 個主流判決案例`);
+        return mainStreamCases;
+
+    } catch (error) {
+        console.error('[getMainstreamCasesWithSummary] 獲取主流案例失敗:', error);
+        throw error;
+    }
+}
+
+/**
+ * 使用 AI 分析主流判決模式
+ */
+async function analyzeMainstreamPattern(caseDescription, mainStreamCases, mainPattern) {
+    try {
+        console.log(`[analyzeMainstreamPattern] 開始分析主流判決模式`);
+
+        // 準備案例摘要文本
+        const caseSummaries = mainStreamCases.map((case_, index) =>
+            `[${index + 1}] ${case_.title} (${case_.court} ${case_.year}年)\n${case_.summaryAiFull}`
+        ).join('\n\n');
+
+        const prompt = `你是資深法律分析師。請分析以下用戶案件與10個最相似的主流判決案例，歸納出主流判決的共同模式和成功要素。
+
+**用戶案件描述：**
+${caseDescription}
+
+**主流判決模式：** ${mainPattern.verdict} (${mainPattern.count}件，${mainPattern.percentage}%)
+
+**前10名最相似的主流判決案例：**
+${caseSummaries}
+
+請進行深度分析並提供以下內容：
+
+1. **勝訴關鍵要素**：分析這些主流判決中導致勝訴的共同因素
+2. **法院重視的證據類型**：識別法院在判決中特別重視的證據種類
+3. **常見論證邏輯**：歸納法院在類似案件中的推理模式
+4. **判決理由共同點**：提取判決書中反覆出現的理由和法律見解
+5. **策略建議**：基於主流模式為用戶案件提供具體建議
+
+**重要要求：**
+- 每個分析點都必須引用具體的判決書，使用格式 [數字]
+- 引用要精準，確保引用的判決書確實支持該論點
+- 分析要深入，不只是表面描述
+- 提供可操作的策略建議
+
+請以JSON格式回應：
+{
+  "summaryText": "主流判決分析摘要...",
+  "keySuccessFactors": ["要素1 [1][3]", "要素2 [2][5]", ...],
+  "evidenceTypes": ["證據類型1 [1][2]", "證據類型2 [4][6]", ...],
+  "reasoningPatterns": ["推理模式1 [2][7]", "推理模式2 [3][8]", ...],
+  "commonReasons": ["共同理由1 [1][4]", "共同理由2 [5][9]", ...],
+  "strategicRecommendations": ["建議1 [2][6]", "建議2 [3][7]", ...],
+  "citations": {
+    "1": "判決書標題1 (法院 年份)",
+    "2": "判決書標題2 (法院 年份)",
+    ...
+  }
+}`;
+
+        const response = await openai.chat.completions.create({
+            model: ANALYSIS_MODEL,
+            messages: [{ role: 'user', content: prompt }],
+            temperature: 0.3,
+            response_format: { type: "json_object" }
+        });
+
+        const analysisResult = JSON.parse(response.choices[0].message.content);
+
+        // 確保引用格式正確
+        const citations = {};
+        mainStreamCases.forEach((case_, index) => {
+            citations[index + 1] = `${case_.title} (${case_.court} ${case_.year}年)`;
+        });
+
+        analysisResult.citations = citations;
+
+        console.log(`[analyzeMainstreamPattern] 主流判決分析完成`);
+        return analysisResult;
+
+    } catch (error) {
+        console.error('[analyzeMainstreamPattern] AI分析失敗:', error);
+        throw error;
+    }
+}
+
+/**
+ * 歸納主流判決分析
+ * @param {string} taskId - 原始案例判決傾向分析的任務ID
+ * @param {string} userId - 用戶ID
+ * @returns {Promise<{taskId: string}>} 新的分析任務ID
+ */
+export async function startMainstreamAnalysis(originalTaskId, userId) {
+    const db = admin.firestore();
+
+    // 1. 獲取原始分析結果
+    const originalTaskRef = db.collection('aiAnalysisTasks').doc(originalTaskId);
+    const originalTaskDoc = await originalTaskRef.get();
+
+    if (!originalTaskDoc.exists) {
+        throw new Error('找不到原始分析任務');
+    }
+
+    const originalResult = originalTaskDoc.data().result;
+    if (!originalResult?.casePrecedentData) {
+        throw new Error('原始分析結果格式不正確');
+    }
+
+    // 2. 創建新的分析任務
+    const taskRef = db.collection('aiAnalysisTasks').doc();
+    const taskId = taskRef.id;
+
+    const taskData = {
+        userId,
+        taskId,
+        originalTaskId,
+        type: 'mainstream_analysis',
+        status: 'pending',
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+
+    await taskRef.set(taskData);
+    console.log(`[casePrecedentAnalysisService] 主流判決分析任務 ${taskId} 已創建`);
+
+    // 3. 非同步執行分析
+    executeMainstreamAnalysisInBackground(taskId, originalResult, userId);
+
+    return { taskId };
+}
+
+/**
+ * (背景執行) 主流判決分析函式
+ */
+async function executeMainstreamAnalysisInBackground(taskId, originalResult, userId) {
+    const db = admin.firestore();
+    const taskRef = db.collection('aiAnalysisTasks').doc(taskId);
+
+    try {
+        console.log(`[casePrecedentAnalysisService] 開始執行主流判決分析，任務ID: ${taskId}`);
+
+        const casePrecedentData = originalResult.casePrecedentData;
+        const mainPattern = casePrecedentData.mainPattern;
+        const analysisParams = casePrecedentData.analysisParams;
+
+        // 檢查是否有足夠的主流案例
+        if (!mainPattern || mainPattern.count < 5) {
+            throw new Error('主流判決案例數量不足，無法進行分析');
+        }
+
+        // 4. 獲取主流判決案例的詳細數據
+        const mainStreamCases = await getMainstreamCasesWithSummary(
+            analysisParams.caseDescription,
+            analysisParams.courtLevel,
+            analysisParams.caseType,
+            analysisParams.threshold,
+            mainPattern.verdict
+        );
+
+        if (mainStreamCases.length < 5) {
+            throw new Error('找到的主流判決案例數量不足');
+        }
+
+        // 5. 使用 AI 分析主流判決模式
+        const analysisResult = await analyzeMainstreamPattern(
+            analysisParams.caseDescription,
+            mainStreamCases,
+            mainPattern
+        );
+
+        // 6. 更新任務狀態為完成
+        await taskRef.update({
+            status: 'complete',
+            completedAt: admin.firestore.FieldValue.serverTimestamp(),
+            result: {
+                report: analysisResult,
+                analyzedCount: mainStreamCases.length,
+                mainPattern: mainPattern,
+                originalCaseDescription: analysisParams.caseDescription
+            }
+        });
+
+        console.log(`[casePrecedentAnalysisService] 主流判決分析完成，任務ID: ${taskId}`);
+
+    } catch (error) {
+        console.error(`[casePrecedentAnalysisService] 主流判決分析失敗，任務ID: ${taskId}`, error);
+
+        await taskRef.update({
+            status: 'error',
+            error: error.message,
+            completedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+    }
+}

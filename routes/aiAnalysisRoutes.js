@@ -1,6 +1,6 @@
 // routes/aiAnalysisRoutes.js
 import express from 'express';
-import { analyzeSuccessFactorsController, summarizeCommonPointsController, getAnalysisResultController, casePrecedentAnalysisController } from '../controllers/aiAnalysisController.js';
+import { analyzeSuccessFactorsController, summarizeCommonPointsController, getAnalysisResultController, casePrecedentAnalysisController, mainstreamAnalysisController } from '../controllers/aiAnalysisController.js';
 import { verifyToken } from '../middleware/auth.js';
 import { checkAndDeductCredits } from '../middleware/credit.js';
 import { CREDIT_COSTS, CREDIT_PURPOSES } from '../config/creditCosts.js';
@@ -47,6 +47,20 @@ router.post(
         }
     ),
     casePrecedentAnalysisController
+);
+
+// POST /api/ai/mainstream-analysis
+router.post(
+    '/mainstream-analysis',
+    verifyToken,
+    checkAndDeductCredits(
+        CREDIT_COSTS.SUMMARIZE_COMMON_POINTS, // 使用相同的點數成本
+        CREDIT_PURPOSES.SUMMARIZE_COMMON_POINTS,
+        {
+            description: '歸納主流判決',
+        }
+    ),
+    mainstreamAnalysisController
 );
 
 // GET /api/ai/analysis-result/:taskId
