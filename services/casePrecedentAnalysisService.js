@@ -27,12 +27,14 @@ const logMemoryUsage = (step) => {
 
 /**
  * 將相似度門檻轉換為數值
+ * ES cosine similarity 分數範圍是 0-1，公式：(1 + cosine_similarity) / 2
+ * 用戶設定的百分比需要轉換為對應的分數閾值
  */
 function getThresholdValue(threshold) {
     switch (threshold) {
-        case 'low': return 0.6;
-        case 'medium': return 0.75;
-        case 'high': return 0.85;
+        case 'low': return 0.6;    // 60% 相似度
+        case 'medium': return 0.75; // 75% 相似度
+        case 'high': return 0.85;   // 85% 相似度
         default: return 0.75;
     }
 }
@@ -124,7 +126,24 @@ async function searchSimilarCases(caseDescription, courtLevel, caseType, thresho
         console.log(`[casePrecedentAnalysisService] 搜索返回 ${hits.length} 個結果`);
         console.log(`[casePrecedentAnalysisService] 完整回應結構:`, JSON.stringify(response, null, 2));
 
-        return hits.map(hit => ({
+        // 3. 根據用戶設定的相似度閾值篩選結果
+        const filteredHits = hits.filter(hit => {
+            const similarity = hit._score || 0;
+            return similarity >= minScore;
+        });
+
+        console.log(`[casePrecedentAnalysisService] 原始結果: ${hits.length} 個，篩選後: ${filteredHits.length} 個 (閾值: ${minScore})`);
+
+        // 記錄前幾個案例的分數以便調試
+        if (hits.length > 0) {
+            console.log(`[casePrecedentAnalysisService] 前5個案例分數:`, hits.slice(0, 5).map(hit => ({
+                title: hit._source?.JTITLE?.substring(0, 30) + '...',
+                score: hit._score,
+                percentage: Math.round((hit._score || 0) * 100) + '%'
+            })));
+        }
+
+        return filteredHits.map(hit => ({
             id: hit._source?.JID || 'unknown',
             title: hit._source?.JTITLE || '無標題',
             summary: '', // 移除詳細摘要減少記憶體使用
