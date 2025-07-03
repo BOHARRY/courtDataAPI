@@ -19,10 +19,21 @@ import { CREDIT_PURPOSES } from '../config/creditCosts.js';
 export const checkAndDeductCredits = (baseCost, purpose, logDetailsOptions = {}) => {
   return async (req, res, next) => {
     const userId = req.user?.uid;
-    
+
     if (!userId) {
       console.error('[Credit Middleware] User not authenticated.');
       return res.status(401).json({ error: '使用者未認證。' });
+    }
+
+    // 🆕 檢查是否為恢復模式（免費重新搜索）
+    const isRestoreMode = req.headers['x-restore-mode'] === 'true';
+
+    if (isRestoreMode) {
+      console.log(`[Credit Middleware] 🔄 恢復模式檢測到，跳過積分扣除 (用戶: ${userId}, 用途: ${purpose})`);
+      // 設置為 0 積分扣除，但仍然記錄
+      req.creditDeducted = 0;
+      req.userCreditsAfter = null; // 不查詢用戶積分
+      return next();
     }
 
     // 將 dynamicCost 定義在 try-catch 外部，這樣在 catch 區塊中也能訪問
