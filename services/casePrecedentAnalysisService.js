@@ -409,6 +409,17 @@ async function getJudgmentNodeData(caseId) {
                 'legal_issues', 'citations'
             ]
         });
+
+        console.log(`[getJudgmentNodeData] 成功獲取案例 ${caseId} 數據:`, {
+            JID: response._source.JID,
+            JTITLE: response._source.JTITLE,
+            summary_ai_type: typeof response._source.summary_ai,
+            summary_ai_isArray: Array.isArray(response._source.summary_ai),
+            summary_ai_value: response._source.summary_ai,
+            main_reasons_ai_type: typeof response._source.main_reasons_ai,
+            main_reasons_ai_isArray: Array.isArray(response._source.main_reasons_ai)
+        });
+
         return response._source;
     } catch (error) {
         console.error(`[getJudgmentNodeData] 獲取案例 ${caseId} 詳細數據失敗:`, error);
@@ -456,10 +467,20 @@ async function generateAnomalyDetails(anomalies, allCases) {
                             JTITLE: fullJudgmentData.JTITLE || case_.title,
                             court: fullJudgmentData.court || case_.court,
                             verdict_type: fullJudgmentData.verdict_type || case_.verdictType,
-                            summary_ai: fullJudgmentData.summary_ai?.[0] || '無 AI 摘要',
-                            main_reasons_ai: fullJudgmentData.main_reasons_ai || [],
-                            legal_issues: fullJudgmentData.legal_issues || [],
-                            citations: fullJudgmentData.citations || []
+                            // summary_ai 是 text 類型，直接使用字符串
+                            summary_ai: fullJudgmentData.summary_ai || '無 AI 摘要',
+                            // main_reasons_ai 是 keyword 類型，可能是數組
+                            main_reasons_ai: Array.isArray(fullJudgmentData.main_reasons_ai)
+                                ? fullJudgmentData.main_reasons_ai
+                                : (fullJudgmentData.main_reasons_ai ? [fullJudgmentData.main_reasons_ai] : []),
+                            // legal_issues 是 nested 類型，應該是對象數組
+                            legal_issues: Array.isArray(fullJudgmentData.legal_issues)
+                                ? fullJudgmentData.legal_issues
+                                : [],
+                            // citations 是 keyword 類型，可能是數組
+                            citations: Array.isArray(fullJudgmentData.citations)
+                                ? fullJudgmentData.citations
+                                : (fullJudgmentData.citations ? [fullJudgmentData.citations] : [])
                         } : {
                             // 備用數據，如果無法獲取完整數據
                             JID: case_.id,
