@@ -290,7 +290,7 @@ async function executeAnalysisInBackground(taskId, analysisData, userId) {
             };
 
             // 生成詳細的異常案例數據
-            anomalyDetails = generateAnomalyDetails(verdictAnalysis.anomalies, similarCases);
+            anomalyDetails = await generateAnomalyDetails(verdictAnalysis.anomalies, similarCases);
             console.log('[casePrecedentAnalysisService] 生成的異常詳情:', JSON.stringify(anomalyDetails, null, 2));
 
             // 如果沒有生成到詳細數據，創建測試數據
@@ -396,9 +396,30 @@ export async function startCasePrecedentAnalysis(analysisData, userId) {
 }
 
 /**
+ * 獲取判決書node所需的完整數據
+ */
+async function getJudgmentNodeData(caseId) {
+    try {
+        const response = await esClient.get({
+            index: 'judgments',
+            id: caseId,
+            _source: [
+                'JID', 'JTITLE', 'court', 'verdict_type',
+                'summary_ai', 'main_reasons_ai',
+                'legal_issues', 'citations'
+            ]
+        });
+        return response._source;
+    } catch (error) {
+        console.error(`[getJudgmentNodeData] 獲取案例 ${caseId} 詳細數據失敗:`, error);
+        return null;
+    }
+}
+
+/**
  * 生成詳細的異常案例數據
  */
-function generateAnomalyDetails(anomalies, allCases) {
+async function generateAnomalyDetails(anomalies, allCases) {
     console.log('[generateAnomalyDetails] 開始生成異常詳情');
     console.log('[generateAnomalyDetails] 異常類型:', anomalies.map(a => a.verdict));
     console.log('[generateAnomalyDetails] 總案例數:', allCases.length);
@@ -414,25 +435,59 @@ function generateAnomalyDetails(anomalies, allCases) {
         console.log(`[generateAnomalyDetails] 找到 ${anomalyCases.length} 個 ${anomaly.verdict} 案例`);
 
         if (anomalyCases.length > 0) {
-            // 為每個異常案例生成詳細信息
-            anomalyDetails[anomaly.verdict] = anomalyCases.slice(0, 5).map(case_ => ({
-                id: case_.id,
-                title: case_.title || '無標題',
-                court: case_.court || '未知法院',
-                year: case_.year || '未知年份',
-                similarity: case_.similarity || 0,
-                summary: `${case_.court} ${case_.year}年判決，判決結果：${case_.verdictType}`,
-                keyDifferences: [
-                    "與主流案例在事實認定上存在差異",
-                    "法律適用或解釋角度不同",
-                    "證據評價標準可能有所不同"
-                ],
-                riskFactors: [
-                    { factor: "事實認定風險", level: "medium" },
-                    { factor: "法律適用風險", level: "medium" },
-                    { factor: "證據充分性", level: "high" }
-                ]
-            }));
+            // 為每個異常案例生成詳細信息，包括判決書node數據
+            const detailedCases = await Promise.all(
+                anomalyCases.slice(0, 5).map(async (case_) => {
+                    // 獲取完整的判決書數據
+                    const fullJudgmentData = await getJudgmentNodeData(case_.id);
+
+                    return {
+                        // 基本信息（用於列表顯示）
+                        id: case_.id,
+                        title: case_.title || '無標題',
+                        court: case_.court || '未知法院',
+                        year: case_.year || '未知年份',
+                        similarity: case_.similarity || 0,
+                        summary: `${case_.court} ${case_.year}年判決，判決結果：${case_.verdictType}`,
+
+                        // 判決書node完整數據（用於創建node和hover預覽）
+                        judgmentNodeData: fullJudgmentData ? {
+                            JID: fullJudgmentData.JID || case_.id,
+                            JTITLE: fullJudgmentData.JTITLE || case_.title,
+                            court: fullJudgmentData.court || case_.court,
+                            verdict_type: fullJudgmentData.verdict_type || case_.verdictType,
+                            summary_ai: fullJudgmentData.summary_ai?.[0] || '無 AI 摘要',
+                            main_reasons_ai: fullJudgmentData.main_reasons_ai || [],
+                            legal_issues: fullJudgmentData.legal_issues || [],
+                            citations: fullJudgmentData.citations || []
+                        } : {
+                            // 備用數據，如果無法獲取完整數據
+                            JID: case_.id,
+                            JTITLE: case_.title,
+                            court: case_.court,
+                            verdict_type: case_.verdictType,
+                            summary_ai: '無 AI 摘要',
+                            main_reasons_ai: [],
+                            legal_issues: [],
+                            citations: []
+                        },
+
+                        // 分析數據
+                        keyDifferences: [
+                            "與主流案例在事實認定上存在差異",
+                            "法律適用或解釋角度不同",
+                            "證據評價標準可能有所不同"
+                        ],
+                        riskFactors: [
+                            { factor: "事實認定風險", level: "medium" },
+                            { factor: "法律適用風險", level: "medium" },
+                            { factor: "證據充分性", level: "high" }
+                        ]
+                    };
+                })
+            );
+
+            anomalyDetails[anomaly.verdict] = detailedCases;
         } else {
             console.log(`[generateAnomalyDetails] 警告: 沒有找到 ${anomaly.verdict} 類型的案例`);
         }
