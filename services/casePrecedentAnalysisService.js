@@ -253,6 +253,18 @@ async function executeAnalysisInBackground(taskId, analysisData, userId) {
             throw new Error('未找到符合條件的相似案例，請調整搜索條件');
         }
 
+        // 檢查案例數量是否少於期望值，提供透明的提醒
+        let sampleSizeNote = '';
+        if (similarCases.length < 50) {
+            sampleSizeNote = `\n📋 樣本數量說明：資料庫中共找到 ${similarCases.length} 個相似案例（期望50個）`;
+            if (similarCases.length < 30) {
+                sampleSizeNote += '\n⚠️ 樣本數量較少，統計結果僅供參考，建議擴大搜索範圍或調整關鍵詞';
+            } else {
+                sampleSizeNote += '\n✅ 樣本數量足夠進行統計分析';
+            }
+            console.log(`[casePrecedentAnalysisService] ${sampleSizeNote.replace(/\n/g, ' ')}`);
+        }
+
         // 2. 分析判決分布
         console.log('[casePrecedentAnalysisService] 案例樣本數據:', similarCases.slice(0, 3).map(c => ({
             id: c.id,
@@ -297,7 +309,7 @@ ${verdictAnalysis.anomalies.length > 0 ?
 `⚠️ 發現 ${verdictAnalysis.anomalies.length} 種異常模式：${verdictAnalysis.anomalies.map(a => `${a.verdict} (${a.percentage}%)`).join(', ')}` :
 '✅ 未發現顯著異常模式'}
 
-${anomalyAnalysis ? `💡 關鍵洞察：${anomalyAnalysis.strategicInsights}` : ''}`;
+${anomalyAnalysis ? `💡 關鍵洞察：${anomalyAnalysis.strategicInsights}` : ''}${sampleSizeNote}`;
 
         const result = {
             // 保持與 summarizeCommonPointsService 一致的格式
@@ -311,6 +323,9 @@ ${anomalyAnalysis ? `💡 關鍵洞察：${anomalyAnalysis.strategicInsights}` :
             casePrecedentData: {
                 analysisType: 'case_precedent_analysis',
                 totalSimilarCases: similarCases.length,
+                expectedSampleSize: 50, // 期望的樣本數量
+                sampleSizeAdequate: similarCases.length >= 30, // 樣本是否充足
+                sampleSizeNote: sampleSizeNote.replace(/\n/g, ' ').trim(), // 樣本數量說明
                 verdictDistribution: verdictAnalysis.distribution,
                 mainPattern: verdictAnalysis.mainPattern,
                 anomalies: verdictAnalysis.anomalies,
