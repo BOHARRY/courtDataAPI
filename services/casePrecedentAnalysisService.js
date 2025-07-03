@@ -401,7 +401,7 @@ export async function startCasePrecedentAnalysis(analysisData, userId) {
 async function getJudgmentNodeData(caseId) {
     try {
         const response = await esClient.get({
-            index: 'judgments',
+            index: ES_INDEX_NAME, // 使用正確的索引名稱
             id: caseId,
             _source: [
                 'JID', 'JTITLE', 'court', 'verdict_type',
