@@ -81,7 +81,267 @@ async function generateEmbedding(text) {
 }
 
 /**
- * 執行 ES 向量搜索
+ * 🆕 使用 GPT-4o 進行案件事由補足與分析（成本控制版）
+ * 限制 token 使用量，專注於律師核心需求
+ */
+async function enrichCaseDescription(userInput) {
+    try {
+        console.log(`[casePrecedentAnalysisService] 使用 GPT-4o 補足案件事由: "${userInput}"`);
+
+        const prompt = `你是資深法律專家。請分析以下案件事由，從四個維度補足搜尋角度：
+
+案件事由：「${userInput}」
+
+請提供：
+1. 法律術語：正式法律用詞（1-2個精準詞彙）
+2. 實務用詞：實務常用表達（1-2個常見說法）
+3. 爭點導向：具體法律爭點（1-2個核心爭點）
+
+要求：
+- 每個維度限制10字內
+- 使用繁體中文
+- 避免過於寬泛的詞彙
+
+JSON格式回應：
+{
+  "formalTerms": "正式法律術語",
+  "practicalTerms": "實務常用說法",
+  "specificIssues": "具體法律爭點"
+}`;
+
+        const response = await openai.chat.completions.create({
+            model: "gpt-4o",
+            messages: [{ role: "user", content: prompt }],
+            max_tokens: 400, // 🎯 嚴格控制成本
+            temperature: 0.3,
+            response_format: { type: "json_object" }
+        });
+
+        const enrichment = JSON.parse(response.choices[0].message.content);
+        console.log(`[casePrecedentAnalysisService] 事由補足結果:`, enrichment);
+        return enrichment;
+
+    } catch (error) {
+        console.error('[casePrecedentAnalysisService] 事由補足失敗:', error);
+        // 降級策略：返回基本結構
+        return {
+            formalTerms: userInput,
+            practicalTerms: userInput,
+            specificIssues: userInput
+        };
+    }
+}
+
+/**
+ * 🆕 生成四角度搜尋策略
+ */
+function generateSearchAngles(userInput, enrichment) {
+    return {
+        核心概念: {
+            query: userInput,
+            weight: 0.4,
+            purpose: "保持用戶原始表達",
+            displayName: "核心概念"
+        },
+        法律術語: {
+            query: enrichment.formalTerms || userInput,
+            weight: 0.3,
+            purpose: "正式法律用詞",
+            displayName: "法律術語"
+        },
+        實務用詞: {
+            query: enrichment.practicalTerms || userInput,
+            weight: 0.2,
+            purpose: "實務常用表達",
+            displayName: "實務用詞"
+        },
+        爭點導向: {
+            query: enrichment.specificIssues || userInput,
+            weight: 0.1,
+            purpose: "具體爭點角度",
+            displayName: "爭點導向"
+        }
+    };
+}
+
+/**
+ * 🆕 執行多角度並行語意搜尋
+ */
+async function performMultiAngleSearch(searchAngles, courtLevel, caseType, threshold) {
+    try {
+        console.log(`[casePrecedentAnalysisService] 開始多角度並行搜尋，共 ${Object.keys(searchAngles).length} 個角度`);
+
+        const minScore = getThresholdValue(threshold);
+
+        // 並行執行所有角度的搜尋
+        const searchPromises = Object.entries(searchAngles).map(async ([angleName, config]) => {
+            try {
+                console.log(`[casePrecedentAnalysisService] 執行角度「${angleName}」搜尋: "${config.query}"`);
+
+                // 生成該角度的查詢向量
+                const queryVector = await generateEmbedding(config.query);
+
+                // 構建 KNN 查詢
+                const knnQuery = {
+                    field: "text_embedding",
+                    query_vector: queryVector,
+                    k: 25, // 每個角度搜尋25筆，總共最多100筆
+                    num_candidates: 50
+                };
+
+                const response = await esClient.search({
+                    index: ES_INDEX_NAME,
+                    knn: knnQuery,
+                    _source: [
+                        'JID', 'JTITLE', 'verdict_type', 'court', 'JYEAR'
+                    ],
+                    size: 25,
+                    timeout: '20s'
+                });
+
+                const hits = response.hits?.hits || [];
+                console.log(`[casePrecedentAnalysisService] 角度「${angleName}」返回 ${hits.length} 個結果`);
+
+                // 篩選並標記來源角度
+                const filteredResults = hits
+                    .filter(hit => (hit._score || 0) >= minScore)
+                    .map(hit => ({
+                        id: hit._source?.JID || 'unknown',
+                        title: hit._source?.JTITLE || '無標題',
+                        verdictType: hit._source?.verdict_type || 'unknown',
+                        court: hit._source?.court || '未知法院',
+                        year: hit._source?.JYEAR || '未知年份',
+                        similarity: hit._score || 0,
+                        sourceAngle: angleName,
+                        angleWeight: config.weight,
+                        originalSimilarity: hit._score || 0
+                    }));
+
+                return {
+                    angleName,
+                    config,
+                    results: filteredResults,
+                    success: true,
+                    resultCount: filteredResults.length
+                };
+
+            } catch (error) {
+                console.error(`[casePrecedentAnalysisService] 角度「${angleName}」搜尋失敗:`, error);
+                return {
+                    angleName,
+                    config,
+                    results: [],
+                    success: false,
+                    error: error.message,
+                    resultCount: 0
+                };
+            }
+        });
+
+        // 等待所有搜尋完成
+        const searchResults = await Promise.all(searchPromises);
+
+        // 統計成功的搜尋
+        const successfulResults = searchResults.filter(r => r.success);
+        const totalResults = successfulResults.reduce((sum, r) => sum + r.resultCount, 0);
+
+        console.log(`[casePrecedentAnalysisService] 多角度搜尋完成: ${successfulResults.length}/${searchResults.length} 成功，共 ${totalResults} 個結果`);
+
+        if (successfulResults.length === 0) {
+            throw new Error('所有搜尋角度都失敗');
+        }
+
+        return searchResults;
+
+    } catch (error) {
+        console.error('[casePrecedentAnalysisService] 多角度搜尋失敗:', error);
+        throw error;
+    }
+}
+
+/**
+ * 🆕 智能合併多角度搜尋結果（第一階段：交集優先法）
+ */
+function mergeMultiAngleResults(searchResults) {
+    try {
+        console.log(`[casePrecedentAnalysisService] 開始合併多角度搜尋結果`);
+
+        const caseMap = new Map();
+        let totalProcessed = 0;
+
+        // 收集所有成功的搜尋結果
+        searchResults.forEach(angleResult => {
+            if (!angleResult.success) return;
+
+            angleResult.results.forEach((caseItem, index) => {
+                const caseId = caseItem.id;
+                const positionScore = (25 - index) / 25; // 位置加分
+                const weightedScore = caseItem.similarity * angleResult.config.weight * positionScore;
+
+                totalProcessed++;
+
+                if (!caseMap.has(caseId)) {
+                    caseMap.set(caseId, {
+                        case: caseItem,
+                        appearances: 0,
+                        sourceAngles: [],
+                        angleScores: {},
+                        totalScore: 0,
+                        maxSimilarity: 0,
+                        isIntersection: false
+                    });
+                }
+
+                const existing = caseMap.get(caseId);
+                existing.appearances++;
+                existing.sourceAngles.push(angleResult.angleName);
+                existing.angleScores[angleResult.angleName] = weightedScore;
+                existing.totalScore += weightedScore;
+                existing.maxSimilarity = Math.max(existing.maxSimilarity, caseItem.similarity);
+                existing.isIntersection = existing.appearances >= 2;
+            });
+        });
+
+        // 排序：優先多角度命中，其次總分，最後最高相似度
+        const mergedResults = Array.from(caseMap.values())
+            .sort((a, b) => {
+                if (b.appearances !== a.appearances) {
+                    return b.appearances - a.appearances; // 多角度命中優先
+                }
+                if (Math.abs(b.totalScore - a.totalScore) > 0.01) {
+                    return b.totalScore - a.totalScore; // 總分其次
+                }
+                return b.maxSimilarity - a.maxSimilarity; // 最高相似度最後
+            })
+            .slice(0, 50); // 返回前50筆
+
+        console.log(`[casePrecedentAnalysisService] 合併完成: 處理 ${totalProcessed} 個結果，去重後 ${mergedResults.length} 個，多角度命中 ${mergedResults.filter(r => r.isIntersection).length} 個`);
+
+        return mergedResults.map(item => ({
+            id: item.case.id,
+            title: item.case.title,
+            verdictType: item.case.verdictType,
+            court: item.case.court,
+            year: item.case.year,
+            similarity: item.maxSimilarity,
+            // 🆕 多角度分析數據
+            multiAngleData: {
+                appearances: item.appearances,
+                sourceAngles: item.sourceAngles,
+                totalScore: item.totalScore,
+                isIntersection: item.isIntersection,
+                angleScores: item.angleScores
+            }
+        }));
+
+    } catch (error) {
+        console.error('[casePrecedentAnalysisService] 結果合併失敗:', error);
+        throw error;
+    }
+}
+
+/**
+ * 執行 ES 向量搜索（保留原有函數作為備用）
  */
 async function searchSimilarCases(caseDescription, courtLevel, caseType, threshold) {
     try {
@@ -252,25 +512,41 @@ async function executeAnalysisInBackground(taskId, analysisData, userId) {
 
     try {
         logMemoryUsage('Start-Analysis');
-        console.log(`[casePrecedentAnalysisService] 開始執行案例判決傾向分析，任務ID: ${taskId}`);
-        
-        // 1. 搜索相似案例
-        const similarCases = await searchSimilarCases(
-            analysisData.caseDescription,
+        console.log(`[casePrecedentAnalysisService] 🆕 開始執行多角度案例判決傾向分析，任務ID: ${taskId}`);
+
+        // 🆕 1. AI事由補足與分析
+        const enrichment = await enrichCaseDescription(analysisData.caseDescription);
+        console.log(`[casePrecedentAnalysisService] 事由補足完成:`, enrichment);
+
+        // 🆕 2. 生成四角度搜尋策略
+        const searchAngles = generateSearchAngles(analysisData.caseDescription, enrichment);
+        console.log(`[casePrecedentAnalysisService] 生成搜尋角度:`, Object.keys(searchAngles));
+
+        // 🆕 3. 執行多角度並行搜尋
+        const multiAngleResults = await performMultiAngleSearch(
+            searchAngles,
             analysisData.courtLevel,
             analysisData.caseType,
             analysisData.threshold
         );
-        
+
+        // 🆕 4. 智能合併結果
+        const similarCases = mergeMultiAngleResults(multiAngleResults);
+
         if (similarCases.length === 0) {
             throw new Error('未找到符合條件的相似案例');
         }
-        
-        console.log(`[casePrecedentAnalysisService] 找到 ${similarCases.length} 個相似案例`);
 
-        if (similarCases.length === 0) {
-            throw new Error('未找到符合條件的相似案例，請調整搜索條件');
-        }
+        console.log(`[casePrecedentAnalysisService] 🎯 多角度搜尋完成，找到 ${similarCases.length} 個相似案例`);
+
+        // 統計多角度搜尋效果
+        const intersectionCases = similarCases.filter(c => c.multiAngleData?.isIntersection);
+        const coverageStats = {
+            totalCases: similarCases.length,
+            intersectionCases: intersectionCases.length,
+            coverageImprovement: intersectionCases.length > 0 ? Math.round((intersectionCases.length / similarCases.length) * 100) : 0
+        };
+        console.log(`[casePrecedentAnalysisService] 📊 搜尋效果統計:`, coverageStats);
 
         // 檢查案例數量是否少於期望值，提供透明的提醒
         let sampleSizeNote = '';
@@ -319,16 +595,23 @@ async function executeAnalysisInBackground(taskId, analysisData, userId) {
             }
         }
         
-        // 4. 準備結果 - 保持與現有分析結果格式一致
-        const summaryText = `案例判決傾向分析完成！
+        // 🆕 5. 準備多角度分析結果
+        const summaryText = `🎯 多角度案例判決傾向分析完成！
 
 📊 分析了 ${similarCases.length} 個相似案例
+🔍 多角度搜尋效果：${coverageStats.intersectionCases} 個高度相關案例 (${coverageStats.coverageImprovement}% 覆蓋提升)
 🎯 主流判決模式：${verdictAnalysis.mainPattern.verdict} (${verdictAnalysis.mainPattern.percentage}%)
 ${verdictAnalysis.anomalies.length > 0 ?
 `⚠️ 發現 ${verdictAnalysis.anomalies.length} 種異常模式：${verdictAnalysis.anomalies.map(a => `${a.verdict} (${a.percentage}%)`).join(', ')}` :
 '✅ 未發現顯著異常模式'}
 
-${anomalyAnalysis ? `💡 關鍵洞察：${anomalyAnalysis.strategicInsights}` : ''}${sampleSizeNote}`;
+${anomalyAnalysis ? `💡 關鍵洞察：${anomalyAnalysis.strategicInsights}` : ''}${sampleSizeNote}
+
+🔍 搜尋角度分析：
+${Object.entries(searchAngles).map(([name, config]) => {
+    const angleResults = multiAngleResults.find(r => r.angleName === name);
+    return `• ${config.displayName}：「${config.query}」(${angleResults?.resultCount || 0}筆)`;
+}).join('\n')}`;
 
         const result = {
             // 保持與 summarizeCommonPointsService 一致的格式
@@ -338,24 +621,49 @@ ${anomalyAnalysis ? `💡 關鍵洞察：${anomalyAnalysis.strategicInsights}` :
             },
             analyzedCount: similarCases.length,
 
-            // 額外的案例判決傾向分析數據
+            // 🆕 增強的案例判決傾向分析數據
             casePrecedentData: {
-                analysisType: 'case_precedent_analysis',
+                analysisType: 'multi_angle_case_precedent_analysis', // 🆕 標記為多角度分析
                 totalSimilarCases: similarCases.length,
-                expectedSampleSize: 50, // 期望的樣本數量
-                sampleSizeAdequate: similarCases.length >= 30, // 樣本是否充足
-                sampleSizeNote: sampleSizeNote.replace(/\n/g, ' ').trim(), // 樣本數量說明
+                expectedSampleSize: 50,
+                sampleSizeAdequate: similarCases.length >= 30,
+                sampleSizeNote: sampleSizeNote.replace(/\n/g, ' ').trim(),
+
+                // 🆕 多角度搜尋數據
+                multiAngleData: {
+                    searchAngles: searchAngles,
+                    angleResults: multiAngleResults.map(r => ({
+                        angleName: r.angleName,
+                        query: r.config.query,
+                        resultCount: r.resultCount,
+                        success: r.success,
+                        displayName: r.config.displayName
+                    })),
+                    coverageStats: coverageStats,
+                    intersectionCases: intersectionCases.length,
+                    totalProcessedResults: multiAngleResults.reduce((sum, r) => sum + (r.resultCount || 0), 0)
+                },
+
                 verdictDistribution: verdictAnalysis.distribution,
                 mainPattern: verdictAnalysis.mainPattern,
                 anomalies: verdictAnalysis.anomalies,
                 anomalyAnalysis,
-                anomalyDetails, // 新增：詳細的異常案例數據
-                representativeCases: similarCases.slice(0, 3).map(c => ({
+                anomalyDetails,
+
+                // 🆕 增強的代表性案例（包含多角度信息）
+                representativeCases: similarCases.slice(0, 5).map(c => ({
                     id: c.id,
                     title: c.title,
                     verdictType: c.verdictType,
                     similarity: Math.round(c.similarity * 100),
-                    summary: `${c.court} ${c.year}年` // 簡化摘要
+                    summary: `${c.court} ${c.year}年`,
+                    // 🆕 多角度發現信息
+                    multiAngleInfo: c.multiAngleData ? {
+                        appearances: c.multiAngleData.appearances,
+                        sourceAngles: c.multiAngleData.sourceAngles,
+                        isIntersection: c.multiAngleData.isIntersection,
+                        totalScore: Math.round(c.multiAngleData.totalScore * 100)
+                    } : null
                 })),
                 analysisParams: analysisData
             }
