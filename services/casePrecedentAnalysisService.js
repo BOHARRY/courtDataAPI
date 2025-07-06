@@ -260,11 +260,11 @@ async function performMultiAngleSearch(searchAngles, courtLevel, caseType, thres
 }
 
 /**
- * 🆕 智能合併多角度搜尋結果（第一階段：交集優先法）
+ * 🆕 混合智能合併策略（第二階段：律師價值優化）
  */
-function mergeMultiAngleResults(searchResults) {
+function mergeMultiAngleResults(searchResults, userInput) {
     try {
-        console.log(`[casePrecedentAnalysisService] 開始合併多角度搜尋結果`);
+        console.log(`[casePrecedentAnalysisService] 🧠 開始混合智能合併多角度搜尋結果`);
 
         const caseMap = new Map();
         let totalProcessed = 0;
@@ -288,7 +288,13 @@ function mergeMultiAngleResults(searchResults) {
                         angleScores: {},
                         totalScore: 0,
                         maxSimilarity: 0,
-                        isIntersection: false
+                        isIntersection: false,
+                        // 🆕 律師價值評估
+                        lawyerValue: {
+                            relevanceScore: 0,
+                            diversityBonus: 0,
+                            practicalValue: 0
+                        }
                     });
                 }
 
@@ -302,41 +308,246 @@ function mergeMultiAngleResults(searchResults) {
             });
         });
 
-        // 排序：優先多角度命中，其次總分，最後最高相似度
-        const mergedResults = Array.from(caseMap.values())
-            .sort((a, b) => {
-                if (b.appearances !== a.appearances) {
-                    return b.appearances - a.appearances; // 多角度命中優先
-                }
-                if (Math.abs(b.totalScore - a.totalScore) > 0.01) {
-                    return b.totalScore - a.totalScore; // 總分其次
-                }
-                return b.maxSimilarity - a.maxSimilarity; // 最高相似度最後
-            })
-            .slice(0, 50); // 返回前50筆
+        // 🆕 計算律師價值評分
+        const casesWithValue = Array.from(caseMap.values()).map(item => {
+            const lawyerValue = calculateLawyerValue(item, userInput);
+            return {
+                ...item,
+                lawyerValue,
+                finalScore: calculateFinalScore(item, lawyerValue)
+            };
+        });
 
-        console.log(`[casePrecedentAnalysisService] 合併完成: 處理 ${totalProcessed} 個結果，去重後 ${mergedResults.length} 個，多角度命中 ${mergedResults.filter(r => r.isIntersection).length} 個`);
+        // 🆕 混合智能排序策略
+        const sortedResults = casesWithValue.sort((a, b) => {
+            // 1. 優先高價值案例（多角度命中 + 律師價值）
+            if (a.isIntersection !== b.isIntersection) {
+                return b.isIntersection - a.isIntersection;
+            }
 
-        return mergedResults.map(item => ({
+            // 2. 律師價值評分
+            if (Math.abs(b.finalScore - a.finalScore) > 0.05) {
+                return b.finalScore - a.finalScore;
+            }
+
+            // 3. 多角度出現次數
+            if (b.appearances !== a.appearances) {
+                return b.appearances - a.appearances;
+            }
+
+            // 4. 最高相似度
+            return b.maxSimilarity - a.maxSimilarity;
+        }).slice(0, 50);
+
+        console.log(`[casePrecedentAnalysisService] 🎯 智能合併完成: 處理 ${totalProcessed} 個結果，優化後 ${sortedResults.length} 個`);
+        console.log(`[casePrecedentAnalysisService] 📊 高價值案例: ${sortedResults.filter(r => r.isIntersection).length} 個多角度命中`);
+
+        return sortedResults.map(item => ({
             id: item.case.id,
             title: item.case.title,
             verdictType: item.case.verdictType,
             court: item.case.court,
             year: item.case.year,
             similarity: item.maxSimilarity,
-            // 🆕 多角度分析數據
+            // 🆕 增強的多角度分析數據
             multiAngleData: {
                 appearances: item.appearances,
                 sourceAngles: item.sourceAngles,
                 totalScore: item.totalScore,
                 isIntersection: item.isIntersection,
-                angleScores: item.angleScores
+                angleScores: item.angleScores,
+                // 🆕 律師價值數據
+                lawyerValue: item.lawyerValue,
+                finalScore: item.finalScore,
+                recommendationReason: generateRecommendationReason(item)
             }
         }));
 
     } catch (error) {
         console.error('[casePrecedentAnalysisService] 結果合併失敗:', error);
         throw error;
+    }
+}
+
+/**
+ * 🆕 計算律師價值評分
+ */
+function calculateLawyerValue(caseItem, userInput) {
+    // 1. 相關性評分（基於相似度和多角度命中）
+    const relevanceScore = caseItem.maxSimilarity * (caseItem.isIntersection ? 1.2 : 1.0);
+
+    // 2. 多樣性加分（不同角度發現的案例更有價值）
+    const diversityBonus = Math.min(caseItem.appearances * 0.1, 0.3);
+
+    // 3. 實務價值評分（基於判決類型和法院層級）
+    let practicalValue = 0.5; // 基礎分
+
+    // 勝訴案例加分
+    if (caseItem.case.verdictType?.includes('勝訴') || caseItem.case.verdictType?.includes('准許')) {
+        practicalValue += 0.2;
+    }
+
+    // 高等法院以上案例加分
+    if (caseItem.case.court?.includes('高等') || caseItem.case.court?.includes('最高')) {
+        practicalValue += 0.15;
+    }
+
+    // 近期案例加分
+    const currentYear = new Date().getFullYear();
+    const caseYear = parseInt(caseItem.case.year) || 0;
+    if (currentYear - caseYear <= 3) {
+        practicalValue += 0.1;
+    }
+
+    return {
+        relevanceScore: Math.min(relevanceScore, 1.0),
+        diversityBonus: diversityBonus,
+        practicalValue: Math.min(practicalValue, 1.0)
+    };
+}
+
+/**
+ * 🆕 計算最終評分
+ */
+function calculateFinalScore(caseItem, lawyerValue) {
+    const weights = {
+        relevance: 0.5,    // 相關性權重 50%
+        diversity: 0.2,    // 多樣性權重 20%
+        practical: 0.3     // 實務價值權重 30%
+    };
+
+    return (
+        lawyerValue.relevanceScore * weights.relevance +
+        lawyerValue.diversityBonus * weights.diversity +
+        lawyerValue.practicalValue * weights.practical
+    );
+}
+
+/**
+ * 🆕 生成推薦理由
+ */
+function generateRecommendationReason(caseItem) {
+    const reasons = [];
+
+    if (caseItem.isIntersection) {
+        reasons.push(`多角度命中 (${caseItem.appearances}個角度發現)`);
+    }
+
+    if (caseItem.maxSimilarity >= 0.85) {
+        reasons.push('高度相關');
+    } else if (caseItem.maxSimilarity >= 0.75) {
+        reasons.push('相關性良好');
+    }
+
+    if (caseItem.case.verdictType?.includes('勝訴')) {
+        reasons.push('勝訴案例');
+    }
+
+    if (caseItem.case.court?.includes('高等') || caseItem.case.court?.includes('最高')) {
+        reasons.push('高層級法院');
+    }
+
+    const currentYear = new Date().getFullYear();
+    const caseYear = parseInt(caseItem.case.year) || 0;
+    if (currentYear - caseYear <= 2) {
+        reasons.push('近期案例');
+    }
+
+    if (caseItem.sourceAngles.length >= 3) {
+        reasons.push('多維度匹配');
+    }
+
+    return reasons.length > 0 ? reasons.join('、') : '基礎相關';
+}
+
+/**
+ * 🆕 生成智能推薦建議
+ */
+function generateSmartRecommendations(similarCases, coverageStats, verdictAnalysis, multiAngleResults, userInput) {
+    try {
+        console.log(`[casePrecedentAnalysisService] 🧠 生成智能推薦建議`);
+
+        const recommendations = {
+            topRecommendation: '',
+            nextSteps: [],
+            strategicInsights: [],
+            riskWarnings: []
+        };
+
+        // 1. 基於多角度搜尋效果的推薦
+        if (coverageStats.intersectionCases >= 5) {
+            recommendations.topRecommendation = `發現 ${coverageStats.intersectionCases} 個高度相關案例，建議重點研究這些多角度命中的案例，它們最能代表您案件的核心特徵。`;
+        } else if (coverageStats.intersectionCases >= 2) {
+            recommendations.topRecommendation = `發現 ${coverageStats.intersectionCases} 個高度相關案例，建議深入分析這些案例的共同點和差異。`;
+        } else {
+            recommendations.topRecommendation = `多角度搜尋發現了不同面向的相關案例，建議從各個角度綜合分析以獲得全面視角。`;
+        }
+
+        // 2. 基於判決傾向的策略建議
+        const mainVerdict = verdictAnalysis.mainPattern.verdict;
+        const mainPercentage = verdictAnalysis.mainPattern.percentage;
+
+        if (mainPercentage >= 70) {
+            if (mainVerdict.includes('勝訴') || mainVerdict.includes('准許')) {
+                recommendations.nextSteps.push('主流判決傾向有利，建議參考成功案例的論證策略');
+                recommendations.nextSteps.push('重點分析勝訴案例的證據組織和法律適用方式');
+            } else {
+                recommendations.nextSteps.push('主流判決傾向不利，建議尋找異常成功案例的突破點');
+                recommendations.riskWarnings.push('需要特別注意常見的敗訴原因並提前準備應對策略');
+            }
+        } else if (mainPercentage >= 50) {
+            recommendations.nextSteps.push('判決結果分歧較大，建議深入分析影響判決的關鍵因素');
+            recommendations.nextSteps.push('準備多套論證策略以應對不同的審理重點');
+        } else {
+            recommendations.nextSteps.push('判決結果高度分歧，建議全面分析各種可能的判決路徑');
+            recommendations.riskWarnings.push('案件結果不確定性較高，建議考慮和解等替代方案');
+        }
+
+        // 3. 基於搜尋角度效果的建議
+        const mostEffectiveAngle = multiAngleResults
+            .filter(r => r.success)
+            .sort((a, b) => (b.resultCount || 0) - (a.resultCount || 0))[0];
+
+        if (mostEffectiveAngle) {
+            recommendations.strategicInsights.push(
+                `「${mostEffectiveAngle.config.displayName}」角度發現最多相關案例，建議從此角度深化論證`
+            );
+        }
+
+        // 4. 基於案例質量的建議
+        const highValueCases = similarCases.filter(c =>
+            c.multiAngleData?.isIntersection && c.multiAngleData?.finalScore > 0.7
+        );
+
+        if (highValueCases.length >= 3) {
+            recommendations.nextSteps.push(`優先研究 ${highValueCases.length} 個高價值案例的判決理由和事實認定`);
+        }
+
+        // 5. 基於異常案例的風險提示
+        if (verdictAnalysis.anomalies.length > 0) {
+            recommendations.riskWarnings.push('發現異常判決模式，建議分析這些案例的特殊情況以避免類似風險');
+        }
+
+        // 6. 實務操作建議
+        recommendations.nextSteps.push('建議使用「歸納主流判決」功能進一步分析成功要素');
+
+        if (similarCases.length >= 30) {
+            recommendations.nextSteps.push('樣本數量充足，分析結果具有統計意義');
+        } else {
+            recommendations.riskWarnings.push('樣本數量較少，建議擴大搜尋範圍或調整關鍵詞');
+        }
+
+        console.log(`[casePrecedentAnalysisService] 🎯 智能推薦生成完成:`, recommendations);
+        return recommendations;
+
+    } catch (error) {
+        console.error('[casePrecedentAnalysisService] 智能推薦生成失敗:', error);
+        return {
+            topRecommendation: '建議深入分析發現的相關案例，重點關注判決理由和事實認定。',
+            nextSteps: ['分析主流判決模式', '研究異常案例特點', '準備多元化論證策略'],
+            strategicInsights: [],
+            riskWarnings: []
+        };
     }
 }
 
@@ -530,8 +741,8 @@ async function executeAnalysisInBackground(taskId, analysisData, userId) {
             analysisData.threshold
         );
 
-        // 🆕 4. 智能合併結果
-        const similarCases = mergeMultiAngleResults(multiAngleResults);
+        // 🆕 4. 智能合併結果（傳入用戶輸入用於價值評估）
+        const similarCases = mergeMultiAngleResults(multiAngleResults, analysisData.caseDescription);
 
         if (similarCases.length === 0) {
             throw new Error('未找到符合條件的相似案例');
@@ -595,7 +806,16 @@ async function executeAnalysisInBackground(taskId, analysisData, userId) {
             }
         }
         
-        // 🆕 5. 準備多角度分析結果
+        // 🆕 5. 生成智能推薦建議
+        const smartRecommendations = generateSmartRecommendations(
+            similarCases,
+            coverageStats,
+            verdictAnalysis,
+            multiAngleResults,
+            analysisData.caseDescription
+        );
+
+        // 🆕 6. 準備增強的多角度分析結果
         const summaryText = `🎯 多角度案例判決傾向分析完成！
 
 📊 分析了 ${similarCases.length} 個相似案例
@@ -611,7 +831,13 @@ ${anomalyAnalysis ? `💡 關鍵洞察：${anomalyAnalysis.strategicInsights}` :
 ${Object.entries(searchAngles).map(([name, config]) => {
     const angleResults = multiAngleResults.find(r => r.angleName === name);
     return `• ${config.displayName}：「${config.query}」(${angleResults?.resultCount || 0}筆)`;
-}).join('\n')}`;
+}).join('\n')}
+
+🎯 智能推薦：
+${smartRecommendations.topRecommendation}
+
+📋 下一步建議：
+${smartRecommendations.nextSteps.map(step => `• ${step}`).join('\n')}`;
 
         const result = {
             // 保持與 summarizeCommonPointsService 一致的格式
@@ -641,7 +867,9 @@ ${Object.entries(searchAngles).map(([name, config]) => {
                     })),
                     coverageStats: coverageStats,
                     intersectionCases: intersectionCases.length,
-                    totalProcessedResults: multiAngleResults.reduce((sum, r) => sum + (r.resultCount || 0), 0)
+                    totalProcessedResults: multiAngleResults.reduce((sum, r) => sum + (r.resultCount || 0), 0),
+                    // 🆕 智能推薦數據
+                    smartRecommendations: smartRecommendations
                 },
 
                 verdictDistribution: verdictAnalysis.distribution,
