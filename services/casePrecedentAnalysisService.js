@@ -860,11 +860,10 @@ function analyzeKeyFactors(cases, position = 'neutral') {
     }
 
     // 🧪 臨時測試：如果沒有真實數據，返回測試數據
-    const hasRealData = cases.some(case_ =>
-        case_.source?.main_reasons_ai &&
-        Array.isArray(case_.source.main_reasons_ai) &&
-        case_.source.main_reasons_ai.length > 0
-    );
+    const hasRealData = cases.some(case_ => {
+        const reasons = case_.judgmentNodeData?.main_reasons_ai || case_.source?.main_reasons_ai;
+        return reasons && Array.isArray(reasons) && reasons.length > 0;
+    });
 
     if (!hasRealData) {
         console.log(`[casePrecedentAnalysisService] 🧪 沒有找到 main_reasons_ai 數據，返回測試數據`);
@@ -895,11 +894,13 @@ function analyzeKeyFactors(cases, position = 'neutral') {
     const loseCases = [];
 
     cases.forEach(case_ => {
-        const reasons = case_.source?.main_reasons_ai || [];
+        // 🔧 修正數據路徑：main_reasons_ai 在 judgmentNodeData 中
+        const reasons = case_.judgmentNodeData?.main_reasons_ai || case_.source?.main_reasons_ai || [];
         const verdict = case_.verdictType || '';
 
         // 🧪 調試：檢查每個案例的 main_reasons_ai 數據
         console.log(`[analyzeKeyFactors] 案例 ${case_.id}: verdict=${verdict}, main_reasons_ai=`, reasons);
+        console.log(`[analyzeKeyFactors] 🔍 數據路徑檢查: judgmentNodeData=`, !!case_.judgmentNodeData, 'source=', !!case_.source);
 
         // 根據立場和判決結果分類案例
         let isWinCase = false;
@@ -1155,6 +1156,7 @@ async function executeAnalysisInBackground(taskId, analysisData, userId) {
         console.log(`[casePrecedentAnalysisService] 異常模式:`, verdictAnalysis.anomalies);
 
         // 🆕 2.5. 分析勝負關鍵因素排名
+        console.log(`[casePrecedentAnalysisService] 🎯 開始勝負因素分析，立場: ${analysisData.position || 'neutral'}`);
         const keyFactorsAnalysis = analyzeKeyFactors(similarCases, analysisData.position || 'neutral');
         console.log(`[casePrecedentAnalysisService] 勝負因素分析完成，勝訴因素: ${keyFactorsAnalysis.winFactors.length} 個，敗訴因素: ${keyFactorsAnalysis.loseFactors.length} 個`);
         console.log(`[casePrecedentAnalysisService] 🧪 勝訴因素詳情:`, keyFactorsAnalysis.winFactors);
