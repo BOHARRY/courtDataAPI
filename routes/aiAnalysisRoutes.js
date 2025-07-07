@@ -1,6 +1,6 @@
 // routes/aiAnalysisRoutes.js
 import express from 'express';
-import { analyzeSuccessFactorsController, summarizeCommonPointsController, getAnalysisResultController, casePrecedentAnalysisController, mainstreamAnalysisController } from '../controllers/aiAnalysisController.js';
+import { analyzeSuccessFactorsController, summarizeCommonPointsController, getAnalysisResultController, casePrecedentAnalysisController, mainstreamAnalysisController, citationAnalysisController } from '../controllers/aiAnalysisController.js';
 import { verifyToken } from '../middleware/auth.js';
 import { checkAndDeductCredits } from '../middleware/credit.js';
 import { CREDIT_COSTS, CREDIT_PURPOSES } from '../config/creditCosts.js';
@@ -61,6 +61,20 @@ router.post(
         }
     ),
     mainstreamAnalysisController
+);
+
+// POST /api/ai/citation-analysis
+router.post(
+    '/citation-analysis',
+    verifyToken,
+    checkAndDeductCredits(
+        CREDIT_COSTS.CASE_PRECEDENT_ANALYSIS, // 使用相同的點數成本
+        CREDIT_PURPOSES.CASE_PRECEDENT_ANALYSIS,
+        {
+            requiresActiveSubscription: true
+        }
+    ),
+    citationAnalysisController
 );
 
 // GET /api/ai/analysis-result/:taskId

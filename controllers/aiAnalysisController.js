@@ -2,6 +2,7 @@
 import { analyzeSuccessFactors } from '../services/aiSuccessAnalysisService.js';
 import { startCommonPointsAnalysis, getAnalysisResult } from '../services/summarizeCommonPointsService.js';
 import { startCasePrecedentAnalysis, startMainstreamAnalysis } from '../services/casePrecedentAnalysisService.js';
+import { startCitationAnalysis } from '../services/citationAnalysisService.js';
 
 // 現有的 Controller
 export const analyzeSuccessFactorsController = async (req, res, next) => {
@@ -74,6 +75,23 @@ export const casePrecedentAnalysisController = async (req, res, next) => {
 
         const { taskId } = await startCasePrecedentAnalysis(analysisData, userId);
         res.status(202).json({ message: '案例判決傾向分析任務已啟動', taskId }); // 202 Accepted
+    } catch (error) {
+        next(error);
+    }
+};
+
+// 🆕 援引判例分析控制器
+export const citationAnalysisController = async (req, res, next) => {
+    try {
+        const { originalTaskId } = req.body;
+        const userId = req.user.uid;
+
+        if (!originalTaskId || !originalTaskId.trim()) {
+            return res.status(400).json({ message: '原始分析任務ID為必填欄位。' });
+        }
+
+        const { taskId } = await startCitationAnalysis(originalTaskId, userId);
+        res.status(202).json({ message: '援引判例分析任務已啟動', taskId });
     } catch (error) {
         next(error);
     }
