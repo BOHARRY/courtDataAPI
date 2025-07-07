@@ -318,39 +318,23 @@ function getPositionBasedSearchStrategy(position) {
     switch (position) {
         case 'plaintiff':
             return {
-                primaryVectorField: 'plaintiff_combined_vector', // 🚨 修復：原告方使用原告向量
+                primaryVectorField: 'text_embedding', // 🚨 暫時使用可靠的通用向量
                 vectorFields: {
-                    'plaintiff_combined_vector': 0.4,      // 最重要：相似的原告經驗
-                    'replicable_strategies_vector': 0.3,   // 次重要：可用策略
-                    'main_reasons_ai_vector': 0.2,         // 輔助：勝負邏輯
-                    'text_embedding': 0.1                  // 基礎：一般相似性
+                    'text_embedding': 0.7,                 // 主要：一般相似性（最可靠）
+                    'legal_issues_embedding': 0.3          // 輔助：法律爭點
+                    // 🚨 暫時移除可能有問題的立場向量欄位
                 },
-                filterQuery: {
-                    bool: {
-                        should: [
-                            { term: { 'position_based_analysis.plaintiff_perspective.case_value': 'positive_precedent' } },
-                            { term: { 'position_based_analysis.plaintiff_perspective.overall_result': 'major_victory' } }
-                        ]
-                    }
-                }
+                filterQuery: null // 🚨 暫時移除立場過濾，避免過度限制
             };
         case 'defendant':
             return {
-                primaryVectorField: 'defendant_combined_vector',
+                primaryVectorField: 'text_embedding', // 🚨 暫時使用可靠的通用向量
                 vectorFields: {
-                    'defendant_combined_vector': 0.4,      // 最重要：成功防禦案例
-                    'replicable_strategies_vector': 0.3,   // 次重要：防禦策略
-                    'main_reasons_ai_vector': 0.2,         // 輔助：勝負邏輯
-                    'text_embedding': 0.1                  // 基礎：一般相似性
+                    'text_embedding': 0.7,                 // 主要：一般相似性（最可靠）
+                    'legal_issues_embedding': 0.3          // 輔助：法律爭點
+                    // 🚨 暫時移除可能有問題的立場向量欄位
                 },
-                filterQuery: {
-                    bool: {
-                        should: [
-                            { term: { 'position_based_analysis.defendant_perspective.case_value': 'model_defense' } },
-                            { term: { 'position_based_analysis.defendant_perspective.overall_result': 'major_victory' } }
-                        ]
-                    }
-                }
+                filterQuery: null // 🚨 暫時移除立場過濾，避免過度限制
             };
         default: // 'neutral'
             return {
