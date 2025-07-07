@@ -1701,8 +1701,8 @@ async function executeAnalysisInBackground(taskId, analysisData, userId) {
                 strategicInsights: `發現 ${verdictAnalysis.anomalies.length} 種異常判決模式，建議深入分析差異因素。`
             };
 
-            // 生成詳細的異常案例數據
-            anomalyDetails = await generateAnomalyDetails(verdictAnalysis.anomalies, similarCases);
+            // 🚨 生成詳細的異常案例數據（將在案例池中處理）
+            anomalyDetails = {}; // 暫時為空，將在案例池中生成
             console.log('[casePrecedentAnalysisService] 生成的異常詳情:', JSON.stringify(anomalyDetails, null, 2));
 
             // 如果沒有生成到詳細數據，創建測試數據
@@ -1810,9 +1810,55 @@ ${smartRecommendations.nextSteps.map(step => `• ${step}`).join('\n')}`;
                         totalScore: Math.round(c.multiAngleData.totalScore * 100)
                     } : null
                 })),
-                analysisParams: analysisData
+                analysisParams: analysisData,
+
+                // 🚨 新增：完整的案例池（用於後續分析）
+                casePool: {
+                    allCases: similarCases.map(case_ => ({
+                        id: case_.id,
+                        title: case_.title,
+                        verdictType: case_.verdictType,
+                        court: case_.court,
+                        year: case_.year,
+                        similarity: case_.similarity,
+                        source: case_.source,
+                        positionAnalysis: case_.positionAnalysis,
+                        multiAngleData: case_.multiAngleData
+                    })),
+                    caseIds: similarCases.map(c => c.id),
+                    mainPattern: {
+                        verdict: verdictAnalysis.mainPattern.verdict,
+                        percentage: verdictAnalysis.mainPattern.percentage,
+                        cases: similarCases
+                            .filter(c => c.verdictType === verdictAnalysis.mainPattern.verdict)
+                            .map(c => c.id)
+                    },
+                    anomalies: verdictAnalysis.anomalies.map(anomaly => ({
+                        verdict: anomaly.verdict,
+                        count: anomaly.count,
+                        percentage: anomaly.percentage,
+                        cases: similarCases
+                            .filter(c => c.verdictType === anomaly.verdict)
+                            .map(c => c.id)
+                    })),
+                    searchMetadata: {
+                        courtLevel: analysisData.courtLevel,
+                        caseType: analysisData.caseType,
+                        threshold: analysisData.threshold,
+                        position: analysisData.position || 'neutral',
+                        timestamp: new Date().toISOString(),
+                        totalCases: similarCases.length,
+                        searchAngles: Object.keys(searchAngles)
+                    }
+                }
             }
         };
+
+        // 🚨 生成異常案例詳情（基於案例池）
+        result.casePrecedentData.anomalyDetails = await generateAnomalyDetailsFromPool(
+            verdictAnalysis.anomalies,
+            result.casePrecedentData.casePool
+        );
         
         // 5. 更新任務狀態為完成
         await taskRef.update({
@@ -1916,7 +1962,87 @@ async function getJudgmentNodeData(caseId) {
 }
 
 /**
- * 生成詳細的異常案例數據
+ * 🚨 從案例池生成詳細的異常案例數據
+ */
+async function generateAnomalyDetailsFromPool(anomalies, casePool) {
+    console.log('[generateAnomalyDetailsFromPool] 開始從案例池生成異常詳情');
+    console.log('[generateAnomalyDetailsFromPool] 異常類型:', anomalies.map(a => a.verdict));
+
+    const anomalyDetails = {};
+
+    for (const anomaly of anomalies) {
+        console.log(`[generateAnomalyDetailsFromPool] 處理異常類型: ${anomaly.verdict}`);
+
+        // 從案例池中找到異常案例的 ID
+        const anomalyCaseIds = casePool.anomalies
+            .find(a => a.verdict === anomaly.verdict)?.cases || [];
+
+        // 從案例池中獲取異常案例的完整數據
+        const anomalyCases = casePool.allCases.filter(case_ =>
+            anomalyCaseIds.includes(case_.id)
+        );
+
+        console.log(`[generateAnomalyDetailsFromPool] 找到 ${anomalyCases.length} 個 ${anomaly.verdict} 案例`);
+
+        if (anomalyCases.length > 0) {
+            // 為每個異常案例生成詳細信息
+            const detailedCases = await Promise.all(
+                anomalyCases.slice(0, 5).map(async (case_, index) => {
+                    console.log(`[generateAnomalyDetailsFromPool] 正在處理案例 ${case_.id}`);
+
+                    // 如果案例池中已有完整數據，直接使用
+                    let judgmentData = null;
+                    if (!case_.source?.summary_ai && !case_.source?.legal_issues) {
+                        try {
+                            judgmentData = await getJudgmentNodeData(case_.id);
+                        } catch (error) {
+                            console.warn(`[generateAnomalyDetailsFromPool] 無法獲取案例 ${case_.id} 的完整數據:`, error.message);
+                        }
+                    }
+
+                    return {
+                        id: case_.id,
+                        title: case_.title || '無標題',
+                        court: case_.court || '未知法院',
+                        year: case_.year || '未知年份',
+                        similarity: case_.similarity || 0,
+                        summary: `${case_.court || '未知法院'} ${case_.year || '未知年份'}年判決，判決結果：${case_.verdictType}`,
+                        judgmentNodeData: judgmentData || {
+                            JID: case_.id,
+                            JTITLE: case_.title,
+                            court: case_.court,
+                            verdict_type: case_.verdictType,
+                            summary_ai: case_.source?.summary_ai || [],
+                            main_reasons_ai: case_.source?.main_reasons_ai || [],
+                            legal_issues: case_.source?.legal_issues || [],
+                            citations: case_.source?.citations || []
+                        },
+                        keyDifferences: [
+                            "與主流案例在事實認定上存在差異",
+                            "法律適用或解釋角度不同",
+                            "證據評價標準可能有所不同"
+                        ],
+                        riskFactors: [
+                            { factor: "事實認定風險", level: "medium" },
+                            { factor: "法律適用風險", level: "medium" },
+                            { factor: "證據充分性", level: "high" }
+                        ]
+                    };
+                })
+            );
+
+            anomalyDetails[anomaly.verdict] = detailedCases;
+        } else {
+            console.log(`[generateAnomalyDetailsFromPool] 警告: 案例池中沒有找到 ${anomaly.verdict} 類型的案例`);
+        }
+    }
+
+    console.log('[generateAnomalyDetailsFromPool] 生成完成，異常詳情鍵:', Object.keys(anomalyDetails));
+    return anomalyDetails;
+}
+
+/**
+ * 生成詳細的異常案例數據 (已棄用)
  */
 async function generateAnomalyDetails(anomalies, allCases) {
     console.log('[generateAnomalyDetails] 開始生成異常詳情');
@@ -2059,7 +2185,70 @@ function createTestAnomalyDetails(anomalies) {
 }
 
 /**
- * 🆕 獲取主流判決案例的詳細數據（包含 summary_ai_full）- 使用立場導向搜索
+ * 🚨 從案例池中獲取主流判決案例的詳細數據
+ */
+async function getMainstreamCasesFromPool(casePool, mainVerdictType) {
+    try {
+        console.log(`[getMainstreamCasesFromPool] 從案例池獲取主流判決案例: ${mainVerdictType}`);
+
+        // 1. 從案例池中篩選主流判決案例
+        const mainCaseIds = casePool.mainPattern.cases;
+        const mainCases = casePool.allCases.filter(case_ =>
+            mainCaseIds.includes(case_.id) && case_.verdictType === mainVerdictType
+        );
+
+        console.log(`[getMainstreamCasesFromPool] 找到 ${mainCases.length} 個主流案例`);
+
+        // 2. 獲取完整的判決數據（如果需要 summary_ai_full）
+        const mainStreamCases = [];
+        for (let i = 0; i < Math.min(mainCases.length, 10); i++) {
+            const case_ = mainCases[i];
+
+            // 如果案例已有完整數據，直接使用
+            if (case_.source?.summary_ai_full) {
+                mainStreamCases.push({
+                    id: case_.id,
+                    title: case_.title,
+                    court: case_.court,
+                    year: case_.year,
+                    verdictType: case_.verdictType,
+                    similarity: case_.similarity,
+                    summaryAiFull: case_.source.summary_ai_full,
+                    positionAnalysis: case_.positionAnalysis,
+                    citationIndex: i + 1
+                });
+            } else {
+                // 如果沒有完整數據，從 ES 獲取
+                try {
+                    const judgmentData = await getJudgmentNodeData(case_.id);
+                    mainStreamCases.push({
+                        id: case_.id,
+                        title: case_.title,
+                        court: case_.court,
+                        year: case_.year,
+                        verdictType: case_.verdictType,
+                        similarity: case_.similarity,
+                        summaryAiFull: judgmentData.summary_ai_full || judgmentData.summary_ai?.join(' ') || '',
+                        positionAnalysis: case_.positionAnalysis,
+                        citationIndex: i + 1
+                    });
+                } catch (error) {
+                    console.warn(`[getMainstreamCasesFromPool] 無法獲取案例 ${case_.id} 的完整數據:`, error.message);
+                }
+            }
+        }
+
+        console.log(`[getMainstreamCasesFromPool] 成功獲取 ${mainStreamCases.length} 個主流案例的完整數據`);
+        return mainStreamCases;
+
+    } catch (error) {
+        console.error('[getMainstreamCasesFromPool] 獲取主流案例失敗:', error);
+        throw error;
+    }
+}
+
+/**
+ * 🆕 獲取主流判決案例的詳細數據（包含 summary_ai_full）- 使用立場導向搜索 (已棄用)
  */
 async function getMainstreamCasesWithSummary(caseDescription, courtLevel, caseType, threshold, mainVerdictType, position = 'neutral') {
     try {
@@ -2152,7 +2341,9 @@ ${caseDescription}
 
 **主流判決模式：** ${mainPattern.verdict} (${mainPattern.count}件，${mainPattern.percentage}%)
 
-**前10名最相似的主流判決案例：**
+🎯 **重要說明：以下案例來自智慧洞察分析的同一案例池，確保分析一致性**
+
+**主流判決案例（來自智慧洞察案例池）：**
 ${caseSummaries}`;
 
     const commonRequirements = `
@@ -2412,18 +2603,14 @@ async function executeMainstreamAnalysisInBackground(taskId, originalResult, use
             throw new Error('主流判決案例數量不足，無法進行分析');
         }
 
-        // 🆕 4. 獲取主流判決案例的詳細數據（使用立場導向搜索）
-        const mainStreamCases = await getMainstreamCasesWithSummary(
-            analysisParams.caseDescription,
-            analysisParams.courtLevel,
-            analysisParams.caseType,
-            analysisParams.threshold,
-            mainPattern.verdict,
-            analysisParams.position || 'neutral' // 🆕 傳遞立場參數
-        );
+        // 🚨 4. 從案例池中獲取主流判決案例（不重新搜尋）
+        const { casePool } = casePrecedentData;
+        console.log(`[casePrecedentAnalysisService] 🎯 使用案例池中的主流案例: ${casePool.mainPattern.cases.length} 個`);
 
-        if (mainStreamCases.length < 5) {
-            throw new Error('找到的主流判決案例數量不足');
+        const mainStreamCases = await getMainstreamCasesFromPool(casePool, mainPattern.verdict);
+
+        if (mainStreamCases.length < 3) {
+            throw new Error(`案例池中主流判決案例數量不足: ${mainStreamCases.length} 個`);
         }
 
         // 5. 使用 AI 分析主流判決模式 - 🆕 傳遞立場參數
