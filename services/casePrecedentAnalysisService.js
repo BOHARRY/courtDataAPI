@@ -298,7 +298,7 @@ function generateStrategicInsights(similarCases, position, verdictAnalysis) {
         positionLabel,
         successRate,
         insights: [
-            `${positionLabel}成功率：${successRate}% (基於 ${casesWithPositionData.length} 個案例)`,
+            `${positionLabel}成功率：${successRate}% (重大有利結果)`,
             successStrategies.length > 0 ?
                 `關鍵成功策略：${[...new Set(successStrategies)].slice(0, 3).join('、')}` :
                 '成功策略數據不足',
