@@ -839,13 +839,13 @@ function generateSmartRecommendations(similarCases, coverageStats, verdictAnalys
             recommendations.topRecommendation = `多角度搜尋發現了不同面向的相關案例，建議從各個角度綜合分析以獲得全面視角。`;
         }
 
-        // 2. 基於判決傾向的策略建議
+        // 2. 基於有利判決的策略建議
         const mainVerdict = verdictAnalysis.mainPattern.verdict;
         const mainPercentage = verdictAnalysis.mainPattern.percentage;
 
         if (mainPercentage >= 70) {
             if (mainVerdict.includes('勝訴') || mainVerdict.includes('准許')) {
-                recommendations.nextSteps.push('主流判決傾向有利，建議參考成功案例的論證策略');
+                recommendations.nextSteps.push('主流判決結果有利，建議參考成功案例的論證策略');
                 recommendations.nextSteps.push('重點分析勝訴案例的證據組織和法律適用方式');
             } else {
                 recommendations.nextSteps.push('主流判決傾向不利，建議尋找異常成功案例的突破點');
@@ -1722,7 +1722,7 @@ async function executeAnalysisInBackground(taskId, analysisData, userId) {
         );
 
         // 🆕 6. 準備增強的多角度分析結果
-        const summaryText = `🎯 多角度案例判決傾向分析完成！
+        const summaryText = `🎯 多角度案件有利判決分析完成！
 
 📊 分析了 ${similarCases.length} 個相似案例
 🔍 多角度搜尋效果：${coverageStats.intersectionCases} 個高度相關案例 (${coverageStats.coverageImprovement}% 覆蓋提升)
@@ -1749,13 +1749,13 @@ ${smartRecommendations.nextSteps.map(step => `• ${step}`).join('\n')}`;
             // 保持與 summarizeCommonPointsService 一致的格式
             report: {
                 summaryText,
-                citations: {} // 案例判決傾向分析不需要引用
+                citations: {} // 案件有利判決分析不需要引用
             },
             analyzedCount: similarCases.length,
 
-            // 🆕 增強的案例判決傾向分析數據
+            // 🆕 增強的案件有利判決分析數據
             casePrecedentData: {
-                analysisType: 'multi_angle_case_precedent_analysis', // 🆕 標記為多角度分析
+                analysisType: 'multi_angle_favorable_judgment_analysis', // 🆕 標記為多角度有利判決分析
                 totalSimilarCases: similarCases.length,
                 expectedSampleSize: 50,
                 sampleSizeAdequate: similarCases.length >= 30,
@@ -1892,13 +1892,13 @@ ${smartRecommendations.nextSteps.map(step => `• ${step}`).join('\n')}`;
         await taskRef.update({
             status: 'failed',
             completedAt: admin.firestore.FieldValue.serverTimestamp(),
-            error: error.message || '案例判決傾向分析時發生未知錯誤'
+            error: error.message || '案件有利判決分析時發生未知錯誤'
         });
     }
 }
 
 /**
- * (入口函式) 啟動案例判決傾向分析任務
+ * (入口函式) 啟動案件有利判決分析任務
  */
 export async function startCasePrecedentAnalysis(analysisData, userId) {
     if (!analysisData.caseDescription || !analysisData.caseDescription.trim()) {
@@ -1914,7 +1914,7 @@ export async function startCasePrecedentAnalysis(analysisData, userId) {
     const taskData = {
         userId,
         taskId,
-        analysisType: 'case_precedent_analysis',
+        analysisType: 'favorable_judgment_analysis',
         analysisData,
         status: 'pending',
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
