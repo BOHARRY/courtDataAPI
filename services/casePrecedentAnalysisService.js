@@ -463,14 +463,50 @@ async function performMultiAngleSearch(searchAngles, courtLevel, caseType, thres
 
                 // 1. 法院層級過濾（最重要！）
                 if (courtLevel && courtLevel !== '全部') {
-                    const courtFilter = getCourtLevelFilter(courtLevel);
-                    basicFilters.push({ term: { 'court_level': courtFilter } });
+                    // 🚨 修復：使用正確的欄位名稱和值
+                    if (courtLevel === '地方法院') {
+                        basicFilters.push({
+                            bool: {
+                                should: [
+                                    { wildcard: { 'court.exact': '*地方法院*' } },
+                                    { wildcard: { 'court.exact': '*簡易庭*' } },
+                                    { wildcard: { 'court.exact': '*地院*' } }
+                                ]
+                            }
+                        });
+                    } else if (courtLevel === '高等法院') {
+                        basicFilters.push({ wildcard: { 'court.exact': '*高等*' } });
+                    } else if (courtLevel === '最高法院') {
+                        basicFilters.push({ wildcard: { 'court.exact': '*最高*' } });
+                    }
                 }
 
                 // 2. 案件類型過濾（最重要！）
                 if (caseType && caseType !== '全部') {
-                    const typeFilter = getCaseTypeFilter(caseType);
-                    basicFilters.push({ term: { 'case_type': typeFilter } });
+                    // 🚨 修復：使用正確的案件類型過濾邏輯
+                    if (caseType === '民事') {
+                        basicFilters.push({
+                            bool: {
+                                should: [
+                                    { prefix: { 'case_type': '民事' } },
+                                    { prefix: { 'case_type': '家事' } }
+                                ],
+                                minimum_should_match: 1
+                            }
+                        });
+                    } else if (caseType === '刑事') {
+                        basicFilters.push({ prefix: { 'case_type': '刑事' } });
+                    } else if (caseType === '行政') {
+                        basicFilters.push({
+                            bool: {
+                                should: [
+                                    { wildcard: { 'case_type': '*行政*' } },
+                                    { wildcard: { 'case_type': '*訴願*' } }
+                                ],
+                                minimum_should_match: 1
+                            }
+                        });
+                    }
                 }
 
                 // 3. 結合立場過濾和基本過濾
