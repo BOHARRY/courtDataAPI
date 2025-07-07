@@ -421,7 +421,7 @@ function createCitationRecommendationPrompt(valuableCitations, position, caseDes
 可用的援引判例分析：
 ${JSON.stringify(citationData, null, 2)}
 
-請分析並推薦最有價值的援引判例，格式如下：
+請分析並推薦最有價值的援引判例，並以 JSON 格式回應：
 {
   "recommendations": [
     {
@@ -442,7 +442,7 @@ ${JSON.stringify(citationData, null, 2)}
 3. 優先推薦在法院見解內被引用的判例（inCourtInsightCount > 0）
 4. 考慮稀有度和適用性的平衡
 5. 絕對不要瞎掰，不確定就說不確定
-6. 請使用繁體中文回應`;
+6. 請使用繁體中文回應，並確保回應是有效的 JSON 格式`;
 }
 
 /**
@@ -468,7 +468,7 @@ async function generateCitationRecommendations(valuableCitations, position, case
             messages: [
                 {
                     role: "system",
-                    content: "你是專業的法律分析師，請使用繁體中文回應。"
+                    content: "你是專業的法律分析師，請使用繁體中文回應，並以 JSON 格式提供分析結果。"
                 },
                 {
                     role: "user",
