@@ -32,10 +32,10 @@ const logMemoryUsage = (step) => {
  */
 function getThresholdValue(threshold) {
     switch (threshold) {
-        case 'low': return 0.6;    // 60% 相似度
-        case 'medium': return 0.75; // 75% 相似度
-        case 'high': return 0.85;   // 85% 相似度
-        default: return 0.75;
+        case 'low': return 0.5;    // 🚨 降低到50%，獲取更多案例
+        case 'medium': return 0.6; // 🚨 降低到60%，獲取更多案例
+        case 'high': return 0.75;   // 🚨 降低到75%，獲取更多案例
+        default: return 0.6;       // 🚨 預設降低到60%
     }
 }
 
@@ -372,8 +372,8 @@ async function performMultiAngleSearch(searchAngles, courtLevel, caseType, thres
                 const knnQuery = {
                     field: searchStrategy.primaryVectorField,
                     query_vector: queryVector,
-                    k: 25, // 每個角度搜尋25筆，總共最多100筆
-                    num_candidates: 50
+                    k: 50, // 🚨 增加到50筆，提高樣本數量
+                    num_candidates: 100 // 🚨 增加候選數量，提高搜尋品質
                 };
 
                 // 🚨 調試：檢查向量欄位和查詢
@@ -606,6 +606,9 @@ function mergeMultiAngleResults(searchResults, userInput) {
             court: item.case.court,
             year: item.case.year,
             similarity: item.maxSimilarity,
+            // 🚨 修復：保留完整的 source 數據
+            source: item.case.source, // 🆕 包含 main_reasons_ai 等完整數據
+            positionAnalysis: item.case.positionAnalysis, // 🆕 立場分析數據
             // 🆕 增強的多角度分析數據
             multiAngleData: {
                 appearances: item.appearances,
