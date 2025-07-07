@@ -383,7 +383,18 @@ async function performMultiAngleSearch(searchAngles, courtLevel, caseType, thres
                     primaryVectorField: searchStrategy.primaryVectorField,
                     position,
                     queryVectorLength: queryVector?.length,
+                    queryVectorSample: queryVector?.slice(0, 5), // 前5個數值
                     hasFilterQuery: !!searchStrategy.filterQuery
+                });
+
+                // 🚨 檢查 ES 查詢結構
+                console.log(`[casePrecedentAnalysisService] 🔍 ES 查詢結構:`, {
+                    index: ES_INDEX_NAME,
+                    knn_field: knnQuery.field,
+                    knn_k: knnQuery.k,
+                    knn_num_candidates: knnQuery.num_candidates,
+                    has_query_vector: !!knnQuery.query_vector,
+                    query_vector_length: knnQuery.query_vector?.length
                 });
 
                 // 🆕 構建包含立場過濾的查詢
@@ -424,12 +435,23 @@ async function performMultiAngleSearch(searchAngles, courtLevel, caseType, thres
                 const hits = response.hits?.hits || [];
                 console.log(`[casePrecedentAnalysisService] 角度「${angleName}」返回 ${hits.length} 個結果`);
 
+                // 🚨 調試：檢查 ES 響應結構
+                console.log(`[casePrecedentAnalysisService] 🔍 ES 響應調試:`, {
+                    total_hits: response.hits?.total?.value || 0,
+                    max_score: response.hits?.max_score,
+                    first_hit_score: hits[0]?._score,
+                    has_knn_results: !!response.hits?.hits?.length,
+                    response_took: response.took
+                });
+
                 // 🚨 調試：檢查搜尋結果的相關性
                 if (hits.length > 0) {
                     console.log(`[casePrecedentAnalysisService] 🔍 角度「${angleName}」前3個結果:`, hits.slice(0, 3).map(hit => ({
                         title: hit._source?.JTITLE?.substring(0, 50) + '...',
                         score: hit._score,
-                        main_reasons_sample: hit._source?.main_reasons_ai?.slice(0, 2)
+                        main_reasons_sample: hit._source?.main_reasons_ai?.slice(0, 2),
+                        has_text_embedding: !!hit._source?.text_embedding,
+                        text_embedding_length: hit._source?.text_embedding?.length
                     })));
                 }
 
