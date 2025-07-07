@@ -921,25 +921,19 @@ async function analyzeKeyFactors(cases, position = 'neutral') {
     }
 
     if (!hasRealData) {
-        console.log(`[casePrecedentAnalysisService] 🧪 仍然沒有找到 main_reasons_ai 數據，返回測試數據`);
+        console.log(`[casePrecedentAnalysisService] ⚠️ 相關判決資料不足，無法進行勝負關鍵因素統計分析`);
         return {
-            winFactors: [
-                { factor: '證據充分', count: 15, percentage: 75, type: 'win', description: '75% 的勝訴案例具備此要素' },
-                { factor: '法律適用正確', count: 12, percentage: 60, type: 'win', description: '60% 的勝訴案例具備此要素' },
-                { factor: '舉證責任履行完整', count: 10, percentage: 50, type: 'win', description: '50% 的勝訴案例具備此要素' }
-            ],
-            loseFactors: [
-                { factor: '證據不足', count: 9, percentage: 45, type: 'lose', description: '45% 的敗訴案例存在此問題' },
-                { factor: '時效已過', count: 6, percentage: 30, type: 'lose', description: '30% 的敗訴案例存在此問題' },
-                { factor: '舉證責任未盡', count: 4, percentage: 20, type: 'lose', description: '20% 的敗訴案例存在此問題' }
-            ],
-            factorAnalysis: {
-                totalCases: cases.length,
-                winCases: Math.floor(cases.length * 0.6),
-                loseCases: Math.floor(cases.length * 0.4),
-                position: position,
-                winRate: 60
-            }
+            dataStatus: 'insufficient',
+            message: '相關判決資料不足，無法進行統計分析',
+            suggestion: '建議：1) 擴大搜尋範圍 2) 調整搜尋關鍵詞 3) 降低相似度門檻',
+            availableData: {
+                caseCount: cases.length,
+                dataCompleteness: `${realDataCount}/${cases.length}`,
+                position: position
+            },
+            winFactors: [],
+            loseFactors: [],
+            factorAnalysis: null
         };
     }
 
