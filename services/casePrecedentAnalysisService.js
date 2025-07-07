@@ -396,6 +396,7 @@ async function performMultiAngleSearch(searchAngles, courtLevel, caseType, thres
                     knn: knnQuery,
                     _source: [
                         'JID', 'JTITLE', 'verdict_type', 'court', 'JYEAR',
+                        'main_reasons_ai', // 🆕 勝負關鍵因素分析需要
                         'position_based_analysis' // 🆕 新增立場分析資料
                     ],
                     size: 25,
@@ -425,7 +426,8 @@ async function performMultiAngleSearch(searchAngles, courtLevel, caseType, thres
                         sourceAngle: angleName,
                         angleWeight: config.weight,
                         originalSimilarity: hit._score || 0,
-                        positionAnalysis: hit._source?.position_based_analysis || null // 🆕 立場分析資料
+                        positionAnalysis: hit._source?.position_based_analysis || null, // 🆕 立場分析資料
+                        source: hit._source // 🆕 完整的 source 數據，包含 main_reasons_ai
                     }));
 
                 return {
@@ -791,7 +793,8 @@ async function searchSimilarCases(caseDescription, courtLevel, caseType, thresho
             index: ES_INDEX_NAME,
             knn: knnQuery,
             _source: [
-                'JID', 'JTITLE', 'verdict_type', 'court', 'JYEAR'
+                'JID', 'JTITLE', 'verdict_type', 'court', 'JYEAR',
+                'main_reasons_ai' // 🆕 勝負關鍵因素分析需要
                 // 移除 summary_ai_full 和 legal_issues 減少數據量
             ],
             size: 50, // 與 k 保持一致
