@@ -57,7 +57,7 @@ export const getAnalysisResultController = async (req, res, next) => {
 // 案例判決傾向分析 Controller
 export const casePrecedentAnalysisController = async (req, res, next) => {
     try {
-        const { caseDescription, courtLevel, caseType, threshold } = req.body;
+        const { caseDescription, courtLevel, caseType, threshold, position } = req.body;
         const userId = req.user.uid;
 
         if (!caseDescription || !caseDescription.trim()) {
@@ -68,7 +68,8 @@ export const casePrecedentAnalysisController = async (req, res, next) => {
             caseDescription: caseDescription.trim(),
             courtLevel: courtLevel || '地方法院',
             caseType: caseType || '民事',
-            threshold: threshold || 'medium'
+            threshold: threshold || 'medium',
+            position: position || 'neutral' // 🆕 新增立場參數，預設為中性分析
         };
 
         const { taskId } = await startCasePrecedentAnalysis(analysisData, userId);
