@@ -1243,7 +1243,7 @@ ${reasons.map((reason, index) => `${index + 1}. ${reason}`).join('\n')}
 3. 類別名稱應該是法律專業術語，便於律師理解
 4. 如果某個理由很獨特，可以單獨成類
 
-請以JSON格式回應：
+請以純JSON格式回應，不要包含任何markdown標記或說明文字：
 {
   "類別名稱1": ["理由1", "理由2"],
   "類別名稱2": ["理由3"],
@@ -1254,7 +1254,9 @@ ${reasons.map((reason, index) => `${index + 1}. ${reason}`).join('\n')}
 {
   "舉證責任問題": ["原告證據不足", "舉證不足駁回"],
   "侵權行為不成立": ["被告行為不違法", "無侵害事實"]
-}`;
+}
+
+重要：只返回JSON對象，不要添加任何其他文字或格式標記。`;
 
         const response = await openai.chat.completions.create({
             model: 'gpt-4o-mini',
@@ -1272,7 +1274,19 @@ ${reasons.map((reason, index) => `${index + 1}. ${reason}`).join('\n')}
             max_tokens: 1000
         });
 
-        const mergedReasons = JSON.parse(response.choices[0].message.content);
+        // 🔧 處理 GPT 可能返回的 markdown 格式
+        let responseContent = response.choices[0].message.content.trim();
+
+        // 移除可能的 markdown 代碼塊標記
+        if (responseContent.startsWith('```json')) {
+            responseContent = responseContent.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+        } else if (responseContent.startsWith('```')) {
+            responseContent = responseContent.replace(/^```\s*/, '').replace(/\s*```$/, '');
+        }
+
+        console.log(`[mergeSemanticReasons] 🔧 清理後的響應:`, responseContent.substring(0, 200) + '...');
+
+        const mergedReasons = JSON.parse(responseContent);
         console.log(`[mergeSemanticReasons] 合併完成，${reasons.length} 個理由合併為 ${Object.keys(mergedReasons).length} 類`);
         console.log(`[mergeSemanticReasons] 合併結果:`, mergedReasons);
 
