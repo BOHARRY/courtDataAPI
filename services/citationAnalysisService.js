@@ -364,7 +364,21 @@ async function analyzeCitationsFromCasePool(casePool, position, caseDescription,
             citation.inCourtInsightCount > 0
         );
 
-        console.log(`[analyzeCitationsFromCasePool] 發現 ${valuableCitations.length} 個有價值的援引判例`);
+        // 🆕 優化排序邏輯：優先考慮法院見解內援引和稀有度
+        valuableCitations.sort((a, b) => {
+            // 首先按法院見解內引用次數排序（最重要）
+            if (b.inCourtInsightCount !== a.inCourtInsightCount) {
+                return b.inCourtInsightCount - a.inCourtInsightCount;
+            }
+            // 其次按稀有度排序（稀有度高的優先，避免忽略關鍵刁鑽援引）
+            if (b.valueAssessment.rarityScore !== a.valueAssessment.rarityScore) {
+                return b.valueAssessment.rarityScore - a.valueAssessment.rarityScore;
+            }
+            // 最後按總分排序
+            return b.valueAssessment.totalScore - a.valueAssessment.totalScore;
+        });
+
+        console.log(`[analyzeCitationsFromCasePool] 發現 ${valuableCitations.length} 個有價值的援引判例，已按重要性重新排序`);
 
         // 4. 使用 AI 生成推薦
         const aiRecommendations = await generateCitationRecommendations(
@@ -427,7 +441,19 @@ function createCitationRecommendationPrompt(valuableCitations, position, caseDes
         inCourtInsightCount: citation.inCourtInsightCount,
         valueScore: citation.valueAssessment.totalScore,
         grade: citation.valueAssessment.grade,
-        sampleContexts: citation.totalContexts.slice(0, 2).map(ctx => ctx.fullContext.substring(0, 300))
+        rarityScore: citation.valueAssessment.rarityScore, // 🆕 加入稀有度分數
+        // 🆕 優化上下文選擇：優先法院見解內的上下文，提升分析品質
+        sampleContexts: citation.totalContexts
+            .sort((a, b) => {
+                // 優先選擇法院見解內的上下文（最有價值）
+                if (a.inCourtInsight !== b.inCourtInsight) {
+                    return b.inCourtInsight - a.inCourtInsight;
+                }
+                // 其次選擇較長的上下文（可能包含更多關鍵信息）
+                return b.fullContext.length - a.fullContext.length;
+            })
+            .slice(0, 2)
+            .map(ctx => ctx.fullContext.substring(0, 300))
     }));
 
     return `你是專業的法律分析師。請基於以下資料，為${positionLabel}立場的律師推薦援引判例。
@@ -454,12 +480,14 @@ ${JSON.stringify(citationData, null, 2)}
 }
 
 重要原則：
-1. 只推薦有充分證據支持的判例
+1. 只推薦有充分證據支持的判例，絕對不要編造或推測
 2. 如果前後文不足以判斷，標記為"謹慎使用"
 3. 優先推薦在法院見解內被引用的判例（inCourtInsightCount > 0）
-4. 考慮稀有度和適用性的平衡
-5. 絕對不要瞎掰，不確定就說不確定
-6. 請使用繁體中文回應，並確保回應是有效的 JSON 格式`;
+4. 🆕 特別重視稀有但關鍵的援引：高 rarityScore 的援引可能是致勝關鍵，即使使用次數少
+5. 🆕 避免只推薦熱門援引：使用次數多不等於對當前案件更有價值
+6. 考慮援引的針對性和適用性，而非僅看通用性
+7. 絕對不要瞎掰，寧可保守推薦也不要誤導律師
+8. 請使用繁體中文回應，並確保回應是有效的 JSON 格式`;
 }
 
 /**
@@ -479,21 +507,21 @@ async function generateCitationRecommendations(valuableCitations, position, case
 
         const prompt = createCitationRecommendationPrompt(valuableCitations, position, caseDescription);
 
-        // 調用 OpenAI Chat Completions API
+        // 🆕 升級到 GPT-4o：提升分析品質，減少瞎掰風險
         const response = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
+            model: "gpt-4o",
             messages: [
                 {
                     role: "system",
-                    content: "你是專業的法律分析師，請使用繁體中文回應，並以 JSON 格式提供分析結果。"
+                    content: "你是專業的法律分析師，請使用繁體中文回應，並以 JSON 格式提供分析結果。特別注意：絕對不要編造或推測不確定的信息，寧可保守也不要瞎掰。"
                 },
                 {
                     role: "user",
                     content: prompt
                 }
             ],
-            temperature: 0.1,
-            max_tokens: 2000,
+            temperature: 0.1, // 保持低溫度確保一致性
+            max_tokens: 2500, // 稍微增加 token 限制，因為 GPT-4o 分析更詳細
             response_format: { type: "json_object" }
         });
 
