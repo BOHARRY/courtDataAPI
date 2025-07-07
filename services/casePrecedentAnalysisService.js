@@ -338,7 +338,7 @@ function getPositionBasedSearchStrategy(position) {
                             // 3. 尋找有成功要素的案例
                             { exists: { field: 'position_based_analysis.citizen_perspective.successful_elements' } }
                         ],
-                        minimum_should_match: 1
+                        minimum_should_match: 0 // 🚨 改為加分制，不強制要求
                     }
                 }
             };
@@ -365,7 +365,7 @@ function getPositionBasedSearchStrategy(position) {
                             { exists: { field: 'position_based_analysis.agency_perspective.successful_strategies' } },
                             { exists: { field: 'position_based_analysis.agency_perspective.winning_formula' } }
                         ],
-                        minimum_should_match: 1
+                        minimum_should_match: 0 // 🚨 改為加分制，不強制要求
                     }
                 }
             };
@@ -458,9 +458,36 @@ async function performMultiAngleSearch(searchAngles, courtLevel, caseType, thres
                     timeout: '20s'
                 };
 
-                // 🆕 如果有立場過濾條件，添加到查詢中
-                if (searchStrategy.filterQuery) {
-                    searchQuery.query = searchStrategy.filterQuery;
+                // 🚨 修復：結合用戶基本篩選條件和立場過濾
+                const basicFilters = [];
+
+                // 1. 法院層級過濾（最重要！）
+                if (courtLevel && courtLevel !== '全部') {
+                    const courtFilter = getCourtLevelFilter(courtLevel);
+                    basicFilters.push({ term: { 'court_level': courtFilter } });
+                }
+
+                // 2. 案件類型過濾（最重要！）
+                if (caseType && caseType !== '全部') {
+                    const typeFilter = getCaseTypeFilter(caseType);
+                    basicFilters.push({ term: { 'case_type': typeFilter } });
+                }
+
+                // 3. 結合立場過濾和基本過濾
+                if (basicFilters.length > 0 || searchStrategy.filterQuery) {
+                    const combinedQuery = {
+                        bool: {
+                            must: basicFilters // 基本條件必須滿足
+                        }
+                    };
+
+                    // 如果有立場過濾，作為加分條件
+                    if (searchStrategy.filterQuery) {
+                        combinedQuery.bool.should = [searchStrategy.filterQuery];
+                        combinedQuery.bool.boost = 2.0; // 立場匹配加分
+                    }
+
+                    searchQuery.query = combinedQuery;
                 }
 
                 const response = await esClient.search(searchQuery);
