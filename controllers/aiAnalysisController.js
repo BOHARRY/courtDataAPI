@@ -3,6 +3,7 @@ import { analyzeSuccessFactors } from '../services/aiSuccessAnalysisService.js';
 import { startCommonPointsAnalysis, getAnalysisResult } from '../services/summarizeCommonPointsService.js';
 import { startCasePrecedentAnalysis, startMainstreamAnalysis } from '../services/casePrecedentAnalysisService.js';
 import { startCitationAnalysis } from '../services/citationAnalysisService.js';
+import { startWritingAssistantTask } from '../services/writingAssistantService.js';
 
 // 現有的 Controller
 export const analyzeSuccessFactorsController = async (req, res, next) => {
@@ -110,6 +111,49 @@ export const mainstreamAnalysisController = async (req, res, next) => {
         const { taskId } = await startMainstreamAnalysis(originalTaskId.trim(), userId);
         res.status(202).json({ message: '歸納主流判決任務已啟動', taskId }); // 202 Accepted
     } catch (error) {
+        next(error);
+    }
+};
+
+// 🆕 書狀寫作助手控制器
+export const writingAssistantController = async (req, res, next) => {
+    try {
+        const { citationData, position, caseDescription } = req.body;
+        const userId = req.user.uid;
+
+        // 驗證必要參數
+        if (!citationData || !citationData.citation) {
+            return res.status(400).json({
+                error: '缺少援引判例數據',
+                details: 'citationData.citation 是必要參數'
+            });
+        }
+
+        if (!position) {
+            return res.status(400).json({
+                error: '缺少立場參數',
+                details: 'position 是必要參數'
+            });
+        }
+
+        console.log(`[WritingAssistantController] 用戶 ${userId} 啟動書狀生成任務`);
+        console.log(`[WritingAssistantController] 援引: ${citationData.citation}`);
+        console.log(`[WritingAssistantController] 立場: ${position}`);
+
+        const { taskId } = await startWritingAssistantTask(
+            citationData,
+            position,
+            caseDescription || '',
+            userId
+        );
+
+        res.status(202).json({
+            message: '書狀範例生成任務已啟動',
+            taskId
+        });
+
+    } catch (error) {
+        console.error('[WritingAssistantController] 啟動任務失敗:', error);
         next(error);
     }
 };

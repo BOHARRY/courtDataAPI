@@ -1,6 +1,6 @@
 // routes/aiAnalysisRoutes.js
 import express from 'express';
-import { analyzeSuccessFactorsController, summarizeCommonPointsController, getAnalysisResultController, casePrecedentAnalysisController, mainstreamAnalysisController, citationAnalysisController } from '../controllers/aiAnalysisController.js';
+import { analyzeSuccessFactorsController, summarizeCommonPointsController, getAnalysisResultController, casePrecedentAnalysisController, mainstreamAnalysisController, citationAnalysisController, writingAssistantController } from '../controllers/aiAnalysisController.js';
 import { verifyToken } from '../middleware/auth.js';
 import { checkAndDeductCredits } from '../middleware/credit.js';
 import { CREDIT_COSTS, CREDIT_PURPOSES } from '../config/creditCosts.js';
@@ -82,6 +82,21 @@ router.get(
     '/analysis-result/:taskId',
     verifyToken,
     getAnalysisResultController
+);
+
+// 🆕 POST /api/ai/writing-assistant
+router.post(
+    '/writing-assistant',
+    verifyToken,
+    checkAndDeductCredits(
+        CREDIT_COSTS.CASE_PRECEDENT_ANALYSIS, // 使用相同的點數成本
+        CREDIT_PURPOSES.CASE_PRECEDENT_ANALYSIS,
+        {
+            description: 'AI書狀寫作助手',
+            requiresActiveSubscription: true
+        }
+    ),
+    writingAssistantController
 );
 
 export default router;
