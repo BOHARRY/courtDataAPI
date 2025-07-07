@@ -150,46 +150,41 @@ async function extractCitationsFromCases(cases) {
     let totalCitationsFound = 0;
     let casesWithCitations = 0;
 
-    // 批量從 ES 獲取完整數據
-    const casesWithFullData = await Promise.all(
-        cases.map(async (case_) => {
+    // 🚨 優化：逐個處理案例，避免在內存中保留大型 JFULL 數據
+    for (let caseIndex = 0; caseIndex < cases.length; caseIndex++) {
+        const case_ = cases[caseIndex];
+        // 檢查案例是否有 citations 數據
+        let citations = case_.source?.citations || [];
+        let JFULL = case_.source?.JFULL || '';
+        let CourtInsightsStart = case_.source?.CourtInsightsStart || '';
+        let CourtInsightsEND = case_.source?.CourtInsightsEND || '';
+
+        // 如果案例池中沒有完整數據，從 ES 獲取（但不保存到內存中）
+        if (citations.length === 0 || !JFULL) {
             try {
-                // 如果案例池中沒有完整數據，從 ES 獲取
-                if (!case_.source?.citations || !case_.source?.JFULL) {
-                    const fullData = await getJudgmentNodeData(case_.id);
-                    return {
-                        ...case_,
-                        source: {
-                            ...case_.source,
-                            citations: fullData.citations || [],
-                            JFULL: fullData.JFULL || '',
-                            CourtInsightsStart: fullData.CourtInsightsStart || '',
-                            CourtInsightsEND: fullData.CourtInsightsEND || ''
-                        }
-                    };
+                const fullData = await getJudgmentNodeData(case_.id);
+                if (fullData) {
+                    citations = fullData.citations || [];
+                    JFULL = fullData.JFULL || '';
+                    CourtInsightsStart = fullData.CourtInsightsStart || '';
+                    CourtInsightsEND = fullData.CourtInsightsEND || '';
                 }
-                return case_;
             } catch (error) {
                 console.error(`[extractCitationsFromCases] 獲取案例 ${case_.id} 完整數據失敗:`, error);
-                return case_; // 返回原始數據
+                continue; // 跳過這個案例
             }
-        })
-    );
-
-    casesWithFullData.forEach((case_, caseIndex) => {
-        // 檢查案例是否有 citations 數據
-        const citations = case_.source?.citations || [];
+        }
 
         if (citations.length === 0) {
-            return; // 跳過沒有援引的案例
+            continue; // 跳過沒有援引的案例
         }
 
         casesWithCitations++;
         console.log(`[extractCitationsFromCases] 案例 ${caseIndex + 1}: ${case_.title} - 發現 ${citations.length} 個援引`);
 
-        citations.forEach(citation => {
+        for (const citation of citations) {
             if (!citation || typeof citation !== 'string') {
-                return; // 跳過無效的援引
+                continue; // 跳過無效的援引
             }
 
             totalCitationsFound++;
@@ -211,12 +206,12 @@ async function extractCitationsFromCases(cases) {
             // 提取前後文脈絡
             const context = extractCitationContext(
                 citation,
-                case_.source?.JFULL,
-                case_.source?.CourtInsightsStart,
-                case_.source?.CourtInsightsEND
+                JFULL,
+                CourtInsightsStart,
+                CourtInsightsEND
             );
 
-            // 記錄使用情況
+            // 🚨 記錄使用情況（精簡版，不保存完整 context）
             citationRecord.occurrences.push({
                 caseId: case_.id,
                 caseTitle: case_.title,
@@ -224,22 +219,26 @@ async function extractCitationsFromCases(cases) {
                 year: case_.year,
                 verdictType: case_.verdictType,
                 similarity: case_.similarity,
-                context,
+                found: context.found,
                 inCourtInsight: context.inCourtInsight
+                // 🚨 不保存完整的 context 數據
             });
 
             citationRecord.usageCount++;
             citationRecord.casesUsed.add(case_.id);
-            
+
             if (context.inCourtInsight) {
                 citationRecord.inCourtInsightCount++;
             }
 
-            if (context.found && context.context) {
-                citationRecord.totalContexts.push(context.context);
-            }
-        });
-    });
+            // 🚨 不保存 totalContexts 以節省內存
+        }
+
+        // 🚨 清理變量，釋放內存
+        JFULL = null;
+        CourtInsightsStart = null;
+        CourtInsightsEND = null;
+    }
 
     const citationStats = Array.from(citationMap.values());
     
@@ -374,11 +373,27 @@ async function analyzeCitationsFromCasePool(casePool, position, caseDescription)
             caseDescription
         );
 
+        // 🚨 精簡數據以避免 Firestore 大小限制
+        const compactCitations = enrichedCitations.map(citation => ({
+            citation: citation.citation,
+            usageCount: citation.usageCount,
+            inCourtInsightCount: citation.inCourtInsightCount,
+            valueAssessment: citation.valueAssessment,
+            // 🚨 移除大型數據：不保存 totalContexts 和完整的 occurrences
+            sampleCases: citation.occurrences.slice(0, 3).map(occ => ({
+                caseId: occ.caseId,
+                caseTitle: occ.caseTitle,
+                found: occ.context?.found || false,
+                inCourtInsight: occ.context?.inCourtInsight || false
+                // 🚨 不保存完整的 context 數據
+            }))
+        }));
+
         return {
             totalCitations: citationStats.reduce((sum, c) => sum + c.usageCount, 0),
             uniqueCitations: citationStats.length,
-            valuableCitations: valuableCitations.slice(0, 15), // 限制前15個最有價值的
-            allCitations: enrichedCitations,
+            valuableCitations: compactCitations.slice(0, 15), // 限制前15個最有價值的
+            // 🚨 移除 allCitations 以節省空間
             recommendations: aiRecommendations.recommendations,
             summary: aiRecommendations.summary,
             analysisMetadata: {
