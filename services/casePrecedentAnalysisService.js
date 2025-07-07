@@ -1823,31 +1823,38 @@ ${smartRecommendations.nextSteps.map(step => `• ${step}`).join('\n')}`;
                         similarity: case_.similarity,
                         // 🚨 移除大型 source 數據，只保留引用信息
                         hasFullData: !!case_.source,
-                        positionAnalysis: case_.positionAnalysis ? {
-                            // 只保留關鍵字段，移除大型陣列
-                            verdict: case_.positionAnalysis.verdict,
-                            position: case_.positionAnalysis.position
-                        } : null,
-                        multiAngleData: case_.multiAngleData ? {
-                            isIntersection: case_.multiAngleData.isIntersection,
-                            appearances: case_.multiAngleData.appearances,
-                            sourceAngles: case_.multiAngleData.sourceAngles
-                        } : null
+                        // 🚨 修復：過濾 undefined 值，避免 Firestore 錯誤
+                        ...(case_.positionAnalysis && (
+                            case_.positionAnalysis.verdict !== undefined ||
+                            case_.positionAnalysis.position !== undefined
+                        ) ? {
+                            positionAnalysis: {
+                                ...(case_.positionAnalysis.verdict !== undefined && { verdict: case_.positionAnalysis.verdict }),
+                                ...(case_.positionAnalysis.position !== undefined && { position: case_.positionAnalysis.position })
+                            }
+                        } : {}),
+                        ...(case_.multiAngleData ? {
+                            multiAngleData: {
+                                ...(case_.multiAngleData.isIntersection !== undefined && { isIntersection: case_.multiAngleData.isIntersection }),
+                                ...(case_.multiAngleData.appearances !== undefined && { appearances: case_.multiAngleData.appearances }),
+                                ...(case_.multiAngleData.sourceAngles !== undefined && { sourceAngles: case_.multiAngleData.sourceAngles })
+                            }
+                        } : {})
                     })),
-                    caseIds: similarCases.map(c => c.id),
+                    caseIds: similarCases.map(c => c.id).filter(id => id !== undefined),
                     mainPattern: {
-                        verdict: verdictAnalysis.mainPattern.verdict,
-                        percentage: verdictAnalysis.mainPattern.percentage,
+                        verdict: verdictAnalysis.mainPattern.verdict || '',
+                        percentage: verdictAnalysis.mainPattern.percentage || 0,
                         cases: similarCases
-                            .filter(c => c.verdictType === verdictAnalysis.mainPattern.verdict)
+                            .filter(c => c.verdictType === verdictAnalysis.mainPattern.verdict && c.id)
                             .map(c => c.id)
                     },
                     anomalies: verdictAnalysis.anomalies.map(anomaly => ({
-                        verdict: anomaly.verdict,
-                        count: anomaly.count,
-                        percentage: anomaly.percentage,
+                        verdict: anomaly.verdict || '',
+                        count: anomaly.count || 0,
+                        percentage: anomaly.percentage || 0,
                         cases: similarCases
-                            .filter(c => c.verdictType === anomaly.verdict)
+                            .filter(c => c.verdictType === anomaly.verdict && c.id)
                             .map(c => c.id)
                     })),
                     searchMetadata: {
