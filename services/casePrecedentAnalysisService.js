@@ -1152,16 +1152,28 @@ async function analyzeKeyFactorsWithFullData(casesWithFullData, position = 'neut
 
     console.log(`[analyzeKeyFactorsWithFullData] 收集到 ${allReasons.length} 個理由，勝訴案例: ${winCases.length}，敗訴案例: ${loseCases.length}`);
 
-    // 統計勝訴關鍵因素
+    // 🆕 語義合併相似理由
+    const mergedWinFactors = winCases.length > 0 ? await mergeSemanticReasons(winCases.map(c => c.reason), 'win') : {};
+    const mergedLoseFactors = loseCases.length > 0 ? await mergeSemanticReasons(loseCases.map(c => c.reason), 'lose') : {};
+
+    console.log(`[analyzeKeyFactorsWithFullData] 語義合併完成，勝訴因素: ${Object.keys(mergedWinFactors).length} 類，敗訴因素: ${Object.keys(mergedLoseFactors).length} 類`);
+
+    // 統計合併後的勝訴關鍵因素
     const winFactorCounts = {};
     winCases.forEach(item => {
-        winFactorCounts[item.reason] = (winFactorCounts[item.reason] || 0) + 1;
+        // 找到這個理由被合併到哪個類別
+        const mergedCategory = findMergedCategory(item.reason, mergedWinFactors);
+        const categoryName = mergedCategory || item.reason; // 如果沒找到合併類別，使用原理由
+        winFactorCounts[categoryName] = (winFactorCounts[categoryName] || 0) + 1;
     });
 
-    // 統計敗訴風險因素
+    // 統計合併後的敗訴風險因素
     const loseFactorCounts = {};
     loseCases.forEach(item => {
-        loseFactorCounts[item.reason] = (loseFactorCounts[item.reason] || 0) + 1;
+        // 找到這個理由被合併到哪個類別
+        const mergedCategory = findMergedCategory(item.reason, mergedLoseFactors);
+        const categoryName = mergedCategory || item.reason; // 如果沒找到合併類別，使用原理由
+        loseFactorCounts[categoryName] = (loseFactorCounts[categoryName] || 0) + 1;
     });
 
     // 轉換為排序後的數組
@@ -1194,12 +1206,99 @@ async function analyzeKeyFactorsWithFullData(casesWithFullData, position = 'neut
             loseCases: loseCases.length,
             position: position,
             winRate: winCases.length > 0 ? Math.round((winCases.length / (winCases.length + loseCases.length)) * 100) : 0,
-            dataSource: 'real_data'
+            dataSource: 'real_data',
+            // 🆕 語義合併信息
+            semanticMerging: {
+                originalWinReasons: winCases.length,
+                mergedWinCategories: Object.keys(mergedWinFactors).length,
+                originalLoseReasons: loseCases.length,
+                mergedLoseCategories: Object.keys(mergedLoseFactors).length,
+                mergedWinFactors: mergedWinFactors,
+                mergedLoseFactors: mergedLoseFactors
+            }
         }
     };
 
     console.log(`[analyzeKeyFactorsWithFullData] 分析完成，勝訴因素: ${result.winFactors.length} 個，敗訴因素: ${result.loseFactors.length} 個`);
     return result;
+}
+
+/**
+ * 🆕 使用 GPT-4o mini 合併語義相似的理由
+ */
+async function mergeSemanticReasons(reasons, type = 'win') {
+    if (reasons.length === 0) return {};
+
+    try {
+        console.log(`[mergeSemanticReasons] 開始合併 ${reasons.length} 個${type === 'win' ? '勝訴' : '敗訴'}理由`);
+
+        const prompt = `請將以下法律判決理由按照語義相似性進行分類合併。
+
+理由列表：
+${reasons.map((reason, index) => `${index + 1}. ${reason}`).join('\n')}
+
+請按照以下規則分類：
+1. 將語義相似的理由歸為同一類
+2. 為每一類選擇一個簡潔明確的類別名稱
+3. 類別名稱應該是法律專業術語，便於律師理解
+4. 如果某個理由很獨特，可以單獨成類
+
+請以JSON格式回應：
+{
+  "類別名稱1": ["理由1", "理由2"],
+  "類別名稱2": ["理由3"],
+  ...
+}
+
+範例：
+{
+  "舉證責任問題": ["原告證據不足", "舉證不足駁回"],
+  "侵權行為不成立": ["被告行為不違法", "無侵害事實"]
+}`;
+
+        const response = await openai.chat.completions.create({
+            model: 'gpt-4o-mini',
+            messages: [
+                {
+                    role: 'system',
+                    content: '你是專業的法律分析助手，擅長將相似的法律理由進行分類整理。'
+                },
+                {
+                    role: 'user',
+                    content: prompt
+                }
+            ],
+            temperature: 0.1,
+            max_tokens: 1000
+        });
+
+        const mergedReasons = JSON.parse(response.choices[0].message.content);
+        console.log(`[mergeSemanticReasons] 合併完成，${reasons.length} 個理由合併為 ${Object.keys(mergedReasons).length} 類`);
+        console.log(`[mergeSemanticReasons] 合併結果:`, mergedReasons);
+
+        return mergedReasons;
+
+    } catch (error) {
+        console.error(`[mergeSemanticReasons] 語義合併失敗:`, error);
+        // 如果合併失敗，返回原始理由（每個理由單獨成類）
+        const fallbackResult = {};
+        reasons.forEach(reason => {
+            fallbackResult[reason] = [reason];
+        });
+        return fallbackResult;
+    }
+}
+
+/**
+ * 🆕 找到理由對應的合併類別
+ */
+function findMergedCategory(reason, mergedFactors) {
+    for (const [category, reasonList] of Object.entries(mergedFactors)) {
+        if (reasonList.includes(reason)) {
+            return category;
+        }
+    }
+    return null;
 }
 
 /**
