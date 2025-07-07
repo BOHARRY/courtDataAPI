@@ -318,9 +318,9 @@ function getPositionBasedSearchStrategy(position) {
     switch (position) {
         case 'plaintiff':
             return {
-                primaryVectorField: 'defendant_combined_vector', // 🎯 原告方使用被告向量找對手案例
+                primaryVectorField: 'plaintiff_combined_vector', // 🚨 修復：原告方使用原告向量
                 vectorFields: {
-                    'defendant_combined_vector': 0.4,      // 最重要：相似的原告經驗
+                    'plaintiff_combined_vector': 0.4,      // 最重要：相似的原告經驗
                     'replicable_strategies_vector': 0.3,   // 次重要：可用策略
                     'main_reasons_ai_vector': 0.2,         // 輔助：勝負邏輯
                     'text_embedding': 0.1                  // 基礎：一般相似性
@@ -392,6 +392,16 @@ async function performMultiAngleSearch(searchAngles, courtLevel, caseType, thres
                     num_candidates: 50
                 };
 
+                // 🚨 調試：檢查向量欄位和查詢
+                console.log(`[casePrecedentAnalysisService] 🔍 向量搜尋調試:`, {
+                    angleName,
+                    query: config.query,
+                    primaryVectorField: searchStrategy.primaryVectorField,
+                    position,
+                    queryVectorLength: queryVector?.length,
+                    hasFilterQuery: !!searchStrategy.filterQuery
+                });
+
                 // 🆕 構建包含立場過濾的查詢
                 const searchQuery = {
                     index: ES_INDEX_NAME,
@@ -429,6 +439,15 @@ async function performMultiAngleSearch(searchAngles, courtLevel, caseType, thres
 
                 const hits = response.hits?.hits || [];
                 console.log(`[casePrecedentAnalysisService] 角度「${angleName}」返回 ${hits.length} 個結果`);
+
+                // 🚨 調試：檢查搜尋結果的相關性
+                if (hits.length > 0) {
+                    console.log(`[casePrecedentAnalysisService] 🔍 角度「${angleName}」前3個結果:`, hits.slice(0, 3).map(hit => ({
+                        title: hit._source?.JTITLE?.substring(0, 50) + '...',
+                        score: hit._score,
+                        main_reasons_sample: hit._source?.main_reasons_ai?.slice(0, 2)
+                    })));
+                }
 
                 // 篩選並標記來源角度
                 const filteredResults = hits
