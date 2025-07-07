@@ -860,10 +860,35 @@ function analyzeKeyFactors(cases, position = 'neutral') {
     }
 
     // 🧪 臨時測試：如果沒有真實數據，返回測試數據
-    const hasRealData = cases.some(case_ => {
-        const reasons = case_.judgmentNodeData?.main_reasons_ai || case_.source?.main_reasons_ai;
-        return reasons && Array.isArray(reasons) && reasons.length > 0;
+    console.log(`[analyzeKeyFactors] 🔍 檢查 ${cases.length} 個案例的 main_reasons_ai 數據...`);
+
+    let realDataCount = 0;
+    const hasRealData = cases.some((case_, index) => {
+        const reasons1 = case_.judgmentNodeData?.main_reasons_ai;
+        const reasons2 = case_.source?.main_reasons_ai;
+        const reasons = reasons1 || reasons2;
+
+        console.log(`[analyzeKeyFactors] 案例 ${index + 1}/${cases.length} (${case_.id}):`, {
+            hasJudgmentNodeData: !!case_.judgmentNodeData,
+            hasSource: !!case_.source,
+            reasons1Type: typeof reasons1,
+            reasons1IsArray: Array.isArray(reasons1),
+            reasons1Length: reasons1?.length,
+            reasons2Type: typeof reasons2,
+            reasons2IsArray: Array.isArray(reasons2),
+            reasons2Length: reasons2?.length,
+            finalReasons: reasons,
+            finalReasonsValid: reasons && Array.isArray(reasons) && reasons.length > 0
+        });
+
+        if (reasons && Array.isArray(reasons) && reasons.length > 0) {
+            realDataCount++;
+            return true;
+        }
+        return false;
     });
+
+    console.log(`[analyzeKeyFactors] 🔍 檢查結果: ${realDataCount}/${cases.length} 個案例有有效的 main_reasons_ai 數據`);
 
     if (!hasRealData) {
         console.log(`[casePrecedentAnalysisService] 🧪 沒有找到 main_reasons_ai 數據，返回測試數據`);
@@ -896,7 +921,8 @@ function analyzeKeyFactors(cases, position = 'neutral') {
     cases.forEach(case_ => {
         // 🔧 修正數據路徑：main_reasons_ai 在 judgmentNodeData 中
         const reasons = case_.judgmentNodeData?.main_reasons_ai || case_.source?.main_reasons_ai || [];
-        const verdict = case_.verdictType || '';
+        // 🔧 修正判決類型路徑：verdict_type 在 judgmentNodeData 中
+        const verdict = case_.judgmentNodeData?.verdict_type || case_.verdictType || '';
 
         // 🧪 調試：檢查每個案例的 main_reasons_ai 數據
         console.log(`[analyzeKeyFactors] 案例 ${case_.id}: verdict=${verdict}, main_reasons_ai=`, reasons);
@@ -1156,11 +1182,17 @@ async function executeAnalysisInBackground(taskId, analysisData, userId) {
         console.log(`[casePrecedentAnalysisService] 異常模式:`, verdictAnalysis.anomalies);
 
         // 🆕 2.5. 分析勝負關鍵因素排名
-        console.log(`[casePrecedentAnalysisService] 🎯 開始勝負因素分析，立場: ${analysisData.position || 'neutral'}`);
-        const keyFactorsAnalysis = analyzeKeyFactors(similarCases, analysisData.position || 'neutral');
-        console.log(`[casePrecedentAnalysisService] 勝負因素分析完成，勝訴因素: ${keyFactorsAnalysis.winFactors.length} 個，敗訴因素: ${keyFactorsAnalysis.loseFactors.length} 個`);
-        console.log(`[casePrecedentAnalysisService] 🧪 勝訴因素詳情:`, keyFactorsAnalysis.winFactors);
-        console.log(`[casePrecedentAnalysisService] 🧪 敗訴因素詳情:`, keyFactorsAnalysis.loseFactors);
+        let keyFactorsAnalysis = null;
+        try {
+            console.log(`[casePrecedentAnalysisService] 🎯 開始勝負因素分析，立場: ${analysisData.position || 'neutral'}`);
+            keyFactorsAnalysis = analyzeKeyFactors(similarCases, analysisData.position || 'neutral');
+            console.log(`[casePrecedentAnalysisService] 勝負因素分析完成，勝訴因素: ${keyFactorsAnalysis.winFactors.length} 個，敗訴因素: ${keyFactorsAnalysis.loseFactors.length} 個`);
+            console.log(`[casePrecedentAnalysisService] 🧪 勝訴因素詳情:`, keyFactorsAnalysis.winFactors);
+            console.log(`[casePrecedentAnalysisService] 🧪 敗訴因素詳情:`, keyFactorsAnalysis.loseFactors);
+        } catch (error) {
+            console.error(`[casePrecedentAnalysisService] ❌ 勝負因素分析失敗:`, error);
+            keyFactorsAnalysis = null;
+        }
 
         // 3. 分析異常案例 - 暫時跳過 AI 分析避免超時
         let anomalyAnalysis = null;
