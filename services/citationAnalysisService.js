@@ -329,7 +329,7 @@ function enrichCitationsWithValue(citationStats, totalCases) {
 /**
  * 主要的援引判例分析函數
  */
-async function analyzeCitationsFromCasePool(casePool, position, caseDescription) {
+async function analyzeCitationsFromCasePool(casePool, position, caseDescription, originalPositionStats = null) {
     try {
         console.log(`[analyzeCitationsFromCasePool] 開始分析援引判例，立場: ${position}`);
 
@@ -403,7 +403,9 @@ async function analyzeCitationsFromCasePool(casePool, position, caseDescription)
                 timestamp: new Date().toISOString(),
                 hasData: true,
                 aiAnalysisStatus: aiRecommendations.aiAnalysisStatus
-            }
+            },
+            // 🆕 傳遞原始分析的 positionStats
+            originalPositionStats
         };
 
     } catch (error) {
@@ -617,11 +619,15 @@ async function executeCitationAnalysisInBackground(taskId, originalTaskData, use
             throw new Error('無法找到案例池數據');
         }
 
+        // 🆕 獲取原始分析的 positionStats 數據
+        const originalPositionStats = originalTaskData.result?.casePrecedentData?.positionBasedAnalysis?.positionStats;
+
         // 執行援引分析
         const analysisResult = await analyzeCitationsFromCasePool(
             casePool,
             originalTaskData.analysisData.position || 'neutral',
-            originalTaskData.analysisData.caseDescription
+            originalTaskData.analysisData.caseDescription,
+            originalPositionStats // 🆕 傳遞原始的 positionStats
         );
 
         // 保存結果
