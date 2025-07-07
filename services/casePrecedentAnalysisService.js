@@ -165,39 +165,249 @@ function generateSearchAngles(userInput, enrichment) {
 }
 
 /**
- * 🆕 執行多角度並行語意搜尋
+ * 🆕 生成立場導向統計數據
  */
-async function performMultiAngleSearch(searchAngles, courtLevel, caseType, threshold) {
+function generatePositionStats(similarCases, position) {
+    if (position === 'neutral') {
+        // 中性分析：提供通用統計
+        const verdictCounts = {};
+        similarCases.forEach(c => {
+            verdictCounts[c.verdictType] = (verdictCounts[c.verdictType] || 0) + 1;
+        });
+
+        const totalCases = similarCases.length;
+        const distribution = Object.entries(verdictCounts).map(([verdict, count]) => ({
+            verdict,
+            count,
+            percentage: Math.round((count / totalCases) * 100)
+        }));
+
+        return {
+            analysisType: 'neutral',
+            totalCases,
+            distribution,
+            mainPattern: distribution.sort((a, b) => b.count - a.count)[0]
+        };
+    }
+
+    // 立場導向分析：基於 position_based_analysis 數據
+    const positionKey = position === 'plaintiff' ? 'plaintiff_perspective' : 'defendant_perspective';
+    const casesWithPositionData = similarCases.filter(c =>
+        c.positionAnalysis && c.positionAnalysis[positionKey]
+    );
+
+    if (casesWithPositionData.length === 0) {
+        return {
+            analysisType: position,
+            totalCases: similarCases.length,
+            positionDataAvailable: false,
+            fallbackMessage: '立場分析數據不足，顯示通用統計'
+        };
+    }
+
+    // 計算立場導向統計
+    const successCases = casesWithPositionData.filter(c => {
+        const analysis = c.positionAnalysis[positionKey];
+        return analysis.overall_result === 'major_victory' ||
+               analysis.case_value === 'positive_precedent' ||
+               analysis.case_value === 'model_defense';
+    });
+
+    const riskCases = casesWithPositionData.filter(c => {
+        const analysis = c.positionAnalysis[positionKey];
+        return analysis.overall_result === 'major_defeat' ||
+               analysis.case_value === 'negative_precedent';
+    });
+
+    const successRate = Math.round((successCases.length / casesWithPositionData.length) * 100);
+
+    return {
+        analysisType: position,
+        totalCases: similarCases.length,
+        positionDataAvailable: true,
+        casesWithPositionData: casesWithPositionData.length,
+        successCases: successCases.length,
+        riskCases: riskCases.length,
+        successRate,
+        riskRate: Math.round((riskCases.length / casesWithPositionData.length) * 100)
+    };
+}
+
+/**
+ * 🆕 生成立場導向策略洞察
+ */
+function generateStrategicInsights(similarCases, position, verdictAnalysis) {
+    if (position === 'neutral') {
+        return {
+            type: 'neutral',
+            insights: [
+                `基於 ${similarCases.length} 個相似案例的通用分析`,
+                `主流判決模式：${verdictAnalysis.mainPattern?.verdict} (${verdictAnalysis.mainPattern?.percentage}%)`,
+                verdictAnalysis.anomalies.length > 0 ?
+                    `發現 ${verdictAnalysis.anomalies.length} 種異常模式需要注意` :
+                    '判決模式相對穩定'
+            ]
+        };
+    }
+
+    const positionKey = position === 'plaintiff' ? 'plaintiff_perspective' : 'defendant_perspective';
+    const casesWithPositionData = similarCases.filter(c =>
+        c.positionAnalysis && c.positionAnalysis[positionKey]
+    );
+
+    if (casesWithPositionData.length === 0) {
+        return {
+            type: position,
+            insights: ['立場分析數據不足，建議參考通用統計']
+        };
+    }
+
+    // 提取成功策略和風險因素
+    const successStrategies = [];
+    const riskFactors = [];
+
+    casesWithPositionData.forEach(c => {
+        const analysis = c.positionAnalysis[positionKey];
+
+        if (analysis.overall_result === 'major_victory') {
+            if (analysis.successful_strategies) {
+                successStrategies.push(...(Array.isArray(analysis.successful_strategies) ?
+                    analysis.successful_strategies : [analysis.successful_strategies]));
+            }
+            if (analysis.winning_formula) {
+                successStrategies.push(...(Array.isArray(analysis.winning_formula) ?
+                    analysis.winning_formula : [analysis.winning_formula]));
+            }
+        }
+
+        if (analysis.overall_result === 'major_defeat') {
+            if (analysis.critical_failures) {
+                riskFactors.push(...(Array.isArray(analysis.critical_failures) ?
+                    analysis.critical_failures : [analysis.critical_failures]));
+            }
+        }
+    });
+
+    const positionLabel = position === 'plaintiff' ? '原告方' : '被告方';
+    const successRate = Math.round((casesWithPositionData.filter(c =>
+        c.positionAnalysis[positionKey].overall_result === 'major_victory'
+    ).length / casesWithPositionData.length) * 100);
+
+    return {
+        type: position,
+        positionLabel,
+        successRate,
+        insights: [
+            `${positionLabel}成功率：${successRate}% (基於 ${casesWithPositionData.length} 個案例)`,
+            successStrategies.length > 0 ?
+                `關鍵成功策略：${[...new Set(successStrategies)].slice(0, 3).join('、')}` :
+                '成功策略數據不足',
+            riskFactors.length > 0 ?
+                `主要風險因素：${[...new Set(riskFactors)].slice(0, 3).join('、')}` :
+                '風險因素數據不足'
+        ]
+    };
+}
+
+/**
+ * 🆕 根據立場選擇向量欄位和權重策略
+ */
+function getPositionBasedSearchStrategy(position) {
+    switch (position) {
+        case 'plaintiff':
+            return {
+                primaryVectorField: 'plaintiff_combined_vector',
+                vectorFields: {
+                    'plaintiff_combined_vector': 0.4,      // 最重要：相似的原告經驗
+                    'replicable_strategies_vector': 0.3,   // 次重要：可用策略
+                    'main_reasons_ai_vector': 0.2,         // 輔助：勝負邏輯
+                    'text_embedding': 0.1                  // 基礎：一般相似性
+                },
+                filterQuery: {
+                    bool: {
+                        should: [
+                            { term: { 'position_based_analysis.plaintiff_perspective.case_value': 'positive_precedent' } },
+                            { term: { 'position_based_analysis.plaintiff_perspective.overall_result': 'major_victory' } }
+                        ]
+                    }
+                }
+            };
+        case 'defendant':
+            return {
+                primaryVectorField: 'defendant_combined_vector',
+                vectorFields: {
+                    'defendant_combined_vector': 0.4,      // 最重要：成功防禦案例
+                    'replicable_strategies_vector': 0.3,   // 次重要：防禦策略
+                    'main_reasons_ai_vector': 0.2,         // 輔助：勝負邏輯
+                    'text_embedding': 0.1                  // 基礎：一般相似性
+                },
+                filterQuery: {
+                    bool: {
+                        should: [
+                            { term: { 'position_based_analysis.defendant_perspective.case_value': 'model_defense' } },
+                            { term: { 'position_based_analysis.defendant_perspective.overall_result': 'major_victory' } }
+                        ]
+                    }
+                }
+            };
+        default: // 'neutral'
+            return {
+                primaryVectorField: 'text_embedding',
+                vectorFields: {
+                    'text_embedding': 0.6,                 // 主要：一般相似性
+                    'legal_issues_embedding': 0.2,         // 輔助：法律爭點
+                    'replicable_strategies_vector': 0.1,   // 參考：策略
+                    'main_reasons_ai_vector': 0.1          // 參考：勝負邏輯
+                },
+                filterQuery: null // 中性分析不使用立場過濾
+            };
+    }
+}
+
+/**
+ * 🆕 執行立場導向的多角度並行語意搜尋
+ */
+async function performMultiAngleSearch(searchAngles, courtLevel, caseType, threshold, position = 'neutral') {
     try {
-        console.log(`[casePrecedentAnalysisService] 開始多角度並行搜尋，共 ${Object.keys(searchAngles).length} 個角度`);
+        console.log(`[casePrecedentAnalysisService] 開始立場導向多角度搜尋，立場: ${position}，共 ${Object.keys(searchAngles).length} 個角度`);
 
         const minScore = getThresholdValue(threshold);
+        const searchStrategy = getPositionBasedSearchStrategy(position);
 
         // 並行執行所有角度的搜尋
         const searchPromises = Object.entries(searchAngles).map(async ([angleName, config]) => {
             try {
-                console.log(`[casePrecedentAnalysisService] 執行角度「${angleName}」搜尋: "${config.query}"`);
+                console.log(`[casePrecedentAnalysisService] 執行角度「${angleName}」立場導向搜尋: "${config.query}"`);
 
                 // 生成該角度的查詢向量
                 const queryVector = await generateEmbedding(config.query);
 
-                // 構建 KNN 查詢
+                // 🆕 構建立場導向的 KNN 查詢
                 const knnQuery = {
-                    field: "text_embedding",
+                    field: searchStrategy.primaryVectorField,
                     query_vector: queryVector,
                     k: 25, // 每個角度搜尋25筆，總共最多100筆
                     num_candidates: 50
                 };
 
-                const response = await esClient.search({
+                // 🆕 構建包含立場過濾的查詢
+                const searchQuery = {
                     index: ES_INDEX_NAME,
                     knn: knnQuery,
                     _source: [
-                        'JID', 'JTITLE', 'verdict_type', 'court', 'JYEAR'
+                        'JID', 'JTITLE', 'verdict_type', 'court', 'JYEAR',
+                        'position_based_analysis' // 🆕 新增立場分析資料
                     ],
                     size: 25,
                     timeout: '20s'
-                });
+                };
+
+                // 🆕 如果有立場過濾條件，添加到查詢中
+                if (searchStrategy.filterQuery) {
+                    searchQuery.query = searchStrategy.filterQuery;
+                }
+
+                const response = await esClient.search(searchQuery);
 
                 const hits = response.hits?.hits || [];
                 console.log(`[casePrecedentAnalysisService] 角度「${angleName}」返回 ${hits.length} 個結果`);
@@ -214,7 +424,8 @@ async function performMultiAngleSearch(searchAngles, courtLevel, caseType, thres
                         similarity: hit._score || 0,
                         sourceAngle: angleName,
                         angleWeight: config.weight,
-                        originalSimilarity: hit._score || 0
+                        originalSimilarity: hit._score || 0,
+                        positionAnalysis: hit._source?.position_based_analysis || null // 🆕 立場分析資料
                     }));
 
                 return {
@@ -222,7 +433,8 @@ async function performMultiAngleSearch(searchAngles, courtLevel, caseType, thres
                     config,
                     results: filteredResults,
                     success: true,
-                    resultCount: filteredResults.length
+                    resultCount: filteredResults.length,
+                    searchStrategy: position // 🆕 記錄使用的搜索策略
                 };
 
             } catch (error) {
@@ -233,7 +445,8 @@ async function performMultiAngleSearch(searchAngles, courtLevel, caseType, thres
                     results: [],
                     success: false,
                     error: error.message,
-                    resultCount: 0
+                    resultCount: 0,
+                    searchStrategy: position
                 };
             }
         });
@@ -245,7 +458,7 @@ async function performMultiAngleSearch(searchAngles, courtLevel, caseType, thres
         const successfulResults = searchResults.filter(r => r.success);
         const totalResults = successfulResults.reduce((sum, r) => sum + r.resultCount, 0);
 
-        console.log(`[casePrecedentAnalysisService] 多角度搜尋完成: ${successfulResults.length}/${searchResults.length} 成功，共 ${totalResults} 個結果`);
+        console.log(`[casePrecedentAnalysisService] 立場導向多角度搜尋完成: ${successfulResults.length}/${searchResults.length} 成功，共 ${totalResults} 個結果`);
 
         if (successfulResults.length === 0) {
             throw new Error('所有搜尋角度都失敗');
@@ -254,7 +467,7 @@ async function performMultiAngleSearch(searchAngles, courtLevel, caseType, thres
         return searchResults;
 
     } catch (error) {
-        console.error('[casePrecedentAnalysisService] 多角度搜尋失敗:', error);
+        console.error('[casePrecedentAnalysisService] 立場導向多角度搜尋失敗:', error);
         throw error;
     }
 }
@@ -733,12 +946,13 @@ async function executeAnalysisInBackground(taskId, analysisData, userId) {
         const searchAngles = generateSearchAngles(analysisData.caseDescription, enrichment);
         console.log(`[casePrecedentAnalysisService] 生成搜尋角度:`, Object.keys(searchAngles));
 
-        // 🆕 3. 執行多角度並行搜尋
+        // 🆕 3. 執行立場導向的多角度並行搜尋
         const multiAngleResults = await performMultiAngleSearch(
             searchAngles,
             analysisData.courtLevel,
             analysisData.caseType,
-            analysisData.threshold
+            analysisData.threshold,
+            analysisData.position || 'neutral' // 🆕 新增立場參數
         );
 
         // 🆕 4. 智能合併結果（傳入用戶輸入用於價值評估）
@@ -863,13 +1077,21 @@ ${smartRecommendations.nextSteps.map(step => `• ${step}`).join('\n')}`;
                         query: r.config.query,
                         resultCount: r.resultCount,
                         success: r.success,
-                        displayName: r.config.displayName
+                        displayName: r.config.displayName,
+                        searchStrategy: r.searchStrategy // 🆕 記錄搜索策略
                     })),
                     coverageStats: coverageStats,
                     intersectionCases: intersectionCases.length,
                     totalProcessedResults: multiAngleResults.reduce((sum, r) => sum + (r.resultCount || 0), 0),
                     // 🆕 智能推薦數據
                     smartRecommendations: smartRecommendations
+                },
+
+                // 🆕 立場導向分析數據
+                positionBasedAnalysis: {
+                    selectedPosition: analysisData.position || 'neutral',
+                    positionStats: generatePositionStats(similarCases, analysisData.position || 'neutral'),
+                    strategicInsights: generateStrategicInsights(similarCases, analysisData.position || 'neutral', verdictAnalysis)
                 },
 
                 verdictDistribution: verdictAnalysis.distribution,
