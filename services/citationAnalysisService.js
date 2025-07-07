@@ -2,7 +2,10 @@
 import admin from 'firebase-admin';
 import OpenAI from 'openai';
 import { OPENAI_API_KEY } from '../config/environment.js';
-import { getJudgmentNodeData } from './judgmentService.js';
+import esClient from '../config/elasticsearch.js';
+
+// Elasticsearch 索引名稱
+const ES_INDEX_NAME = 'search-boooook';
 
 // 初始化 OpenAI 客戶端
 const openai = new OpenAI({
@@ -21,6 +24,34 @@ function getCleanText(text) {
         .replace(/。/g, '.') // 全形句號 -> 半形
         .replace(/（/g, '(') // 全形括號 -> 半形
         .replace(/）/g, ')'); // 全形括號 -> 半形
+}
+
+/**
+ * 獲取判決書完整數據（用於援引分析）
+ */
+async function getJudgmentNodeData(caseId) {
+    try {
+        const response = await esClient.get({
+            index: ES_INDEX_NAME,
+            id: caseId,
+            _source: [
+                'JID', 'JTITLE', 'court', 'verdict_type',
+                'summary_ai', 'main_reasons_ai',
+                'legal_issues', 'citations', 'JFULL',
+                'CourtInsightsStart', 'CourtInsightsEND',
+                // 立場分析相關欄位
+                'position_based_analysis',
+                'plaintiff_perspective',
+                'defendant_perspective'
+            ]
+        });
+
+        console.log(`[getJudgmentNodeData] 成功獲取案例 ${caseId} 數據`);
+        return response._source;
+    } catch (error) {
+        console.error(`[getJudgmentNodeData] 獲取案例 ${caseId} 詳細數據失敗:`, error);
+        return null;
+    }
 }
 
 /**
