@@ -1403,6 +1403,7 @@ async function getMainstreamCasesWithSummary(caseDescription, courtLevel, caseTy
                 verdictType: hit._source?.verdict_type || '未知',
                 similarity: hit._score || 0,
                 summaryAiFull: hit._source?.summary_ai_full || '',
+                positionAnalysis: hit._source?.position_based_analysis || null, // 🆕 添加立場分析資料
                 citationIndex: index + 1 // 用於引用編號 [1], [2], ...
             }));
 
@@ -1416,45 +1417,107 @@ async function getMainstreamCasesWithSummary(caseDescription, courtLevel, caseTy
 }
 
 /**
- * 使用 AI 分析主流判決模式
+ * 🆕 根據立場生成專業的分析提示詞
  */
-async function analyzeMainstreamPattern(caseDescription, mainStreamCases, mainPattern) {
-    try {
-        console.log(`[analyzeMainstreamPattern] 開始分析主流判決模式`);
-
-        // 準備案例摘要文本
-        const caseSummaries = mainStreamCases.map((case_, index) =>
-            `[${index + 1}] ${case_.title} (${case_.court} ${case_.year}年)\n${case_.summaryAiFull}`
-        ).join('\n\n');
-
-        const prompt = `你是資深法律分析師。請分析以下用戶案件與10個最相似的主流判決案例，歸納出主流判決的共同模式和成功要素。
-
-**用戶案件描述：**
+function getPositionPrompt(position, caseDescription, mainPattern, caseSummaries) {
+    const baseInfo = `**用戶案件描述：**
 ${caseDescription}
 
 **主流判決模式：** ${mainPattern.verdict} (${mainPattern.count}件，${mainPattern.percentage}%)
 
 **前10名最相似的主流判決案例：**
-${caseSummaries}
+${caseSummaries}`;
 
-請進行深度分析並提供以下內容：
-
-1. **勝訴關鍵要素**：分析這些主流判決中導致勝訴的共同因素
-2. **法院重視的證據類型**：識別法院在判決中特別重視的證據種類
-3. **常見論證邏輯**：歸納法院在類似案件中的推理模式
-4. **判決理由共同點**：提取判決書中反覆出現的理由和法律見解
-5. **策略建議**：基於主流模式為用戶案件提供具體建議
-
+    const commonRequirements = `
 **重要要求：**
 - 每個分析點都必須引用具體的判決書，使用格式 [數字]
 - 引用要精準，確保引用的判決書確實支持該論點
 - 分析要深入，不只是表面描述
-- 提供可操作的策略建議
+- 提供可操作的策略建議`;
+
+    switch (position) {
+        case 'plaintiff':
+            return `你是資深原告律師，擁有豐富的訴訟經驗。請從原告方角度分析以下案例，重點關注如何為原告爭取最佳結果。
+
+${baseInfo}
+
+請從原告律師的專業角度進行分析：
+
+1. **原告勝訴關鍵要素**：分析這些案例中原告成功的共同因素和制勝要點
+2. **有效攻擊策略**：原告律師使用的成功攻擊策略和論證模式
+3. **關鍵舉證要點**：原告需要重點準備的證據類型和舉證策略
+4. **常見敗訴陷阱**：原告方應該避免的錯誤和風險點
+5. **可複製的勝訴模式**：適用於用戶案件的具體攻擊策略建議
+
+**分析重點**：如何幫助原告最大化勝訴機會，提供實戰可用的策略指導
+${commonRequirements}
+
+請以JSON格式回應：
+{
+  "summaryText": "原告方主流判決分析摘要...",
+  "plaintiffSuccessFactors": ["原告勝訴要素1 [1][3]", "原告勝訴要素2 [2][5]", ...],
+  "attackStrategies": ["攻擊策略1 [2][5]", "攻擊策略2 [3][7]", ...],
+  "evidenceRequirements": ["舉證要點1 [1][2]", "舉證要點2 [4][6]", ...],
+  "commonPitfalls": ["常見陷阱1 [4][6]", "常見陷阱2 [7][9]", ...],
+  "replicableStrategies": ["可複製策略1 [2][6]", "可複製策略2 [3][8]", ...],
+  "citations": {
+    "1": "判決書標題1 (法院 年份)",
+    "2": "判決書標題2 (法院 年份)",
+    ...
+  }
+}`;
+
+        case 'defendant':
+            return `你是資深被告律師，擁有豐富的抗辯經驗。請從被告方角度分析以下案例，重點關注如何為被告建立有效防禦。
+
+${baseInfo}
+
+請從被告律師的專業角度進行分析：
+
+1. **被告成功防禦要素**：分析這些案例中被告抗辯成功的共同因素和關鍵要點
+2. **有效防禦策略**：被告律師使用的成功防禦策略和抗辯模式
+3. **原告方弱點識別**：原告常見的攻擊漏洞、舉證不足和策略缺陷
+4. **關鍵抗辯要點**：被告需要重點準備的抗辯理由和防禦證據
+5. **可複製的防禦模式**：適用於用戶案件的具體防禦策略建議
+
+**分析重點**：如何幫助被告最大化勝訴或減損機會，提供實戰可用的防禦指導
+${commonRequirements}
+
+請以JSON格式回應：
+{
+  "summaryText": "被告方主流判決分析摘要...",
+  "defenseSuccessFactors": ["防禦成功要素1 [1][3]", "防禦成功要素2 [2][5]", ...],
+  "defenseStrategies": ["防禦策略1 [2][5]", "防禦策略2 [3][7]", ...],
+  "plaintiffWeaknesses": ["原告弱點1 [1][2]", "原告弱點2 [4][6]", ...],
+  "counterargumentPoints": ["抗辯要點1 [4][6]", "抗辯要點2 [7][9]", ...],
+  "replicableDefenses": ["可複製防禦1 [2][6]", "可複製防禦2 [3][8]", ...],
+  "citations": {
+    "1": "判決書標題1 (法院 年份)",
+    "2": "判決書標題2 (法院 年份)",
+    ...
+  }
+}`;
+
+        default: // 'neutral'
+            return `你是資深法律分析師。請客觀分析以下案例的判決模式，提供中性的專業見解。
+
+${baseInfo}
+
+請進行客觀的專業分析：
+
+1. **判決關鍵要素**：分析影響判決結果的主要因素和決定性要點
+2. **法院重視的證據類型**：識別法院在判決中特別重視的證據種類
+3. **常見論證邏輯**：歸納法院在類似案件中的推理模式和判決邏輯
+4. **判決理由共同點**：提取判決書中反覆出現的理由和法律見解
+5. **策略建議**：基於主流模式為用戶案件提供中性的專業建議
+
+**分析重點**：提供客觀、平衡的法律分析，幫助理解判決規律
+${commonRequirements}
 
 請以JSON格式回應：
 {
   "summaryText": "主流判決分析摘要...",
-  "keySuccessFactors": ["要素1 [1][3]", "要素2 [2][5]", ...],
+  "keySuccessFactors": ["關鍵要素1 [1][3]", "關鍵要素2 [2][5]", ...],
   "evidenceTypes": ["證據類型1 [1][2]", "證據類型2 [4][6]", ...],
   "reasoningPatterns": ["推理模式1 [2][7]", "推理模式2 [3][8]", ...],
   "commonReasons": ["共同理由1 [1][4]", "共同理由2 [5][9]", ...],
@@ -1465,6 +1528,68 @@ ${caseSummaries}
     ...
   }
 }`;
+    }
+}
+
+/**
+ * 🆕 準備包含立場分析的案例摘要
+ */
+function prepareEnrichedCaseSummaries(mainStreamCases, position) {
+    return mainStreamCases.map((case_, index) => {
+        let summary = `[${index + 1}] ${case_.title} (${case_.court} ${case_.year}年)\n${case_.summaryAiFull}`;
+
+        // 🆕 如果有立場分析資料，加入相關資訊
+        if (case_.positionAnalysis && position !== 'neutral') {
+            const positionKey = position === 'plaintiff' ? 'plaintiff_perspective' : 'defendant_perspective';
+            const positionData = case_.positionAnalysis[positionKey];
+
+            if (positionData) {
+                summary += `\n\n📊 ${position === 'plaintiff' ? '原告方' : '被告方'}立場分析：`;
+
+                if (positionData.overall_result) {
+                    summary += `\n• 結果評估：${positionData.overall_result}`;
+                }
+
+                if (positionData.case_value) {
+                    summary += `\n• 案例價值：${positionData.case_value}`;
+                }
+
+                if (positionData.replicable_strategies) {
+                    summary += `\n• 可複製策略：${positionData.replicable_strategies}`;
+                }
+
+                if (positionData.key_lessons) {
+                    summary += `\n• 關鍵教訓：${positionData.key_lessons}`;
+                }
+
+                if (position === 'plaintiff' && positionData.successful_elements) {
+                    summary += `\n• 成功要素：${positionData.successful_elements}`;
+                } else if (position === 'defendant' && positionData.successful_elements) {
+                    summary += `\n• 防禦成功要素：${positionData.successful_elements}`;
+                }
+
+                if (positionData.critical_failures) {
+                    summary += `\n• 關鍵失敗點：${positionData.critical_failures}`;
+                }
+            }
+        }
+
+        return summary;
+    }).join('\n\n');
+}
+
+/**
+ * 🆕 使用 AI 分析主流判決模式 - 立場導向版本
+ */
+async function analyzeMainstreamPattern(caseDescription, mainStreamCases, mainPattern, position = 'neutral') {
+    try {
+        console.log(`[analyzeMainstreamPattern] 開始分析主流判決模式，立場: ${position}`);
+
+        // 🆕 準備包含立場分析的案例摘要文本
+        const caseSummaries = prepareEnrichedCaseSummaries(mainStreamCases, position);
+
+        // 🆕 使用立場導向的提示詞
+        const prompt = getPositionPrompt(position, caseDescription, mainPattern, caseSummaries);
 
         const response = await openai.chat.completions.create({
             model: ANALYSIS_MODEL,
@@ -1483,7 +1608,12 @@ ${caseSummaries}
 
         analysisResult.citations = citations;
 
-        console.log(`[analyzeMainstreamPattern] 主流判決分析完成`);
+        // 🆕 添加立場信息到結果中
+        analysisResult.position = position;
+        analysisResult.analysisType = position === 'plaintiff' ? '原告方分析' :
+                                     position === 'defendant' ? '被告方分析' : '中性分析';
+
+        console.log(`[analyzeMainstreamPattern] 主流判決分析完成，立場: ${position}`);
         return analysisResult;
 
     } catch (error) {
@@ -1569,11 +1699,12 @@ async function executeMainstreamAnalysisInBackground(taskId, originalResult, use
             throw new Error('找到的主流判決案例數量不足');
         }
 
-        // 5. 使用 AI 分析主流判決模式
+        // 5. 使用 AI 分析主流判決模式 - 🆕 傳遞立場參數
         const analysisResult = await analyzeMainstreamPattern(
             analysisParams.caseDescription,
             mainStreamCases,
-            mainPattern
+            mainPattern,
+            analysisParams.position || 'neutral' // 🆕 傳遞立場參數
         );
 
         // 6. 更新任務狀態為完成
