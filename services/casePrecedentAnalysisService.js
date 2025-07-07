@@ -313,12 +313,14 @@ function generateStrategicInsights(similarCases, position, verdictAnalysis) {
  * 🆕 根據立場選擇向量欄位和權重策略
  */
 function getPositionBasedSearchStrategy(position) {
+    console.log(`[getPositionBasedSearchStrategy] 🎯 使用立場導向向量欄位進行 ${position} 立場搜尋`);
+
     switch (position) {
         case 'plaintiff':
             return {
-                primaryVectorField: 'plaintiff_combined_vector',
+                primaryVectorField: 'defendant_combined_vector', // 🎯 原告方使用被告向量找對手案例
                 vectorFields: {
-                    'plaintiff_combined_vector': 0.4,      // 最重要：相似的原告經驗
+                    'defendant_combined_vector': 0.4,      // 最重要：相似的原告經驗
                     'replicable_strategies_vector': 0.3,   // 次重要：可用策略
                     'main_reasons_ai_vector': 0.2,         // 輔助：勝負邏輯
                     'text_embedding': 0.1                  // 基礎：一般相似性
@@ -397,7 +399,22 @@ async function performMultiAngleSearch(searchAngles, courtLevel, caseType, thres
                     _source: [
                         'JID', 'JTITLE', 'verdict_type', 'court', 'JYEAR',
                         'main_reasons_ai', // 🆕 勝負關鍵因素分析需要
-                        'position_based_analysis' // 🆕 新增立場分析資料
+                        'position_based_analysis', // 🆕 新增立場分析資料
+                        // 🚨 新增所有立場導向向量欄位和相關資料
+                        'plaintiff_combined_vector',
+                        'defendant_combined_vector',
+                        'replicable_strategies_vector',
+                        'main_reasons_ai_vector',
+                        'text_embedding',
+                        'legal_issues_embedding',
+                        // 🚨 新增立場分析的詳細欄位
+                        'plaintiff_perspective',
+                        'defendant_perspective',
+                        'critical_failures',
+                        'key_lessons',
+                        'risk_warning',
+                        'successful_strategies',
+                        'winning_formula'
                     ],
                     size: 25,
                     timeout: '20s'
@@ -794,8 +811,23 @@ async function searchSimilarCases(caseDescription, courtLevel, caseType, thresho
             knn: knnQuery,
             _source: [
                 'JID', 'JTITLE', 'verdict_type', 'court', 'JYEAR',
-                'main_reasons_ai' // 🆕 勝負關鍵因素分析需要
-                // 移除 summary_ai_full 和 legal_issues 減少數據量
+                'main_reasons_ai', // 🆕 勝負關鍵因素分析需要
+                // 🚨 新增所有立場導向向量欄位和相關資料
+                'position_based_analysis',
+                'plaintiff_combined_vector',
+                'defendant_combined_vector',
+                'replicable_strategies_vector',
+                'main_reasons_ai_vector',
+                'text_embedding',
+                'legal_issues_embedding',
+                // 🚨 新增立場分析的詳細欄位
+                'plaintiff_perspective',
+                'defendant_perspective',
+                'critical_failures',
+                'key_lessons',
+                'risk_warning',
+                'successful_strategies',
+                'winning_formula'
             ],
             size: 50, // 與 k 保持一致
             timeout: '30s' // 設定 ES 查詢超時
@@ -1100,10 +1132,17 @@ async function analyzeKeyFactorsWithFullData(casesWithFullData, position = 'neut
     const loseCases = [];
 
     casesWithFullData.forEach(case_ => {
-        const reasons = case_.judgmentNodeData?.main_reasons_ai || [];
+        // 🚨 修復：使用多重數據源獲取 main_reasons_ai
+        const reasons = case_.judgmentNodeData?.main_reasons_ai || case_.source?.main_reasons_ai || [];
         const verdict = case_.judgmentNodeData?.verdict_type || case_.verdictType || '';
 
         console.log(`[analyzeKeyFactorsWithFullData] 案例 ${case_.id}: verdict=${verdict}, main_reasons_ai=`, reasons);
+        console.log(`[analyzeKeyFactorsWithFullData] 🔍 數據來源檢查:`, {
+            hasJudgmentNodeData: !!case_.judgmentNodeData,
+            hasSource: !!case_.source,
+            judgmentNodeData_main_reasons: case_.judgmentNodeData?.main_reasons_ai,
+            source_main_reasons: case_.source?.main_reasons_ai
+        });
 
         // 根據立場和判決結果分類案例
         let isWinCase = false;
@@ -1674,7 +1713,23 @@ async function getJudgmentNodeData(caseId) {
             _source: [
                 'JID', 'JTITLE', 'court', 'verdict_type',
                 'summary_ai', 'main_reasons_ai',
-                'legal_issues', 'citations'
+                'legal_issues', 'citations',
+                // 🚨 新增所有立場導向向量欄位和相關資料
+                'position_based_analysis',
+                'plaintiff_combined_vector',
+                'defendant_combined_vector',
+                'replicable_strategies_vector',
+                'main_reasons_ai_vector',
+                'text_embedding',
+                'legal_issues_embedding',
+                // 🚨 新增立場分析的詳細欄位
+                'plaintiff_perspective',
+                'defendant_perspective',
+                'critical_failures',
+                'key_lessons',
+                'risk_warning',
+                'successful_strategies',
+                'winning_formula'
             ]
         });
 
@@ -1863,7 +1918,23 @@ async function getMainstreamCasesWithSummary(caseDescription, courtLevel, caseTy
             knn: knnQuery,
             _source: [
                 'JID', 'JTITLE', 'verdict_type', 'court', 'JYEAR', 'summary_ai_full',
-                'position_based_analysis' // 🆕 新增立場分析資料
+                'main_reasons_ai', // 🆕 勝負關鍵因素分析需要
+                'position_based_analysis', // 🆕 新增立場分析資料
+                // 🚨 新增所有立場導向向量欄位和相關資料
+                'plaintiff_combined_vector',
+                'defendant_combined_vector',
+                'replicable_strategies_vector',
+                'main_reasons_ai_vector',
+                'text_embedding',
+                'legal_issues_embedding',
+                // 🚨 新增立場分析的詳細欄位
+                'plaintiff_perspective',
+                'defendant_perspective',
+                'critical_failures',
+                'key_lessons',
+                'risk_warning',
+                'successful_strategies',
+                'winning_formula'
             ],
             size: 50,
             timeout: '30s'
