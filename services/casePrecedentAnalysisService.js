@@ -852,7 +852,7 @@ async function searchSimilarCases(caseDescription, courtLevel, caseType, thresho
 /**
  * 🆕 分析勝負關鍵因素排名
  */
-function analyzeKeyFactors(cases, position = 'neutral') {
+async function analyzeKeyFactors(cases, position = 'neutral') {
     console.log(`[casePrecedentAnalysisService] 開始分析勝負關鍵因素，立場: ${position}，案例數: ${cases.length}`);
 
     if (cases.length === 0) {
@@ -890,8 +890,38 @@ function analyzeKeyFactors(cases, position = 'neutral') {
 
     console.log(`[analyzeKeyFactors] 🔍 檢查結果: ${realDataCount}/${cases.length} 個案例有有效的 main_reasons_ai 數據`);
 
+    // 🔧 如果沒有完整數據，嘗試獲取完整的判決數據
     if (!hasRealData) {
-        console.log(`[casePrecedentAnalysisService] 🧪 沒有找到 main_reasons_ai 數據，返回測試數據`);
+        console.log(`[analyzeKeyFactors] 🔄 沒有找到 main_reasons_ai 數據，嘗試獲取完整判決數據...`);
+
+        // 獲取前10個案例的完整數據進行分析（避免過多API調用）
+        const sampleCases = cases.slice(0, 10);
+        const casesWithFullData = [];
+
+        for (const case_ of sampleCases) {
+            try {
+                const fullData = await getJudgmentNodeData(case_.id);
+                if (fullData && fullData.main_reasons_ai && Array.isArray(fullData.main_reasons_ai) && fullData.main_reasons_ai.length > 0) {
+                    casesWithFullData.push({
+                        ...case_,
+                        judgmentNodeData: fullData
+                    });
+                }
+            } catch (error) {
+                console.log(`[analyzeKeyFactors] 獲取案例 ${case_.id} 完整數據失敗:`, error.message);
+            }
+        }
+
+        console.log(`[analyzeKeyFactors] 🔄 獲取完整數據結果: ${casesWithFullData.length}/${sampleCases.length} 個案例有 main_reasons_ai 數據`);
+
+        if (casesWithFullData.length > 0) {
+            // 使用獲取到的完整數據重新分析
+            return await analyzeKeyFactorsWithFullData(casesWithFullData, position);
+        }
+    }
+
+    if (!hasRealData) {
+        console.log(`[casePrecedentAnalysisService] 🧪 仍然沒有找到 main_reasons_ai 數據，返回測試數據`);
         return {
             winFactors: [
                 { factor: '證據充分', count: 15, percentage: 75, type: 'win', description: '75% 的勝訴案例具備此要素' },
@@ -1065,6 +1095,114 @@ function analyzeVerdictDistribution(cases) {
 }
 
 /**
+ * 🆕 使用完整數據分析勝負關鍵因素
+ */
+async function analyzeKeyFactorsWithFullData(casesWithFullData, position = 'neutral') {
+    console.log(`[analyzeKeyFactorsWithFullData] 開始分析 ${casesWithFullData.length} 個有完整數據的案例，立場: ${position}`);
+
+    // 收集所有 main_reasons_ai 數據
+    const allReasons = [];
+    const winCases = [];
+    const loseCases = [];
+
+    casesWithFullData.forEach(case_ => {
+        const reasons = case_.judgmentNodeData?.main_reasons_ai || [];
+        const verdict = case_.judgmentNodeData?.verdict_type || case_.verdictType || '';
+
+        console.log(`[analyzeKeyFactorsWithFullData] 案例 ${case_.id}: verdict=${verdict}, main_reasons_ai=`, reasons);
+
+        // 根據立場和判決結果分類案例
+        let isWinCase = false;
+        let isLoseCase = false;
+
+        if (position === 'plaintiff') {
+            // 原告視角：原告勝訴 = 勝利，原告敗訴 = 失敗
+            isWinCase = verdict.includes('原告勝訴') || (verdict.includes('勝訴') && !verdict.includes('敗訴'));
+            isLoseCase = verdict.includes('原告敗訴') || verdict.includes('敗訴') || verdict.includes('駁回');
+        } else if (position === 'defendant') {
+            // 被告視角：原告敗訴 = 勝利，原告勝訴 = 失敗
+            isWinCase = verdict.includes('原告敗訴') || verdict.includes('敗訴') || verdict.includes('駁回');
+            isLoseCase = verdict.includes('原告勝訴') || (verdict.includes('勝訴') && !verdict.includes('敗訴'));
+        } else {
+            // 中性分析：部分勝訴視為成功，完全敗訴視為失敗
+            isWinCase = verdict.includes('勝訴') && !verdict.includes('敗訴');
+            isLoseCase = verdict.includes('敗訴') || verdict.includes('駁回');
+        }
+
+        const reasonArray = Array.isArray(reasons) ? reasons : (reasons ? [reasons] : []);
+        reasonArray.forEach(reason => {
+            if (reason && reason.trim()) {
+                allReasons.push({
+                    reason: reason.trim(),
+                    isWin: isWinCase,
+                    isLose: isLoseCase,
+                    verdict: verdict,
+                    caseId: case_.id
+                });
+
+                if (isWinCase) {
+                    winCases.push({ caseId: case_.id, reason: reason.trim(), verdict });
+                }
+                if (isLoseCase) {
+                    loseCases.push({ caseId: case_.id, reason: reason.trim(), verdict });
+                }
+            }
+        });
+    });
+
+    console.log(`[analyzeKeyFactorsWithFullData] 收集到 ${allReasons.length} 個理由，勝訴案例: ${winCases.length}，敗訴案例: ${loseCases.length}`);
+
+    // 統計勝訴關鍵因素
+    const winFactorCounts = {};
+    winCases.forEach(item => {
+        winFactorCounts[item.reason] = (winFactorCounts[item.reason] || 0) + 1;
+    });
+
+    // 統計敗訴風險因素
+    const loseFactorCounts = {};
+    loseCases.forEach(item => {
+        loseFactorCounts[item.reason] = (loseFactorCounts[item.reason] || 0) + 1;
+    });
+
+    // 轉換為排序後的數組
+    const winFactors = Object.entries(winFactorCounts)
+        .map(([factor, count]) => ({
+            factor,
+            count,
+            percentage: Math.round((count / winCases.length) * 100),
+            type: 'win',
+            description: `${Math.round((count / winCases.length) * 100)}% 的勝訴案例具備此要素`
+        }))
+        .sort((a, b) => b.count - a.count);
+
+    const loseFactors = Object.entries(loseFactorCounts)
+        .map(([factor, count]) => ({
+            factor,
+            count,
+            percentage: Math.round((count / loseCases.length) * 100),
+            type: 'lose',
+            description: `${Math.round((count / loseCases.length) * 100)}% 的敗訴案例存在此問題`
+        }))
+        .sort((a, b) => b.count - a.count);
+
+    const result = {
+        winFactors: winFactors.slice(0, 5), // 取前5個
+        loseFactors: loseFactors.slice(0, 5), // 取前5個
+        factorAnalysis: {
+            totalCases: casesWithFullData.length,
+            winCases: winCases.length,
+            loseCases: loseCases.length,
+            position: position,
+            winRate: winCases.length > 0 ? Math.round((winCases.length / (winCases.length + loseCases.length)) * 100) : 0,
+            dataSource: 'real_data'
+        }
+    };
+
+    console.log(`[analyzeKeyFactorsWithFullData] 分析完成，勝訴因素: ${result.winFactors.length} 個，敗訴因素: ${result.loseFactors.length} 個`);
+    return result;
+}
+
+/**
  * 使用 AI 分析異常案例的關鍵差異
  */
 async function analyzeAnomalies(mainCases, anomalyCases, caseDescription) {
@@ -1185,7 +1323,7 @@ async function executeAnalysisInBackground(taskId, analysisData, userId) {
         let keyFactorsAnalysis = null;
         try {
             console.log(`[casePrecedentAnalysisService] 🎯 開始勝負因素分析，立場: ${analysisData.position || 'neutral'}`);
-            keyFactorsAnalysis = analyzeKeyFactors(similarCases, analysisData.position || 'neutral');
+            keyFactorsAnalysis = await analyzeKeyFactors(similarCases, analysisData.position || 'neutral');
             console.log(`[casePrecedentAnalysisService] 勝負因素分析完成，勝訴因素: ${keyFactorsAnalysis.winFactors.length} 個，敗訴因素: ${keyFactorsAnalysis.loseFactors.length} 個`);
             console.log(`[casePrecedentAnalysisService] 🧪 勝訴因素詳情:`, keyFactorsAnalysis.winFactors);
             console.log(`[casePrecedentAnalysisService] 🧪 敗訴因素詳情:`, keyFactorsAnalysis.loseFactors);
