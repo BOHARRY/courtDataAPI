@@ -1191,9 +1191,47 @@ async function analyzeKeyFactorsWithFullData(casesWithFullData, position = 'neut
         }))
         .sort((a, b) => b.count - a.count);
 
+    // 🆕 計算原始關鍵字統計（未合併）
+    const originalWinFactorCounts = {};
+    winCases.forEach(item => {
+        originalWinFactorCounts[item.reason] = (originalWinFactorCounts[item.reason] || 0) + 1;
+    });
+
+    const originalLoseFactorCounts = {};
+    loseCases.forEach(item => {
+        originalLoseFactorCounts[item.reason] = (originalLoseFactorCounts[item.reason] || 0) + 1;
+    });
+
+    // 轉換為排序後的原始關鍵字數組
+    const originalWinFactors = Object.entries(originalWinFactorCounts)
+        .map(([factor, count]) => ({
+            factor,
+            count,
+            percentage: Math.round((count / winCases.length) * 100),
+            type: 'win',
+            description: `${count} 個案例提及此要素`
+        }))
+        .sort((a, b) => b.count - a.count);
+
+    const originalLoseFactors = Object.entries(originalLoseFactorCounts)
+        .map(([factor, count]) => ({
+            factor,
+            count,
+            percentage: Math.round((count / loseCases.length) * 100),
+            type: 'lose',
+            description: `${count} 個案例存在此問題`
+        }))
+        .sort((a, b) => b.count - a.count);
+
     const result = {
-        winFactors: winFactors.slice(0, 5), // 取前5個
-        loseFactors: loseFactors.slice(0, 5), // 取前5個
+        // 🆕 統整後的排名（AI合併）
+        winFactors: winFactors.slice(0, 5),
+        loseFactors: loseFactors.slice(0, 5),
+
+        // 🆕 原始關鍵字列表
+        originalWinFactors: originalWinFactors.slice(0, 10), // 顯示更多原始關鍵字
+        originalLoseFactors: originalLoseFactors.slice(0, 10),
+
         factorAnalysis: {
             totalCases: casesWithFullData.length,
             winCases: winCases.length,
