@@ -1348,32 +1348,42 @@ function createTestAnomalyDetails(anomalies) {
 }
 
 /**
- * 獲取主流判決案例的詳細數據（包含 summary_ai_full）
+ * 🆕 獲取主流判決案例的詳細數據（包含 summary_ai_full）- 使用立場導向搜索
  */
-async function getMainstreamCasesWithSummary(caseDescription, courtLevel, caseType, threshold, mainVerdictType) {
+async function getMainstreamCasesWithSummary(caseDescription, courtLevel, caseType, threshold, mainVerdictType, position = 'neutral') {
     try {
-        console.log(`[getMainstreamCasesWithSummary] 開始獲取主流判決案例: ${mainVerdictType}`);
+        console.log(`[getMainstreamCasesWithSummary] 開始獲取主流判決案例: ${mainVerdictType}，立場: ${position}`);
 
-        // 1. 重新執行向量搜索，但這次要獲取 summary_ai_full
+        // 🆕 1. 使用與初始搜索相同的立場導向策略
         const queryVector = await generateEmbedding(caseDescription);
         const minScore = getThresholdValue(threshold);
+        const searchStrategy = getPositionBasedSearchStrategy(position);
 
         const knnQuery = {
-            field: "text_embedding",
+            field: searchStrategy.primaryVectorField,
             query_vector: queryVector,
             k: 50,
             num_candidates: 100
         };
 
-        const response = await esClient.search({
+        // 🆕 構建包含立場過濾的查詢
+        const searchQuery = {
             index: ES_INDEX_NAME,
             knn: knnQuery,
             _source: [
-                'JID', 'JTITLE', 'verdict_type', 'court', 'JYEAR', 'summary_ai_full'
+                'JID', 'JTITLE', 'verdict_type', 'court', 'JYEAR', 'summary_ai_full',
+                'position_based_analysis' // 🆕 新增立場分析資料
             ],
             size: 50,
             timeout: '30s'
-        });
+        };
+
+        // 🆕 如果有立場過濾條件，添加到查詢中
+        if (searchStrategy.filterQuery) {
+            searchQuery.query = searchStrategy.filterQuery;
+        }
+
+        const response = await esClient.search(searchQuery);
 
         const hits = response.hits?.hits || [];
 
@@ -1545,13 +1555,14 @@ async function executeMainstreamAnalysisInBackground(taskId, originalResult, use
             throw new Error('主流判決案例數量不足，無法進行分析');
         }
 
-        // 4. 獲取主流判決案例的詳細數據
+        // 🆕 4. 獲取主流判決案例的詳細數據（使用立場導向搜索）
         const mainStreamCases = await getMainstreamCasesWithSummary(
             analysisParams.caseDescription,
             analysisParams.courtLevel,
             analysisParams.caseType,
             analysisParams.threshold,
-            mainPattern.verdict
+            mainPattern.verdict,
+            analysisParams.position || 'neutral' // 🆕 傳遞立場參數
         );
 
         if (mainStreamCases.length < 5) {
