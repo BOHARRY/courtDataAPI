@@ -1812,7 +1812,7 @@ ${smartRecommendations.nextSteps.map(step => `• ${step}`).join('\n')}`;
                 })),
                 analysisParams: analysisData,
 
-                // 🚨 新增：完整的案例池（用於後續分析）
+                // 🚨 新增：精簡的案例池（避免 Firestore 大小限制）
                 casePool: {
                     allCases: similarCases.map(case_ => ({
                         id: case_.id,
@@ -1821,9 +1821,18 @@ ${smartRecommendations.nextSteps.map(step => `• ${step}`).join('\n')}`;
                         court: case_.court,
                         year: case_.year,
                         similarity: case_.similarity,
-                        source: case_.source,
-                        positionAnalysis: case_.positionAnalysis,
-                        multiAngleData: case_.multiAngleData
+                        // 🚨 移除大型 source 數據，只保留引用信息
+                        hasFullData: !!case_.source,
+                        positionAnalysis: case_.positionAnalysis ? {
+                            // 只保留關鍵字段，移除大型陣列
+                            verdict: case_.positionAnalysis.verdict,
+                            position: case_.positionAnalysis.position
+                        } : null,
+                        multiAngleData: case_.multiAngleData ? {
+                            isIntersection: case_.multiAngleData.isIntersection,
+                            appearances: case_.multiAngleData.appearances,
+                            sourceAngles: case_.multiAngleData.sourceAngles
+                        } : null
                     })),
                     caseIds: similarCases.map(c => c.id),
                     mainPattern: {
@@ -1990,14 +1999,12 @@ async function generateAnomalyDetailsFromPool(anomalies, casePool) {
                 anomalyCases.slice(0, 5).map(async (case_, index) => {
                     console.log(`[generateAnomalyDetailsFromPool] 正在處理案例 ${case_.id}`);
 
-                    // 如果案例池中已有完整數據，直接使用
+                    // 🚨 修復：從 ES 獲取完整數據（因為案例池已精簡）
                     let judgmentData = null;
-                    if (!case_.source?.summary_ai && !case_.source?.legal_issues) {
-                        try {
-                            judgmentData = await getJudgmentNodeData(case_.id);
-                        } catch (error) {
-                            console.warn(`[generateAnomalyDetailsFromPool] 無法獲取案例 ${case_.id} 的完整數據:`, error.message);
-                        }
+                    try {
+                        judgmentData = await getJudgmentNodeData(case_.id);
+                    } catch (error) {
+                        console.warn(`[generateAnomalyDetailsFromPool] 無法獲取案例 ${case_.id} 的完整數據:`, error.message);
                     }
 
                     return {
@@ -2007,15 +2014,23 @@ async function generateAnomalyDetailsFromPool(anomalies, casePool) {
                         year: case_.year || '未知年份',
                         similarity: case_.similarity || 0,
                         summary: `${case_.court || '未知法院'} ${case_.year || '未知年份'}年判決，判決結果：${case_.verdictType}`,
-                        judgmentNodeData: judgmentData || {
+                        // 🚨 精簡判決數據，避免大型陣列
+                        judgmentSummary: judgmentData ? {
+                            JID: judgmentData.JID || case_.id,
+                            JTITLE: judgmentData.JTITLE || case_.title,
+                            court: judgmentData.court || case_.court,
+                            verdict_type: judgmentData.verdict_type || case_.verdictType,
+                            summary: Array.isArray(judgmentData.summary_ai) ?
+                                    judgmentData.summary_ai.join(' ') :
+                                    (judgmentData.summary_ai || '案例摘要暫無'),
+                            hasFullData: true
+                        } : {
                             JID: case_.id,
                             JTITLE: case_.title,
                             court: case_.court,
                             verdict_type: case_.verdictType,
-                            summary_ai: case_.source?.summary_ai || [],
-                            main_reasons_ai: case_.source?.main_reasons_ai || [],
-                            legal_issues: case_.source?.legal_issues || [],
-                            citations: case_.source?.citations || []
+                            summary: `${case_.title} - ${case_.court} ${case_.year}年判決`,
+                            hasFullData: false
                         },
                         keyDifferences: [
                             "與主流案例在事實認定上存在差異",
@@ -2204,8 +2219,9 @@ async function getMainstreamCasesFromPool(casePool, mainVerdictType) {
         for (let i = 0; i < Math.min(mainCases.length, 10); i++) {
             const case_ = mainCases[i];
 
-            // 如果案例已有完整數據，直接使用
-            if (case_.source?.summary_ai_full) {
+            // 🚨 修復：從 ES 獲取完整數據（因為案例池已精簡）
+            try {
+                const judgmentData = await getJudgmentNodeData(case_.id);
                 mainStreamCases.push({
                     id: case_.id,
                     title: case_.title,
@@ -2213,28 +2229,27 @@ async function getMainstreamCasesFromPool(casePool, mainVerdictType) {
                     year: case_.year,
                     verdictType: case_.verdictType,
                     similarity: case_.similarity,
-                    summaryAiFull: case_.source.summary_ai_full,
+                    summaryAiFull: judgmentData.summary_ai_full ||
+                                  (Array.isArray(judgmentData.summary_ai) ?
+                                   judgmentData.summary_ai.join(' ') :
+                                   judgmentData.summary_ai || ''),
                     positionAnalysis: case_.positionAnalysis,
                     citationIndex: i + 1
                 });
-            } else {
-                // 如果沒有完整數據，從 ES 獲取
-                try {
-                    const judgmentData = await getJudgmentNodeData(case_.id);
-                    mainStreamCases.push({
-                        id: case_.id,
-                        title: case_.title,
-                        court: case_.court,
-                        year: case_.year,
-                        verdictType: case_.verdictType,
-                        similarity: case_.similarity,
-                        summaryAiFull: judgmentData.summary_ai_full || judgmentData.summary_ai?.join(' ') || '',
-                        positionAnalysis: case_.positionAnalysis,
-                        citationIndex: i + 1
-                    });
-                } catch (error) {
-                    console.warn(`[getMainstreamCasesFromPool] 無法獲取案例 ${case_.id} 的完整數據:`, error.message);
-                }
+            } catch (error) {
+                console.warn(`[getMainstreamCasesFromPool] 無法獲取案例 ${case_.id} 的完整數據:`, error.message);
+                // 即使獲取失敗，也添加基本信息
+                mainStreamCases.push({
+                    id: case_.id,
+                    title: case_.title,
+                    court: case_.court,
+                    year: case_.year,
+                    verdictType: case_.verdictType,
+                    similarity: case_.similarity,
+                    summaryAiFull: `${case_.title} - ${case_.court} ${case_.year}年判決`,
+                    positionAnalysis: case_.positionAnalysis,
+                    citationIndex: i + 1
+                });
             }
         }
 
