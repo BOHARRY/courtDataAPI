@@ -2,6 +2,7 @@
 import admin from 'firebase-admin';
 import OpenAI from 'openai';
 import { OPENAI_API_KEY } from '../config/environment.js';
+import { getJudgmentNodeData } from './judgmentService.js';
 
 // 初始化 OpenAI 客戶端
 const openai = new OpenAI({
@@ -109,18 +110,45 @@ function extractCitationContext(citation, JFULL, CourtInsightsStart, CourtInsigh
 
 /**
  * 從案例池中提取所有援引判例並進行統計分析
+ * 注意：案例池中的數據可能已精簡，需要從 ES 獲取完整數據
  */
-function extractCitationsFromCases(cases) {
+async function extractCitationsFromCases(cases) {
     console.log(`[extractCitationsFromCases] 開始分析 ${cases.length} 個案例的援引判例`);
-    
+
     const citationMap = new Map();
     let totalCitationsFound = 0;
     let casesWithCitations = 0;
 
-    cases.forEach((case_, caseIndex) => {
+    // 批量從 ES 獲取完整數據
+    const casesWithFullData = await Promise.all(
+        cases.map(async (case_) => {
+            try {
+                // 如果案例池中沒有完整數據，從 ES 獲取
+                if (!case_.source?.citations || !case_.source?.JFULL) {
+                    const fullData = await getJudgmentNodeData(case_.id);
+                    return {
+                        ...case_,
+                        source: {
+                            ...case_.source,
+                            citations: fullData.citations || [],
+                            JFULL: fullData.JFULL || '',
+                            CourtInsightsStart: fullData.CourtInsightsStart || '',
+                            CourtInsightsEND: fullData.CourtInsightsEND || ''
+                        }
+                    };
+                }
+                return case_;
+            } catch (error) {
+                console.error(`[extractCitationsFromCases] 獲取案例 ${case_.id} 完整數據失敗:`, error);
+                return case_; // 返回原始數據
+            }
+        })
+    );
+
+    casesWithFullData.forEach((case_, caseIndex) => {
         // 檢查案例是否有 citations 數據
         const citations = case_.source?.citations || [];
-        
+
         if (citations.length === 0) {
             return; // 跳過沒有援引的案例
         }
@@ -279,8 +307,8 @@ async function analyzeCitationsFromCasePool(casePool, position, caseDescription)
             throw new Error('案例池為空或無效');
         }
 
-        // 1. 提取所有援引判例
-        const citationStats = extractCitationsFromCases(casePool.allCases);
+        // 1. 提取所有援引判例（異步獲取完整數據）
+        const citationStats = await extractCitationsFromCases(casePool.allCases);
 
         if (citationStats.length === 0) {
             return {
@@ -488,7 +516,11 @@ async function startCitationAnalysis(originalTaskId, userId) {
         throw error;
     }
 
-    if (!originalTaskData.result?.casePool) {
+    // 檢查案例池數據的路徑（可能在 result.casePool 或 result.casePrecedentData.casePool）
+    const casePool = originalTaskData.result?.casePool || originalTaskData.result?.casePrecedentData?.casePool;
+
+    if (!casePool) {
+        console.log('[startCitationAnalysis] 原始任務結果結構:', JSON.stringify(originalTaskData.result, null, 2));
         const error = new Error('原始分析結果中缺少案例池數據');
         error.statusCode = 400;
         throw error;
@@ -532,9 +564,16 @@ async function executeCitationAnalysisInBackground(taskId, originalTaskData, use
             processingStartedAt: admin.firestore.FieldValue.serverTimestamp()
         });
 
+        // 獲取案例池數據（檢查兩個可能的路徑）
+        const casePool = originalTaskData.result?.casePool || originalTaskData.result?.casePrecedentData?.casePool;
+
+        if (!casePool) {
+            throw new Error('無法找到案例池數據');
+        }
+
         // 執行援引分析
         const analysisResult = await analyzeCitationsFromCasePool(
-            originalTaskData.result.casePool,
+            casePool,
             originalTaskData.analysisData.position || 'neutral',
             originalTaskData.analysisData.caseDescription
         );
