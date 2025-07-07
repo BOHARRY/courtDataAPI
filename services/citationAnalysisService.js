@@ -1,6 +1,6 @@
 // services/citationAnalysisService.js
 import admin from 'firebase-admin';
-import { OpenAI } from 'openai';
+import OpenAI from 'openai';
 import { OPENAI_API_KEY } from '../config/environment.js';
 
 // 初始化 OpenAI 客戶端
@@ -461,7 +461,7 @@ async function generateCitationRecommendations(valuableCitations, position, case
 /**
  * 啟動援引判例分析任務（入口函數）
  */
-export async function startCitationAnalysis(originalTaskId, userId) {
+async function startCitationAnalysis(originalTaskId, userId) {
     if (!originalTaskId || !originalTaskId.trim()) {
         const error = new Error('原始分析任務ID為必填欄位');
         error.statusCode = 400;
