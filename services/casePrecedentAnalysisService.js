@@ -848,7 +848,7 @@ function generateSmartRecommendations(similarCases, coverageStats, verdictAnalys
                 recommendations.nextSteps.push('主流判決結果有利，建議參考成功案例的論證策略');
                 recommendations.nextSteps.push('重點分析勝訴案例的證據組織和法律適用方式');
             } else {
-                recommendations.nextSteps.push('主流判決傾向不利，建議尋找異常成功案例的突破點');
+                recommendations.nextSteps.push('主流判決結果不利，建議尋找異常成功案例的突破點');
                 recommendations.riskWarnings.push('需要特別注意常見的敗訴原因並提前準備應對策略');
             }
         } else if (mainPercentage >= 50) {
@@ -1615,7 +1615,7 @@ async function executeAnalysisInBackground(taskId, analysisData, userId) {
 
     try {
         logMemoryUsage('Start-Analysis');
-        console.log(`[casePrecedentAnalysisService] 🆕 開始執行多角度案例判決傾向分析，任務ID: ${taskId}`);
+        console.log(`[casePrecedentAnalysisService] 🆕 開始執行多角度案件有利判決分析，任務ID: ${taskId}`);
 
         // 🆕 1. AI事由補足與分析
         const enrichment = await enrichCaseDescription(analysisData.caseDescription);
@@ -2564,7 +2564,7 @@ async function analyzeMainstreamPattern(caseDescription, mainStreamCases, mainPa
 
 /**
  * 歸納主流判決分析
- * @param {string} taskId - 原始案例判決傾向分析的任務ID
+ * @param {string} taskId - 原始案件有利判決分析的任務ID
  * @param {string} userId - 用戶ID
  * @returns {Promise<{taskId: string}>} 新的分析任務ID
  */
