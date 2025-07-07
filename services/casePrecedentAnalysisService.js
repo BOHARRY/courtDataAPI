@@ -318,23 +318,56 @@ function getPositionBasedSearchStrategy(position) {
     switch (position) {
         case 'plaintiff':
             return {
-                primaryVectorField: 'text_embedding', // 🚨 暫時使用可靠的通用向量
+                primaryVectorField: 'text_embedding', // 主要向量欄位
                 vectorFields: {
-                    'text_embedding': 0.7,                 // 主要：一般相似性（最可靠）
+                    'text_embedding': 0.7,                 // 主要：一般相似性
                     'legal_issues_embedding': 0.3          // 輔助：法律爭點
-                    // 🚨 暫時移除可能有問題的立場向量欄位
                 },
-                filterQuery: null // 🚨 暫時移除立場過濾，避免過度限制
+                // 🎯 新增：律師導向的高價值案例過濾
+                filterQuery: {
+                    bool: {
+                        should: [
+                            // 1. 尋找對原告有利的判例
+                            { term: { 'position_based_analysis.citizen_perspective.case_value': 'positive_precedent' } },
+                            { term: { 'position_based_analysis.citizen_perspective.overall_result': 'major_victory' } },
+                            { term: { 'position_based_analysis.citizen_perspective.overall_result': 'partial_success' } },
+
+                            // 2. 尋找高複製性的策略
+                            { term: { 'position_based_analysis.replication_potential': 'high' } },
+
+                            // 3. 尋找有成功要素的案例
+                            { exists: { field: 'position_based_analysis.citizen_perspective.successful_elements' } }
+                        ],
+                        minimum_should_match: 1
+                    }
+                }
             };
         case 'defendant':
             return {
-                primaryVectorField: 'text_embedding', // 🚨 暫時使用可靠的通用向量
+                primaryVectorField: 'text_embedding', // 主要向量欄位
                 vectorFields: {
-                    'text_embedding': 0.7,                 // 主要：一般相似性（最可靠）
+                    'text_embedding': 0.7,                 // 主要：一般相似性
                     'legal_issues_embedding': 0.3          // 輔助：法律爭點
-                    // 🚨 暫時移除可能有問題的立場向量欄位
                 },
-                filterQuery: null // 🚨 暫時移除立場過濾，避免過度限制
+                // 🎯 新增：律師導向的高價值案例過濾（被告視角）
+                filterQuery: {
+                    bool: {
+                        should: [
+                            // 1. 尋找對被告有利的判例
+                            { term: { 'position_based_analysis.agency_perspective.case_value': 'model_defense' } },
+                            { term: { 'position_based_analysis.agency_perspective.overall_result': 'major_victory' } },
+                            { term: { 'position_based_analysis.agency_perspective.overall_result': 'partial_success' } },
+
+                            // 2. 尋找高複製性的防禦策略
+                            { term: { 'position_based_analysis.replication_potential': 'high' } },
+
+                            // 3. 尋找有成功策略的案例
+                            { exists: { field: 'position_based_analysis.agency_perspective.successful_strategies' } },
+                            { exists: { field: 'position_based_analysis.agency_perspective.winning_formula' } }
+                        ],
+                        minimum_should_match: 1
+                    }
+                }
             };
         default: // 'neutral'
             return {
@@ -1012,23 +1045,11 @@ async function analyzeKeyFactors(cases, position = 'neutral') {
         console.log(`[analyzeKeyFactors] 案例 ${case_.id}: verdict=${verdict}, main_reasons_ai=`, reasons);
         console.log(`[analyzeKeyFactors] 🔍 數據路徑檢查: judgmentNodeData=`, !!case_.judgmentNodeData, 'source=', !!case_.source);
 
-        // 根據立場和判決結果分類案例
-        let isWinCase = false;
-        let isLoseCase = false;
-
-        if (position === 'plaintiff') {
-            // 原告視角：原告勝訴 = 勝利，原告敗訴 = 失敗
-            isWinCase = verdict.includes('原告勝訴') || (verdict.includes('勝訴') && !verdict.includes('敗訴'));
-            isLoseCase = verdict.includes('原告敗訴') || verdict.includes('敗訴') || verdict.includes('駁回');
-        } else if (position === 'defendant') {
-            // 被告視角：原告敗訴 = 勝利，原告勝訴 = 失敗
-            isWinCase = verdict.includes('原告敗訴') || verdict.includes('敗訴') || verdict.includes('駁回');
-            isLoseCase = verdict.includes('原告勝訴') || (verdict.includes('勝訴') && !verdict.includes('敗訴'));
-        } else {
-            // 中性分析：部分勝訴視為成功，完全敗訴視為失敗
-            isWinCase = verdict.includes('勝訴') && !verdict.includes('敗訴');
-            isLoseCase = verdict.includes('敗訴') || verdict.includes('駁回');
-        }
+        // 🚨 改進：使用精細化的勝負分類邏輯
+        const verdictAnalysis = analyzeVerdictOutcome(verdict, position);
+        const isWinCase = verdictAnalysis.isWin;
+        const isLoseCase = verdictAnalysis.isLose;
+        const isPartialCase = verdictAnalysis.isPartial;
 
         const reasonArray = Array.isArray(reasons) ? reasons : (reasons ? [reasons] : []);
         reasonArray.forEach(reason => {
@@ -1172,23 +1193,11 @@ async function analyzeKeyFactorsWithFullData(casesWithFullData, position = 'neut
             source_main_reasons: case_.source?.main_reasons_ai
         });
 
-        // 根據立場和判決結果分類案例
-        let isWinCase = false;
-        let isLoseCase = false;
-
-        if (position === 'plaintiff') {
-            // 原告視角：原告勝訴 = 勝利，原告敗訴 = 失敗
-            isWinCase = verdict.includes('原告勝訴') || (verdict.includes('勝訴') && !verdict.includes('敗訴'));
-            isLoseCase = verdict.includes('原告敗訴') || verdict.includes('敗訴') || verdict.includes('駁回');
-        } else if (position === 'defendant') {
-            // 被告視角：原告敗訴 = 勝利，原告勝訴 = 失敗
-            isWinCase = verdict.includes('原告敗訴') || verdict.includes('敗訴') || verdict.includes('駁回');
-            isLoseCase = verdict.includes('原告勝訴') || (verdict.includes('勝訴') && !verdict.includes('敗訴'));
-        } else {
-            // 中性分析：部分勝訴視為成功，完全敗訴視為失敗
-            isWinCase = verdict.includes('勝訴') && !verdict.includes('敗訴');
-            isLoseCase = verdict.includes('敗訴') || verdict.includes('駁回');
-        }
+        // 🚨 改進：使用精細化的勝負分類邏輯
+        const verdictAnalysis = analyzeVerdictOutcome(verdict, position);
+        const isWinCase = verdictAnalysis.isWin;
+        const isLoseCase = verdictAnalysis.isLose;
+        const isPartialCase = verdictAnalysis.isPartial;
 
         const reasonArray = Array.isArray(reasons) ? reasons : (reasons ? [reasons] : []);
         reasonArray.forEach(reason => {
@@ -1319,6 +1328,71 @@ async function analyzeKeyFactorsWithFullData(casesWithFullData, position = 'neut
     };
 
     console.log(`[analyzeKeyFactorsWithFullData] 分析完成，勝訴因素: ${result.winFactors.length} 個，敗訴因素: ${result.loseFactors.length} 個`);
+    return result;
+}
+
+/**
+ * 🆕 精細化判決結果分析 - 善用結構化 verdict_type
+ */
+function analyzeVerdictOutcome(verdict, position) {
+    // 🎯 基於結構化的 verdict_type 進行精確分類
+    const result = {
+        isWin: false,
+        isLose: false,
+        isPartial: false,
+        winRate: 0, // 勝訴程度 0-100%
+        category: 'unknown'
+    };
+
+    // 🔍 民事案件的精細分類
+    if (verdict === '原告勝訴') {
+        result.category = 'full_win';
+        result.winRate = 100;
+        if (position === 'plaintiff') {
+            result.isWin = true;
+        } else if (position === 'defendant') {
+            result.isLose = true;
+        }
+    } else if (verdict === '原告敗訴') {
+        result.category = 'full_lose';
+        result.winRate = 0;
+        if (position === 'plaintiff') {
+            result.isLose = true;
+        } else if (position === 'defendant') {
+            result.isWin = true;
+        }
+    } else if (verdict === '部分勝訴部分敗訴') {
+        // 🎯 最有參考價值的判決類型！
+        result.category = 'partial_win';
+        result.isPartial = true;
+        result.winRate = 50; // 可以後續根據具體內容調整
+
+        // 部分勝訴對雙方都有參考價值
+        if (position === 'plaintiff') {
+            result.isWin = true; // 原告視角：部分勝訴仍算成功
+        } else if (position === 'defendant') {
+            result.isWin = true; // 被告視角：避免完全敗訴也算成功
+        }
+    } else if (verdict === '上訴駁回') {
+        // 需要根據上訴方判斷
+        result.category = 'appeal_rejected';
+        result.winRate = 0; // 上訴方敗訴
+        // 這裡可以根據具體情況進一步分析
+        result.isLose = true;
+    } else if (verdict === '和解成立') {
+        result.category = 'settlement';
+        result.isPartial = true;
+        result.winRate = 50; // 和解通常是雙方妥協
+    } else if (verdict.includes('駁回')) {
+        result.category = 'rejected';
+        result.winRate = 0;
+        if (position === 'plaintiff') {
+            result.isLose = true;
+        } else if (position === 'defendant') {
+            result.isWin = true;
+        }
+    }
+
     return result;
 }
 
