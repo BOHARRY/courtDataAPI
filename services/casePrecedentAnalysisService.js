@@ -1795,24 +1795,46 @@ ${smartRecommendations.nextSteps.map(step => `• ${step}`).join('\n')}`;
                 // 🆕 勝負關鍵因素排名分析
                 keyFactorsAnalysis: keyFactorsAnalysis,
 
-                // 🆕 增強的代表性案例（包含多角度信息）
-                representativeCases: similarCases.slice(0, 5).map(c => ({
+                // 🆕 增強的代表性案例（包含完整摘要信息，從5筆增加到20筆）
+                representativeCases: similarCases.slice(0, 20).map(c => ({
                     id: c.id,
                     title: c.title,
                     verdictType: c.verdictType,
+                    court: c.court,
+                    year: c.year,
                     similarity: Math.round(c.similarity * 100),
-                    summary: `${c.court} ${c.year}年`,
+
+                    // 🆕 增強摘要信息（不包含向量和JFULL）
+                    summary_ai: c.source?.summary_ai || `${c.court} ${c.year}年判決，判決結果：${c.verdictType}`,
+                    main_reasons_ai: Array.isArray(c.source?.main_reasons_ai)
+                        ? c.source.main_reasons_ai
+                        : (c.source?.main_reasons_ai ? [c.source.main_reasons_ai] : []),
+
+                    // 🆕 完整案例基本信息
+                    JTITLE: c.source?.JTITLE || c.title,
+                    JYEAR: c.source?.JYEAR || c.year,
+                    JID: c.source?.JID || c.id,
+                    verdict_type: c.source?.verdict_type || c.verdictType,
+
                     // 🆕 多角度發現信息
                     multiAngleInfo: c.multiAngleData ? {
                         appearances: c.multiAngleData.appearances,
                         sourceAngles: c.multiAngleData.sourceAngles,
                         isIntersection: c.multiAngleData.isIntersection,
                         totalScore: Math.round(c.multiAngleData.totalScore * 100)
+                    } : null,
+
+                    // 🆕 立場分析摘要（如果有的話）
+                    positionSummary: c.positionAnalysis ? {
+                        hasPositionData: true,
+                        // 只保留關鍵摘要信息，不包含完整分析
+                        verdict: c.positionAnalysis.verdict,
+                        position: c.positionAnalysis.position
                     } : null
                 })),
                 analysisParams: analysisData,
 
-                // 🚨 新增：精簡的案例池（避免 Firestore 大小限制）
+                // 🚨 增強：案例池（包含基本摘要信息，避免 Firestore 大小限制）
                 casePool: {
                     allCases: similarCases.map(case_ => ({
                         id: case_.id,
@@ -1821,8 +1843,20 @@ ${smartRecommendations.nextSteps.map(step => `• ${step}`).join('\n')}`;
                         court: case_.court,
                         year: case_.year,
                         similarity: case_.similarity,
-                        // 🚨 移除大型 source 數據，只保留引用信息
+
+                        // 🆕 增加基本摘要信息（不包含向量和JFULL）
+                        summary_ai: case_.source?.summary_ai || `${case_.court} ${case_.year}年判決`,
+                        main_reasons_ai: Array.isArray(case_.source?.main_reasons_ai)
+                            ? case_.source.main_reasons_ai.slice(0, 3) // 限制最多3個理由，控制大小
+                            : (case_.source?.main_reasons_ai ? [case_.source.main_reasons_ai] : []),
+
+                        // 🆕 完整案例標識信息
+                        JID: case_.source?.JID || case_.id,
+                        JTITLE: case_.source?.JTITLE || case_.title,
+
+                        // 🚨 保留引用信息
                         hasFullData: !!case_.source,
+
                         // 🚨 修復：過濾 undefined 值，避免 Firestore 錯誤
                         ...(case_.positionAnalysis && (
                             case_.positionAnalysis.verdict !== undefined ||
