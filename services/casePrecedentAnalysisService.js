@@ -1795,7 +1795,7 @@ ${smartRecommendations.nextSteps.map(step => `• ${step}`).join('\n')}`;
                 // 🆕 勝負關鍵因素排名分析
                 keyFactorsAnalysis: keyFactorsAnalysis,
 
-                // 🆕 增強的代表性案例（包含完整摘要信息，從5筆增加到20筆）
+                // 🆕 增強的代表性案例（包含完整摘要信息，從5筆增加到20筆，包含AI摘要和關鍵理由）
                 representativeCases: similarCases.slice(0, 20).map(c => ({
                     id: c.id,
                     title: c.title,
@@ -1805,32 +1805,44 @@ ${smartRecommendations.nextSteps.map(step => `• ${step}`).join('\n')}`;
                     similarity: Math.round(c.similarity * 100),
 
                     // 🆕 增強摘要信息（不包含向量和JFULL）
-                    summary_ai: c.source?.summary_ai || `${c.court} ${c.year}年判決，判決結果：${c.verdictType}`,
+                    summary_ai: c.source?.summary_ai || `${c.court || '未知法院'} ${c.year || '未知年份'}年判決，判決結果：${c.verdictType || '未知'}`,
                     main_reasons_ai: Array.isArray(c.source?.main_reasons_ai)
                         ? c.source.main_reasons_ai
                         : (c.source?.main_reasons_ai ? [c.source.main_reasons_ai] : []),
 
                     // 🆕 完整案例基本信息
-                    JTITLE: c.source?.JTITLE || c.title,
-                    JYEAR: c.source?.JYEAR || c.year,
-                    JID: c.source?.JID || c.id,
-                    verdict_type: c.source?.verdict_type || c.verdictType,
+                    JTITLE: c.source?.JTITLE || c.title || '無標題',
+                    JYEAR: c.source?.JYEAR || c.year || '未知年份',
+                    JID: c.source?.JID || c.id || '無ID',
+                    verdict_type: c.source?.verdict_type || c.verdictType || '未知判決',
 
-                    // 🆕 多角度發現信息
-                    multiAngleInfo: c.multiAngleData ? {
-                        appearances: c.multiAngleData.appearances,
-                        sourceAngles: c.multiAngleData.sourceAngles,
-                        isIntersection: c.multiAngleData.isIntersection,
-                        totalScore: Math.round(c.multiAngleData.totalScore * 100)
-                    } : null,
+                    // 🆕 多角度發現信息（過濾 undefined 值）
+                    ...(c.multiAngleData && (
+                        c.multiAngleData.appearances !== undefined ||
+                        c.multiAngleData.sourceAngles !== undefined ||
+                        c.multiAngleData.isIntersection !== undefined ||
+                        c.multiAngleData.totalScore !== undefined
+                    ) ? {
+                        multiAngleInfo: {
+                            ...(c.multiAngleData.appearances !== undefined && { appearances: c.multiAngleData.appearances }),
+                            ...(c.multiAngleData.sourceAngles !== undefined && { sourceAngles: c.multiAngleData.sourceAngles }),
+                            ...(c.multiAngleData.isIntersection !== undefined && { isIntersection: c.multiAngleData.isIntersection }),
+                            ...(c.multiAngleData.totalScore !== undefined && { totalScore: Math.round(c.multiAngleData.totalScore * 100) })
+                        }
+                    } : {}),
 
                     // 🆕 立場分析摘要（如果有的話）
-                    positionSummary: c.positionAnalysis ? {
-                        hasPositionData: true,
-                        // 只保留關鍵摘要信息，不包含完整分析
-                        verdict: c.positionAnalysis.verdict,
-                        position: c.positionAnalysis.position
-                    } : null
+                    ...(c.positionAnalysis && (
+                        c.positionAnalysis.verdict !== undefined ||
+                        c.positionAnalysis.position !== undefined
+                    ) ? {
+                        positionSummary: {
+                            hasPositionData: true,
+                            // 🚨 修復：過濾 undefined 值，避免 Firestore 錯誤
+                            ...(c.positionAnalysis.verdict !== undefined && { verdict: c.positionAnalysis.verdict }),
+                            ...(c.positionAnalysis.position !== undefined && { position: c.positionAnalysis.position })
+                        }
+                    } : {})
                 })),
                 analysisParams: analysisData,
 
@@ -1845,14 +1857,14 @@ ${smartRecommendations.nextSteps.map(step => `• ${step}`).join('\n')}`;
                         similarity: case_.similarity,
 
                         // 🆕 增加基本摘要信息（不包含向量和JFULL）
-                        summary_ai: case_.source?.summary_ai || `${case_.court} ${case_.year}年判決`,
+                        summary_ai: case_.source?.summary_ai || `${case_.court || '未知法院'} ${case_.year || '未知年份'}年判決`,
                         main_reasons_ai: Array.isArray(case_.source?.main_reasons_ai)
                             ? case_.source.main_reasons_ai.slice(0, 3) // 限制最多3個理由，控制大小
                             : (case_.source?.main_reasons_ai ? [case_.source.main_reasons_ai] : []),
 
                         // 🆕 完整案例標識信息
-                        JID: case_.source?.JID || case_.id,
-                        JTITLE: case_.source?.JTITLE || case_.title,
+                        JID: case_.source?.JID || case_.id || '無ID',
+                        JTITLE: case_.source?.JTITLE || case_.title || '無標題',
 
                         // 🚨 保留引用信息
                         hasFullData: !!case_.source,
