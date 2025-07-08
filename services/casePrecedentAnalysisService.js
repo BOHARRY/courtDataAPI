@@ -1833,17 +1833,9 @@ ${smartRecommendations.nextSteps.map(step => `• ${step}`).join('\n')}`;
                         }
                     } : {}),
 
-                    // 🆕 立場分析摘要（如果有的話）
-                    ...(c.positionAnalysis && (
-                        c.positionAnalysis.verdict !== undefined ||
-                        c.positionAnalysis.position !== undefined
-                    ) ? {
-                        positionSummary: {
-                            hasPositionData: true,
-                            // 🚨 修復：過濾 undefined 值，避免 Firestore 錯誤
-                            ...(c.positionAnalysis.verdict !== undefined && { verdict: c.positionAnalysis.verdict }),
-                            ...(c.positionAnalysis.position !== undefined && { position: c.positionAnalysis.position })
-                        }
+                    // 🆕 完整立場分析數據（包含 strategic_value）
+                    ...(c.positionAnalysis ? {
+                        position_based_analysis: c.positionAnalysis
                     } : {})
                 })),
                 analysisParams: analysisData,
@@ -1871,15 +1863,9 @@ ${smartRecommendations.nextSteps.map(step => `• ${step}`).join('\n')}`;
                         // 🚨 保留引用信息
                         hasFullData: !!case_.source,
 
-                        // 🚨 修復：過濾 undefined 值，避免 Firestore 錯誤
-                        ...(case_.positionAnalysis && (
-                            case_.positionAnalysis.verdict !== undefined ||
-                            case_.positionAnalysis.position !== undefined
-                        ) ? {
-                            positionAnalysis: {
-                                ...(case_.positionAnalysis.verdict !== undefined && { verdict: case_.positionAnalysis.verdict }),
-                                ...(case_.positionAnalysis.position !== undefined && { position: case_.positionAnalysis.position })
-                            }
+                        // 🆕 完整立場分析數據（包含 strategic_value）
+                        ...(case_.positionAnalysis ? {
+                            position_based_analysis: case_.positionAnalysis
                         } : {}),
                         ...(case_.multiAngleData ? {
                             multiAngleData: {
