@@ -436,6 +436,7 @@ async function performMultiAngleSearch(searchAngles, courtLevel, caseType, thres
                     knn: knnQuery,
                     _source: [
                         'JID', 'JTITLE', 'verdict_type', 'court', 'JYEAR',
+                        'summary_ai', // 🆕 案例摘要信息（必需用於案例列表顯示）
                         'main_reasons_ai', // 🆕 勝負關鍵因素分析需要
                         'position_based_analysis', // 🆕 新增立場分析資料
                         // 🚨 新增所有立場導向向量欄位和相關資料
@@ -935,6 +936,7 @@ async function searchSimilarCases(caseDescription, courtLevel, caseType, thresho
             knn: knnQuery,
             _source: [
                 'JID', 'JTITLE', 'verdict_type', 'court', 'JYEAR',
+                'summary_ai', // 🆕 案例摘要信息（必需用於案例列表顯示）
                 'main_reasons_ai', // 🆕 勝負關鍵因素分析需要
                 // 🚨 新增所有立場導向向量欄位和相關資料
                 'position_based_analysis',
