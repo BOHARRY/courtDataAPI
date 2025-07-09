@@ -105,8 +105,8 @@ function extractCitationContext(citation, JFULL, CourtInsightsStart, CourtInsigh
             }
         }
 
-        // 提取前後文（前後各200字）
-        const contextLength = 200;
+        // 提取前後文（前後各300字，提供更多上下文）
+        const contextLength = 300;
         const contextStart = Math.max(0, citationIndex - contextLength);
         const contextEnd = Math.min(cleanJfull.length, citationIndex + cleanCitation.length + contextLength);
         
@@ -512,25 +512,28 @@ ${JSON.stringify(citationDataWithContext, null, 2)}
     {
       "citation": "判例名稱",
       "recommendationLevel": "強烈推薦|建議考慮|謹慎使用",
-      "reason": "基於上下文分析的具體推薦理由，說明該判例解決什麼法律問題（50-100字）",
-      "usageStrategy": "具體使用時機和策略，基於上下文推斷的適用場景（30-50字）",
-      "riskWarning": "注意事項（如有）",
-      "confidence": "高|中|低"
+      "reason": "基於上下文分析的具體推薦理由，必須引用實際的上下文片段作為證據（50-100字）",
+      "usageStrategy": "具體使用時機和策略，僅基於上下文中明確顯示的適用場景（30-50字）",
+      "contextEvidence": "支持此推薦的上下文片段（直接引用）",
+      "riskWarning": "注意事項，特別是上下文不足的警告（如有）",
+      "confidence": "高|中|低",
+      "uncertaintyNote": "如果上下文不足以確定適用場景，請明確說明"
     }
   ],
-  "summary": "整體建議摘要（100字內）"
+  "summary": "整體建議摘要，強調分析的局限性（100字內）"
 }
 
 重要原則：
-1. **深度上下文分析**：仔細分析 sampleContexts，從中推斷該判例的具體法律適用場景
-2. **具體化推薦理由**：避免攏統描述，要說明該判例解決了什麼具體法律問題
-3. **精確使用策略**：基於上下文推斷，提供具體的使用時機和適用場景
-4. **優先法院見解**：優先推薦在法院見解內被引用的判例（inCourtInsightCount > 0）
-5. **重視稀有價值**：高 rarityScore 的援引可能是致勝關鍵，即使使用次數少
-6. **避免泛化推薦**：不要給出「適用於類似案件」等攏統建議
-7. **保守原則**：如果上下文不足以做出具體判斷，明確標記為"謹慎使用"
-8. **絕對不瞎掰**：寧可保守推薦也不要誤導律師
-9. 請使用繁體中文回應，並確保回應是有效的 JSON 格式`;
+1. **嚴格基於上下文**：只基於 sampleContexts 中的實際內容進行分析，不要推測或補充
+2. **保守推薦**：如果上下文不足以明確判斷該判例的適用場景，必須標記為"謹慎使用"
+3. **避免過度解讀**：不要從有限的上下文中推斷過多信息
+4. **具體引用內容**：在推薦理由中引用實際的上下文片段，證明你的分析
+5. **優先法院見解**：優先推薦在法院見解內被引用的判例（inCourtInsightCount > 0）
+6. **重視稀有價值**：高 rarityScore 的援引可能是致勝關鍵，即使使用次數少
+7. **明確不確定性**：如果對判例的適用場景不確定，明確說明"需要進一步確認"
+8. **絕對不瞎掰**：寧可說"上下文不足以判斷"也不要編造適用場景
+9. **引用驗證**：在分析中引用具體的上下文片段來支持你的結論
+10. 請使用繁體中文回應，並確保回應是有效的 JSON 格式`;
 }
 
 /**
