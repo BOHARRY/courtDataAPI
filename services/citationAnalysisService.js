@@ -181,7 +181,7 @@ ${citationsWithContext.map((c, i) => `${i+1}. ${c.citation}
 2. 明顯無關才排除
 3. 最多選擇15個，最少選擇5個
 
-回應格式：
+請以 JSON 格式回應：
 {
   "selectedCitations": [
     {
@@ -361,7 +361,7 @@ ${detailedCitations.map((c, i) => `${i+1}. ${c.citation}
 - 1-3分：低價值，前端可忽略
 - 0分：完全無關，建議隱藏
 
-回應格式：
+請以 JSON 格式回應：
 {
   "verifiedCitations": [
     {
@@ -494,9 +494,8 @@ async function analyzeSingleVerifiedCitation(citation, position, caseDescription
 實際使用上下文：
 ${contextEvidence}
 
-請提供具體的使用建議：
+請提供具體的使用建議，並以 JSON 格式回應：
 
-回應格式：
 {
   "citation": "${citation.citation}",
   "recommendationLevel": "強烈推薦/建議考慮/謹慎使用",
