@@ -702,47 +702,88 @@ async function analyzeSingleCitation(citation, position, caseDescription, casePo
 
                 if (context.found && context.context) {
                     contextSamples.push({
-                        context: context.context.fullContext,
+                        fullContext: context.context.fullContext,
+                        beforeContext: context.context.before,
+                        afterContext: context.context.after,
                         inCourtInsight: context.inCourtInsight,
-                        fromCase: case_.title
+                        fromCase: case_.title || '未知案例'
                     });
+
+                    // 🔍 調試：記錄上下文長度
+                    console.log(`[analyzeSingleCitation] 找到上下文 - 案例: ${case_.title}, 長度: ${context.context.fullContext?.length || 0}, 在法院見解內: ${context.inCourtInsight}`);
                 }
             }
 
             if (contextSamples.length >= 2) break; // 最多2個樣本
         }
 
-        const prompt = `你是專業的法律分析師。請專注分析這一個援引判例，提供精確的推薦。
+        // 🔍 調試：檢查上下文樣本
+        console.log(`[analyzeSingleCitation] 準備分析 ${citation.citation}，找到 ${contextSamples.length} 個上下文樣本`);
+
+        if (contextSamples.length === 0) {
+            console.log(`[analyzeSingleCitation] 警告：${citation.citation} 沒有找到任何上下文`);
+            return {
+                citation: citation.citation,
+                recommendationLevel: "謹慎使用",
+                reason: "未找到該判例在案例中的具體使用上下文，無法評估適用性",
+                usageStrategy: "建議先查閱原判例內容再決定是否使用",
+                contextEvidence: "無可用上下文",
+                riskWarning: "缺乏上下文證據，使用前需謹慎評估",
+                confidence: "低",
+                uncertaintyNote: "未找到該判例的使用上下文"
+            };
+        }
+
+        const prompt = `你是專業的法律分析師。請專注分析這一個援引判例，基於提供的實際使用上下文提供精確推薦。
 
 案件描述：${caseDescription}
 律師立場：${positionLabel}
 
 援引判例：${citation.citation}
-使用次數：${citation.usageCount}
-法院見解引用次數：${citation.inCourtInsightCount}
-稀有度等級：${citation.valueAssessment.grade}
+使用統計：
+- 總使用次數：${citation.usageCount}
+- 法院見解引用次數：${citation.inCourtInsightCount}
+- 稀有度等級：${citation.valueAssessment.grade}
 
-上下文樣本：
-${JSON.stringify(contextSamples, null, 2)}
+實際使用上下文：
+${contextSamples.map((sample, index) => `
+樣本 ${index + 1} (來源案例: ${sample.fromCase}):
+${sample.inCourtInsight ? '【法院見解內引用】' : '【一般引用】'}
 
-請仔細分析上下文，並以 JSON 格式回應：
+前文：${sample.beforeContext}
+援引：${citation.citation}
+後文：${sample.afterContext}
+
+完整段落：
+${sample.fullContext}
+---
+`).join('\n')}
+
+分析要求：
+1. 仔細閱讀每個上下文樣本，理解該判例在實際案例中的使用方式
+2. 分析該判例與當前案件的相關性
+3. 評估從${positionLabel}角度使用此判例的效果
+
+請以 JSON 格式回應：
 {
   "citation": "${citation.citation}",
   "recommendationLevel": "強烈推薦|建議考慮|謹慎使用",
-  "reason": "基於上下文的具體推薦理由，必須引用實際內容（50-100字）",
-  "usageStrategy": "具體使用時機，僅基於上下文明確顯示的場景（30-50字）",
-  "contextEvidence": "支持此推薦的關鍵上下文片段（直接引用）",
-  "riskWarning": "注意事項或限制（如有）",
+  "reason": "基於實際上下文的推薦理由，必須引用具體使用場景（80-120字）",
+  "usageStrategy": "具體使用建議，說明在什麼情況下引用此判例最有效（50-80字）",
+  "contextEvidence": "支持推薦的關鍵上下文片段（直接引用最相關的部分）",
+  "legalPrinciple": "該判例確立的法律原則或見解（基於上下文）",
+  "applicabilityAnalysis": "與當前案件的適用性分析",
+  "riskWarning": "使用此判例的注意事項或限制",
   "confidence": "高|中|低",
-  "uncertaintyNote": "如果上下文不足，請明確說明"
+  "uncertaintyNote": "如果上下文顯示適用性有限，請說明原因"
 }
 
-重要原則：
-1. 只基於提供的上下文進行分析，不要推測
-2. 必須引用具體的上下文片段作為證據
-3. 如果上下文不足以判斷適用場景，明確標記
-4. 絕對不要編造或推測法律適用場景
-5. 請使用繁體中文回應`;
+分析原則：
+1. 嚴格基於提供的實際使用上下文，不要推測
+2. 重點分析該判例在上下文中解決的法律問題
+3. 評估該法律問題與當前案件的相似性
+4. 如果上下文顯示該判例處理的是不同類型的問題，要誠實指出
+5. 必須使用繁體中文回應，確保 JSON 格式正確`;
 
         const response = await openai.chat.completions.create({
             model: "gpt-4o",
