@@ -733,16 +733,23 @@ async function analyzeSingleCitation(citation, position, caseDescription, casePo
                 // 🆕 重新獲取完整的案例數據（包含 citations 和 JFULL）
                 const fullCaseData = await getJudgmentNodeData(case_.id);
 
-                if (!fullCaseData?.source?.citations || !Array.isArray(fullCaseData.source.citations)) {
+                // 🔧 修復：getJudgmentNodeData 返回的是 _source，不需要再訪問 .source
+                if (!fullCaseData?.citations || !Array.isArray(fullCaseData.citations)) {
                     console.log(`[analyzeSingleCitation] 跳過案例 ${case_.title} - 沒有 citations 數據`);
+                    console.log(`[analyzeSingleCitation] fullCaseData 結構:`, {
+                        hasCitations: !!fullCaseData?.citations,
+                        citationsType: typeof fullCaseData?.citations,
+                        isArray: Array.isArray(fullCaseData?.citations),
+                        keys: fullCaseData ? Object.keys(fullCaseData).slice(0, 10) : []
+                    });
                     continue;
                 }
 
                 // 🔍 調試：檢查 citations 匹配
-                console.log(`[analyzeSingleCitation] 檢查案例 ${case_.title} - 有 ${fullCaseData.source.citations.length} 個援引`);
-                console.log(`[analyzeSingleCitation] 案例援引列表:`, fullCaseData.source.citations.slice(0, 3)); // 只顯示前3個
+                console.log(`[analyzeSingleCitation] 檢查案例 ${case_.title} - 有 ${fullCaseData.citations.length} 個援引`);
+                console.log(`[analyzeSingleCitation] 案例援引列表:`, fullCaseData.citations.slice(0, 3)); // 只顯示前3個
 
-                const hasMatch = fullCaseData.source.citations.includes(citation.citation);
+                const hasMatch = fullCaseData.citations.includes(citation.citation);
                 console.log(`[analyzeSingleCitation] 是否包含 "${citation.citation}": ${hasMatch}`);
 
                 if (hasMatch) {
@@ -750,9 +757,9 @@ async function analyzeSingleCitation(citation, position, caseDescription, casePo
 
                     const context = extractCitationContext(
                         citation.citation,
-                        fullCaseData.source?.JFULL || '',
-                        fullCaseData.source?.CourtInsightsStart || '',
-                        fullCaseData.source?.CourtInsightsEND || ''
+                        fullCaseData.JFULL || '',
+                        fullCaseData.CourtInsightsStart || '',
+                        fullCaseData.CourtInsightsEND || ''
                     );
 
                     console.log(`[analyzeSingleCitation] extractCitationContext 結果:`, {
