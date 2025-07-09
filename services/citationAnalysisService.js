@@ -562,7 +562,11 @@ async function generateCitationRecommendations(valuableCitations, position, case
             reason: `基於統計分析：使用次數 ${citation.usageCount}，價值評分 ${citation.valueAssessment.totalScore}`,
             usageStrategy: citation.inCourtInsightCount > 0 ? '此判例曾被法院見解採納' : '建議作為輔助論證',
             riskWarning: citation.valueAssessment.totalScore < 50 ? '數據支持度較低，請謹慎使用' : null,
-            confidence: '中'
+            confidence: '中',
+            // 🆕 添加統計數據用於前端顯示
+            usageCount: citation.usageCount,
+            inCourtInsightCount: citation.inCourtInsightCount,
+            valueAssessment: citation.valueAssessment
         }));
 
         return {
