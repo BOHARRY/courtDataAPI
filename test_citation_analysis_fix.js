@@ -33,6 +33,24 @@ function testTextMatching() {
             expected: true
         },
         {
+            name: '🆕 後綴差異測試 - 帶(一)',
+            citation: '最高法院77年度第9次民事庭會議決議(一)',
+            jfull: '根據最高法院77年度第9次民事庭會議決議之見解...',
+            expected: true
+        },
+        {
+            name: '🆕 後綴差異測試 - 帶㈠',
+            citation: '最高法院77年度第9次民事庭會議決議㈠',
+            jfull: '根據最高法院77年度第9次民事庭會議決議之見解...',
+            expected: true
+        },
+        {
+            name: '🆕 後綴差異測試 - 帶(1)',
+            citation: '最高法院77年度第9次民事庭會議決議(1)',
+            jfull: '根據最高法院77年度第9次民事庭會議決議之見解...',
+            expected: true
+        },
+        {
             name: '完全不匹配',
             citation: '最高法院51年度台上字第223號判決',
             jfull: '這是一個完全不相關的文本內容...',
@@ -74,8 +92,9 @@ function testNumberVariants() {
     
     const testCitations = [
         '最高法院51年度台上字第223號判決',
-        '台灣高等法院108年度上字第1234號判決',
-        '台北地方法院109年度訴字第5678號判決'
+        '最高法院77年度第9次民事庭會議決議(一)',
+        '司法院釋字第548號',
+        '民事訴訟法第449條第1項'
     ];
     
     for (const citation of testCitations) {

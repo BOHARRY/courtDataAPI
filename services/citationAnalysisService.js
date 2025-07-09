@@ -49,10 +49,26 @@ function getCleanText(text) {
 
 /**
  * 🔧 生成判例名稱的數字格式變體
- * 處理阿拉伯數字 vs 中文數字的差異
+ * 處理阿拉伯數字 vs 中文數字的差異，以及後綴變體
  */
 function generateNumberVariants(citationText) {
     const variants = [citationText];
+
+    // 🆕 處理後綴變體 (如 "(一)", "㈠", "(1)" 等)
+    const suffixPatterns = [
+        /\(一\)$/g, /\(二\)$/g, /\(三\)$/g, /\(四\)$/g, /\(五\)$/g,
+        /㈠$/g, /㈡$/g, /㈢$/g, /㈣$/g, /㈤$/g,
+        /\(1\)$/g, /\(2\)$/g, /\(3\)$/g, /\(4\)$/g, /\(5\)$/g,
+        /第1項$/g, /第2項$/g, /第3項$/g
+    ];
+
+    // 生成移除後綴的版本
+    for (const pattern of suffixPatterns) {
+        const withoutSuffix = citationText.replace(pattern, '');
+        if (withoutSuffix !== citationText && withoutSuffix.length > 10) {
+            variants.push(withoutSuffix);
+        }
+    }
 
     // 阿拉伯數字 -> 中文數字映射
     const arabicToChinese = {
@@ -66,22 +82,26 @@ function generateNumberVariants(citationText) {
         '五': '5', '六': '6', '七': '7', '八': '8', '九': '9'
     };
 
-    // 生成阿拉伯數字版本
-    let arabicVersion = citationText;
-    for (const [chinese, arabic] of Object.entries(chineseToArabic)) {
-        arabicVersion = arabicVersion.replace(new RegExp(chinese, 'g'), arabic);
-    }
-    if (arabicVersion !== citationText) {
-        variants.push(arabicVersion);
-    }
+    // 對所有現有變體生成數字格式變體
+    const currentVariants = [...variants];
+    for (const variant of currentVariants) {
+        // 生成阿拉伯數字版本
+        let arabicVersion = variant;
+        for (const [chinese, arabic] of Object.entries(chineseToArabic)) {
+            arabicVersion = arabicVersion.replace(new RegExp(chinese, 'g'), arabic);
+        }
+        if (arabicVersion !== variant) {
+            variants.push(arabicVersion);
+        }
 
-    // 生成中文數字版本
-    let chineseVersion = citationText;
-    for (const [arabic, chinese] of Object.entries(arabicToChinese)) {
-        chineseVersion = chineseVersion.replace(new RegExp(arabic, 'g'), chinese);
-    }
-    if (chineseVersion !== citationText) {
-        variants.push(chineseVersion);
+        // 生成中文數字版本
+        let chineseVersion = variant;
+        for (const [arabic, chinese] of Object.entries(arabicToChinese)) {
+            chineseVersion = chineseVersion.replace(new RegExp(arabic, 'g'), chinese);
+        }
+        if (chineseVersion !== variant) {
+            variants.push(chineseVersion);
+        }
     }
 
     // 生成空格變體
