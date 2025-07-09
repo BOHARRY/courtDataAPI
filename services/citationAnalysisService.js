@@ -384,7 +384,8 @@ async function analyzeCitationsFromCasePool(casePool, position, caseDescription,
         const aiRecommendations = await generateCitationRecommendations(
             valuableCitations,
             position,
-            caseDescription
+            caseDescription,
+            casePool
         );
 
         // 🚨 精簡數據以避免 Firestore 大小限制
@@ -431,7 +432,7 @@ async function analyzeCitationsFromCasePool(casePool, position, caseDescription,
 /**
  * 創建 AI 分析 Prompt（借鑒用戶提供的 Python 代碼設計）
  */
-function createCitationRecommendationPrompt(valuableCitations, position, caseDescription) {
+function createCitationRecommendationPrompt(valuableCitations, position, caseDescription, casePool) {
     const positionLabel = position === 'plaintiff' ? '原告' : position === 'defendant' ? '被告' : '中性';
 
     // 🆕 為 AI 分析重新獲取上下文數據
@@ -535,7 +536,7 @@ ${JSON.stringify(citationDataWithContext, null, 2)}
 /**
  * 使用 AI 生成援引判例推薦
  */
-async function generateCitationRecommendations(valuableCitations, position, caseDescription) {
+async function generateCitationRecommendations(valuableCitations, position, caseDescription, casePool) {
     try {
         console.log(`[generateCitationRecommendations] 開始 AI 分析，立場: ${position}`);
 
@@ -547,7 +548,7 @@ async function generateCitationRecommendations(valuableCitations, position, case
             };
         }
 
-        const prompt = createCitationRecommendationPrompt(valuableCitations, position, caseDescription);
+        const prompt = createCitationRecommendationPrompt(valuableCitations, position, caseDescription, casePool);
 
         // 🆕 升級到 GPT-4o：提升分析品質，減少瞎掰風險
         const response = await openai.chat.completions.create({
