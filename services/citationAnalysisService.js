@@ -380,8 +380,8 @@ async function analyzeCitationsFromCasePool(casePool, position, caseDescription,
 
         console.log(`[analyzeCitationsFromCasePool] 發現 ${valuableCitations.length} 個有價值的援引判例，已按重要性重新排序`);
 
-        // 4. 使用 AI 生成推薦
-        const aiRecommendations = await generateCitationRecommendations(
+        // 4. 🆕 兩階段 AI 分析：先篩選重要性，再逐個深度分析
+        const aiRecommendations = await generateCitationRecommendationsTwoStage(
             valuableCitations,
             position,
             caseDescription,
@@ -534,6 +534,236 @@ ${JSON.stringify(citationDataWithContext, null, 2)}
 8. **絕對不瞎掰**：寧可說"上下文不足以判斷"也不要編造適用場景
 9. **引用驗證**：在分析中引用具體的上下文片段來支持你的結論
 10. 請使用繁體中文回應，並確保回應是有效的 JSON 格式`;
+}
+
+/**
+ * 🆕 兩階段 AI 分析：先篩選重要性，再逐個深度分析
+ */
+async function generateCitationRecommendationsTwoStage(valuableCitations, position, caseDescription, casePool) {
+    try {
+        console.log(`[generateCitationRecommendationsTwoStage] 開始兩階段分析，立場: ${position}`);
+
+        if (valuableCitations.length === 0) {
+            return {
+                recommendations: [],
+                summary: '未發現有價值的援引判例',
+                aiAnalysisStatus: 'no_data'
+            };
+        }
+
+        // 🎯 階段一：重要性篩選（快速評估）
+        const topCitations = await selectTopCitationsForAnalysis(valuableCitations, position, caseDescription);
+
+        if (topCitations.length === 0) {
+            return {
+                recommendations: [],
+                summary: '經 AI 篩選後，未發現適合當前案件的援引判例',
+                aiAnalysisStatus: 'filtered_out'
+            };
+        }
+
+        console.log(`[generateCitationRecommendationsTwoStage] 階段一篩選出 ${topCitations.length} 個重要援引`);
+
+        // 🎯 階段二：逐個深度分析
+        const detailedRecommendations = [];
+        for (const citation of topCitations) {
+            const recommendation = await analyzeSingleCitation(citation, position, caseDescription, casePool);
+            if (recommendation) {
+                detailedRecommendations.push(recommendation);
+            }
+        }
+
+        // 生成整體摘要
+        const summary = generateOverallSummary(detailedRecommendations, position);
+
+        return {
+            recommendations: detailedRecommendations,
+            summary,
+            aiAnalysisStatus: 'success',
+            analysisMethod: 'two_stage_detailed'
+        };
+
+    } catch (error) {
+        console.error('[generateCitationRecommendationsTwoStage] 兩階段分析失敗:', error);
+        return {
+            recommendations: [],
+            summary: 'AI 分析過程中發生錯誤',
+            aiAnalysisStatus: 'error',
+            error: error.message
+        };
+    }
+}
+
+/**
+ * 🎯 階段一：AI 快速篩選最重要的援引判例
+ */
+async function selectTopCitationsForAnalysis(valuableCitations, position, caseDescription) {
+    try {
+        const positionLabel = position === 'plaintiff' ? '原告' : position === 'defendant' ? '被告' : '中性';
+
+        // 準備簡化的援引數據（只包含基本信息）
+        const simplifiedCitations = valuableCitations.slice(0, 15).map(citation => ({
+            citation: citation.citation,
+            usageCount: citation.usageCount,
+            inCourtInsightCount: citation.inCourtInsightCount,
+            valueScore: citation.valueAssessment.totalScore,
+            grade: citation.valueAssessment.grade,
+            rarityScore: citation.valueAssessment.rarityScore
+        }));
+
+        const prompt = `你是專業的法律分析師。請從以下援引判例中，快速篩選出最適合當前案件的 3-5 個判例進行深度分析。
+
+案件描述：${caseDescription}
+律師立場：${positionLabel}
+
+可選援引判例：
+${JSON.stringify(simplifiedCitations, null, 2)}
+
+篩選標準：
+1. 優先選擇在法院見解內被引用的判例（inCourtInsightCount > 0）
+2. 考慮稀有度和價值分數的平衡
+3. 選擇最可能與當前案件相關的判例
+4. 最多選擇 5 個，最少選擇 3 個
+
+請以 JSON 格式回應：
+{
+  "selectedCitations": [
+    {
+      "citation": "判例名稱",
+      "selectionReason": "選擇理由（30字內）"
+    }
+  ],
+  "totalSelected": 數量
+}
+
+請使用繁體中文回應，並確保回應是有效的 JSON 格式。`;
+
+        const response = await openai.chat.completions.create({
+            model: "gpt-4o",
+            messages: [
+                { role: "system", content: "你是專業的法律分析師，專門協助律師篩選最相關的援引判例。" },
+                { role: "user", content: prompt }
+            ],
+            temperature: 0.3,
+            max_tokens: 1000
+        });
+
+        const result = JSON.parse(response.choices[0].message.content);
+
+        // 根據 AI 篩選結果，返回對應的完整援引數據
+        const selectedCitations = [];
+        for (const selected of result.selectedCitations) {
+            const fullCitation = valuableCitations.find(c => c.citation === selected.citation);
+            if (fullCitation) {
+                selectedCitations.push(fullCitation);
+            }
+        }
+
+        console.log(`[selectTopCitationsForAnalysis] AI 篩選出 ${selectedCitations.length} 個重要援引`);
+        return selectedCitations;
+
+    } catch (error) {
+        console.error('[selectTopCitationsForAnalysis] 篩選失敗:', error);
+        // 如果 AI 篩選失敗，回退到基於分數的篩選
+        return valuableCitations.slice(0, 3);
+    }
+}
+
+/**
+ * 🎯 階段二：對單個援引判例進行深度分析
+ */
+async function analyzeSingleCitation(citation, position, caseDescription, casePool) {
+    try {
+        const positionLabel = position === 'plaintiff' ? '原告' : position === 'defendant' ? '被告' : '中性';
+
+        // 為這個特定援引重新提取上下文
+        const contextSamples = [];
+
+        for (const case_ of casePool.allCases.slice(0, 10)) { // 限制檢查範圍
+            if (!case_.source?.citations || !Array.isArray(case_.source.citations)) continue;
+
+            if (case_.source.citations.includes(citation.citation)) {
+                const context = extractCitationContext(
+                    citation.citation,
+                    case_.source?.JFULL || '',
+                    case_.source?.CourtInsightsStart || '',
+                    case_.source?.CourtInsightsEND || ''
+                );
+
+                if (context.found && context.context) {
+                    contextSamples.push({
+                        context: context.context.fullContext,
+                        inCourtInsight: context.inCourtInsight,
+                        fromCase: case_.title
+                    });
+                }
+            }
+
+            if (contextSamples.length >= 2) break; // 最多2個樣本
+        }
+
+        const prompt = `你是專業的法律分析師。請專注分析這一個援引判例，提供精確的推薦。
+
+案件描述：${caseDescription}
+律師立場：${positionLabel}
+
+援引判例：${citation.citation}
+使用次數：${citation.usageCount}
+法院見解引用次數：${citation.inCourtInsightCount}
+稀有度等級：${citation.valueAssessment.grade}
+
+上下文樣本：
+${JSON.stringify(contextSamples, null, 2)}
+
+請仔細分析上下文，並以 JSON 格式回應：
+{
+  "citation": "${citation.citation}",
+  "recommendationLevel": "強烈推薦|建議考慮|謹慎使用",
+  "reason": "基於上下文的具體推薦理由，必須引用實際內容（50-100字）",
+  "usageStrategy": "具體使用時機，僅基於上下文明確顯示的場景（30-50字）",
+  "contextEvidence": "支持此推薦的關鍵上下文片段（直接引用）",
+  "riskWarning": "注意事項或限制（如有）",
+  "confidence": "高|中|低",
+  "uncertaintyNote": "如果上下文不足，請明確說明"
+}
+
+重要原則：
+1. 只基於提供的上下文進行分析，不要推測
+2. 必須引用具體的上下文片段作為證據
+3. 如果上下文不足以判斷適用場景，明確標記
+4. 絕對不要編造或推測法律適用場景
+5. 請使用繁體中文回應`;
+
+        const response = await openai.chat.completions.create({
+            model: "gpt-4o",
+            messages: [
+                { role: "system", content: "你是專業的法律分析師，專門提供精確的援引判例分析。你必須嚴格基於提供的上下文，不能推測或編造。" },
+                { role: "user", content: prompt }
+            ],
+            temperature: 0.1, // 降低溫度，提高一致性
+            max_tokens: 800
+        });
+
+        const result = JSON.parse(response.choices[0].message.content);
+        console.log(`[analyzeSingleCitation] 完成單個分析: ${citation.citation}`);
+        return result;
+
+    } catch (error) {
+        console.error(`[analyzeSingleCitation] 分析失敗 ${citation.citation}:`, error);
+        return null;
+    }
+}
+
+/**
+ * 生成整體摘要
+ */
+function generateOverallSummary(recommendations, position) {
+    const positionLabel = position === 'plaintiff' ? '原告' : position === 'defendant' ? '被告' : '中性';
+    const strongCount = recommendations.filter(r => r.recommendationLevel === '強烈推薦').length;
+    const considerCount = recommendations.filter(r => r.recommendationLevel === '建議考慮').length;
+    const cautiousCount = recommendations.filter(r => r.recommendationLevel === '謹慎使用').length;
+
+    return `為${positionLabel}立場分析了 ${recommendations.length} 個重要援引判例：${strongCount} 個強烈推薦，${considerCount} 個建議考慮，${cautiousCount} 個謹慎使用。建議優先使用強烈推薦的判例，並仔細評估上下文適用性。`;
 }
 
 /**
