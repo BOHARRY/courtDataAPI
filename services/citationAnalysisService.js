@@ -63,7 +63,16 @@ async function getJudgmentNodeData(caseId) {
  * 從單個案例中提取援引判例的前後文脈絡
  */
 function extractCitationContext(citation, JFULL, CourtInsightsStart, CourtInsightsEND) {
+    // 🔍 調試：記錄輸入參數
+    console.log(`[extractCitationContext] 開始提取上下文:`, {
+        citation: citation?.substring(0, 50) + '...',
+        hasJFULL: !!JFULL,
+        JFULLLength: JFULL?.length || 0,
+        hasCourtInsights: !!(CourtInsightsStart && CourtInsightsEND)
+    });
+
     if (!JFULL || !citation) {
+        console.log(`[extractCitationContext] ❌ 缺少必要參數 - JFULL: ${!!JFULL}, citation: ${!!citation}`);
         return {
             citation,
             found: false,
@@ -77,11 +86,37 @@ function extractCitationContext(citation, JFULL, CourtInsightsStart, CourtInsigh
         // 使用與爭點變色相同的清理邏輯
         const cleanJfull = getCleanText(JFULL);
         const cleanCitation = getCleanText(citation);
-        
+
+        // 🔍 調試：記錄清理後的文本
+        console.log(`[extractCitationContext] 清理後文本長度:`, {
+            originalJFULL: JFULL.length,
+            cleanJfull: cleanJfull.length,
+            originalCitation: citation.length,
+            cleanCitation: cleanCitation.length
+        });
+
         // 找到援引判例在文本中的位置
         const citationIndex = cleanJfull.indexOf(cleanCitation);
-        
+
+        console.log(`[extractCitationContext] 搜尋結果:`, {
+            cleanCitation: cleanCitation.substring(0, 50) + '...',
+            citationIndex,
+            found: citationIndex !== -1
+        });
+
         if (citationIndex === -1) {
+            // 🔍 調試：嘗試部分匹配
+            const citationParts = cleanCitation.split(/\s+/).filter(part => part.length > 2);
+            console.log(`[extractCitationContext] 嘗試部分匹配:`, citationParts.slice(0, 3));
+
+            for (const part of citationParts.slice(0, 3)) {
+                if (cleanJfull.includes(part)) {
+                    console.log(`[extractCitationContext] 找到部分匹配: "${part}"`);
+                    break;
+                }
+            }
+
+            console.log(`[extractCitationContext] ❌ 未找到援引判例在文本中`);
             return {
                 citation,
                 found: false,
@@ -689,16 +724,38 @@ async function analyzeSingleCitation(citation, position, caseDescription, casePo
         // 為這個特定援引重新提取上下文
         const contextSamples = [];
 
-        for (const case_ of casePool.allCases.slice(0, 10)) { // 限制檢查範圍
-            if (!case_.source?.citations || !Array.isArray(case_.source.citations)) continue;
+        // 🔍 調試：記錄搜尋過程
+        console.log(`[analyzeSingleCitation] 開始搜尋 "${citation.citation}" 的上下文，檢查 ${casePool.allCases.slice(0, 10).length} 個案例`);
 
-            if (case_.source.citations.includes(citation.citation)) {
+        for (const case_ of casePool.allCases.slice(0, 10)) { // 限制檢查範圍
+            if (!case_.source?.citations || !Array.isArray(case_.source.citations)) {
+                console.log(`[analyzeSingleCitation] 跳過案例 ${case_.title} - 沒有 citations 數據`);
+                continue;
+            }
+
+            // 🔍 調試：檢查 citations 匹配
+            console.log(`[analyzeSingleCitation] 檢查案例 ${case_.title} - 有 ${case_.source.citations.length} 個援引`);
+            console.log(`[analyzeSingleCitation] 案例援引列表:`, case_.source.citations.slice(0, 3)); // 只顯示前3個
+
+            const hasMatch = case_.source.citations.includes(citation.citation);
+            console.log(`[analyzeSingleCitation] 是否包含 "${citation.citation}": ${hasMatch}`);
+
+            if (hasMatch) {
+                console.log(`[analyzeSingleCitation] ✅ 在案例 ${case_.title} 中找到匹配的援引`);
+
                 const context = extractCitationContext(
                     citation.citation,
                     case_.source?.JFULL || '',
                     case_.source?.CourtInsightsStart || '',
                     case_.source?.CourtInsightsEND || ''
                 );
+
+                console.log(`[analyzeSingleCitation] extractCitationContext 結果:`, {
+                    found: context.found,
+                    hasContext: !!context.context,
+                    inCourtInsight: context.inCourtInsight,
+                    error: context.error
+                });
 
                 if (context.found && context.context) {
                     contextSamples.push({
@@ -709,8 +766,9 @@ async function analyzeSingleCitation(citation, position, caseDescription, casePo
                         fromCase: case_.title || '未知案例'
                     });
 
-                    // 🔍 調試：記錄上下文長度
-                    console.log(`[analyzeSingleCitation] 找到上下文 - 案例: ${case_.title}, 長度: ${context.context.fullContext?.length || 0}, 在法院見解內: ${context.inCourtInsight}`);
+                    console.log(`[analyzeSingleCitation] ✅ 成功提取上下文 - 案例: ${case_.title}, 長度: ${context.context.fullContext?.length || 0}, 在法院見解內: ${context.inCourtInsight}`);
+                } else {
+                    console.log(`[analyzeSingleCitation] ❌ 提取上下文失敗 - 案例: ${case_.title}, found: ${context.found}, hasContext: ${!!context.context}`);
                 }
             }
 
