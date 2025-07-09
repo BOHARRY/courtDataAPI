@@ -434,27 +434,62 @@ async function analyzeCitationsFromCasePool(casePool, position, caseDescription,
 function createCitationRecommendationPrompt(valuableCitations, position, caseDescription) {
     const positionLabel = position === 'plaintiff' ? '原告' : position === 'defendant' ? '被告' : '中性';
 
-    // 準備援引判例數據，只包含必要信息
-    const citationData = valuableCitations.slice(0, 10).map(citation => ({
-        citation: citation.citation,
-        usageCount: citation.usageCount,
-        inCourtInsightCount: citation.inCourtInsightCount,
-        valueScore: citation.valueAssessment.totalScore,
-        grade: citation.valueAssessment.grade,
-        rarityScore: citation.valueAssessment.rarityScore, // 🆕 加入稀有度分數
-        // 🆕 優化上下文選擇：優先法院見解內的上下文，提升分析品質
-        sampleContexts: citation.totalContexts
-            .sort((a, b) => {
-                // 優先選擇法院見解內的上下文（最有價值）
-                if (a.inCourtInsight !== b.inCourtInsight) {
-                    return b.inCourtInsight - a.inCourtInsight;
+    // 🆕 為 AI 分析重新獲取上下文數據
+    const citationDataWithContext = [];
+
+    for (const citation of valuableCitations.slice(0, 10)) {
+        // 從案例池中重新提取該援引的上下文
+        const contextSamples = [];
+
+        for (const case_ of casePool.allCases.slice(0, 20)) { // 限制檢查範圍避免超時
+            if (!case_.source?.citations || !Array.isArray(case_.source.citations)) continue;
+
+            if (case_.source.citations.includes(citation.citation)) {
+                // 重新提取上下文
+                const context = extractCitationContext(
+                    citation.citation,
+                    case_.source?.JFULL || '',
+                    case_.source?.CourtInsightsStart || '',
+                    case_.source?.CourtInsightsEND || ''
+                );
+
+                if (context.found && context.context) {
+                    contextSamples.push({
+                        fullContext: context.context,
+                        inCourtInsight: context.inCourtInsight,
+                        caseTitle: case_.title
+                    });
                 }
-                // 其次選擇較長的上下文（可能包含更多關鍵信息）
-                return b.fullContext.length - a.fullContext.length;
-            })
-            .slice(0, 2)
-            .map(ctx => ctx.fullContext.substring(0, 300))
-    }));
+            }
+
+            if (contextSamples.length >= 3) break; // 最多3個樣本
+        }
+
+        citationDataWithContext.push({
+            citation: citation.citation,
+            usageCount: citation.usageCount,
+            inCourtInsightCount: citation.inCourtInsightCount,
+            valueScore: citation.valueAssessment.totalScore,
+            grade: citation.valueAssessment.grade,
+            rarityScore: citation.valueAssessment.rarityScore,
+            // 🆕 提供實際的上下文樣本
+            sampleContexts: contextSamples
+                .sort((a, b) => {
+                    // 優先法院見解內的上下文
+                    if (a.inCourtInsight !== b.inCourtInsight) {
+                        return b.inCourtInsight - a.inCourtInsight;
+                    }
+                    // 其次選擇較長的上下文
+                    return b.fullContext.length - a.fullContext.length;
+                })
+                .slice(0, 2)
+                .map(ctx => ({
+                    context: ctx.fullContext.substring(0, 400), // 增加到400字符
+                    inCourtInsight: ctx.inCourtInsight,
+                    fromCase: ctx.caseTitle
+                }))
+        });
+    }
 
     return `你是專業的法律分析師。請基於以下資料，為${positionLabel}立場的律師推薦援引判例。
 
@@ -462,7 +497,13 @@ function createCitationRecommendationPrompt(valuableCitations, position, caseDes
 律師立場：${positionLabel}
 
 可用的援引判例分析：
-${JSON.stringify(citationData, null, 2)}
+${JSON.stringify(citationDataWithContext, null, 2)}
+
+🎯 **分析重點**：
+- 仔細閱讀每個判例的 sampleContexts（前後文脈絡）
+- 從上下文推斷該判例的具體法律適用場景
+- 分析該判例在原判決書中解決了什麼具體法律問題
+- 評估該判例與當前案件的相關性和適用性
 
 請分析並推薦最有價值的援引判例，並以 JSON 格式回應：
 {
@@ -470,8 +511,8 @@ ${JSON.stringify(citationData, null, 2)}
     {
       "citation": "判例名稱",
       "recommendationLevel": "強烈推薦|建議考慮|謹慎使用",
-      "reason": "推薦理由（50-100字）",
-      "usageStrategy": "如何使用這個判例（30-50字）",
+      "reason": "基於上下文分析的具體推薦理由，說明該判例解決什麼法律問題（50-100字）",
+      "usageStrategy": "具體使用時機和策略，基於上下文推斷的適用場景（30-50字）",
       "riskWarning": "注意事項（如有）",
       "confidence": "高|中|低"
     }
@@ -480,14 +521,15 @@ ${JSON.stringify(citationData, null, 2)}
 }
 
 重要原則：
-1. 只推薦有充分證據支持的判例，絕對不要編造或推測
-2. 如果前後文不足以判斷，標記為"謹慎使用"
-3. 優先推薦在法院見解內被引用的判例（inCourtInsightCount > 0）
-4. 🆕 特別重視稀有但關鍵的援引：高 rarityScore 的援引可能是致勝關鍵，即使使用次數少
-5. 🆕 避免只推薦熱門援引：使用次數多不等於對當前案件更有價值
-6. 考慮援引的針對性和適用性，而非僅看通用性
-7. 絕對不要瞎掰，寧可保守推薦也不要誤導律師
-8. 請使用繁體中文回應，並確保回應是有效的 JSON 格式`;
+1. **深度上下文分析**：仔細分析 sampleContexts，從中推斷該判例的具體法律適用場景
+2. **具體化推薦理由**：避免攏統描述，要說明該判例解決了什麼具體法律問題
+3. **精確使用策略**：基於上下文推斷，提供具體的使用時機和適用場景
+4. **優先法院見解**：優先推薦在法院見解內被引用的判例（inCourtInsightCount > 0）
+5. **重視稀有價值**：高 rarityScore 的援引可能是致勝關鍵，即使使用次數少
+6. **避免泛化推薦**：不要給出「適用於類似案件」等攏統建議
+7. **保守原則**：如果上下文不足以做出具體判斷，明確標記為"謹慎使用"
+8. **絕對不瞎掰**：寧可保守推薦也不要誤導律師
+9. 請使用繁體中文回應，並確保回應是有效的 JSON 格式`;
 }
 
 /**
