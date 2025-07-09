@@ -70,6 +70,8 @@ function generateNumberVariants(citationText) {
         }
     }
 
+
+
     // 阿拉伯數字 -> 中文數字映射
     const arabicToChinese = {
         '0': '○', '1': '一', '2': '二', '3': '三', '4': '四',
@@ -110,6 +112,8 @@ function generateNumberVariants(citationText) {
 
     return [...new Set(variants)]; // 去重
 }
+
+
 
 /**
  * 🔧 構建上下文結果對象
@@ -219,6 +223,8 @@ function extractCitationContext(citation, JFULL, CourtInsightsStart, CourtInsigh
                     return buildContextResult(citation, cleanJfull, variant, variantIndex, CourtInsightsStart, CourtInsightsEND);
                 }
             }
+
+
 
             // 所有策略都失敗
             CitationDebugLogger.logMatchFailure(citation, 'JFULL', 'no_text_match');
