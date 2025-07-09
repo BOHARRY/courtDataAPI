@@ -964,7 +964,7 @@ function enrichCitationsWithValue(citationStats, totalCases) {
 /**
  * 主要的援引判例分析函數
  */
-async function analyzeCitationsFromCasePool(casePool, position, caseDescription, originalPositionStats = null) {
+async function analyzeCitationsFromCasePool(casePool, position, caseDescription, originalPositionStats = null, taskRef = null) {
     try {
         console.log(`[analyzeCitationsFromCasePool] 開始分析援引判例，立場: ${position}`);
 
@@ -972,8 +972,28 @@ async function analyzeCitationsFromCasePool(casePool, position, caseDescription,
             throw new Error('案例池為空或無效');
         }
 
+        // 🆕 階段 1：提取援引判例
+        if (taskRef) {
+            await updateTaskProgress(taskRef, 1, 20, {
+                totalCitations: 0,
+                processed: 0,
+                qualified: 0,
+                verified: 0
+            }, "正在從案例池中提取援引判例...", 140);
+        }
+
         // 1. 提取所有援引判例（異步獲取完整數據）
         const citationStats = await extractCitationsFromCases(casePool.allCases);
+
+        // 🆕 更新進度：援引判例提取完成
+        if (taskRef) {
+            await updateTaskProgress(taskRef, 1, 30, {
+                totalCitations: citationStats.length,
+                processed: citationStats.length,
+                qualified: 0,
+                verified: 0
+            }, `發現 ${citationStats.length} 個援引判例，正在計算價值評估...`, 130);
+        }
 
         if (citationStats.length === 0) {
             return {
@@ -999,6 +1019,16 @@ async function analyzeCitationsFromCasePool(casePool, position, caseDescription,
             citation.inCourtInsightCount > 0
         );
 
+        // 🆕 更新進度：價值評估完成
+        if (taskRef) {
+            await updateTaskProgress(taskRef, 1, 40, {
+                totalCitations: citationStats.length,
+                processed: citationStats.length,
+                qualified: valuableCitations.length,
+                verified: 0
+            }, `篩選出 ${valuableCitations.length} 個高價值援引，開始上下文分析...`, 120);
+        }
+
         // 🆕 優化排序邏輯：優先考慮法院見解內援引和稀有度
         valuableCitations.sort((a, b) => {
             // 首先按法院見解內引用次數排序（最重要）
@@ -1015,12 +1045,23 @@ async function analyzeCitationsFromCasePool(casePool, position, caseDescription,
 
         console.log(`[analyzeCitationsFromCasePool] 發現 ${valuableCitations.length} 個有價值的援引判例，已按重要性重新排序`);
 
+        // 🆕 階段 2：開始 AI 分析
+        if (taskRef) {
+            await updateTaskProgress(taskRef, 2, 50, {
+                totalCitations: citationStats.length,
+                processed: citationStats.length,
+                qualified: valuableCitations.length,
+                verified: 0
+            }, "開始三階段 AI 智能分析...", 110);
+        }
+
         // 4. 🆕 三階段 AI 分析：Mini初篩 → 4o嚴格驗證 → 深度分析
         const aiRecommendations = await generateCitationRecommendationsThreeStage(
             valuableCitations,
             position,
             caseDescription,
-            casePool
+            casePool,
+            taskRef // 🆕 傳遞 taskRef 用於進度更新
         );
 
         // 🚨 精簡數據以避免 Firestore 大小限制
@@ -1039,7 +1080,17 @@ async function analyzeCitationsFromCasePool(casePool, position, caseDescription,
             }))
         }));
 
-        return {
+        // 🆕 階段 5：整合最終結果
+        if (taskRef) {
+            await updateTaskProgress(taskRef, 5, 98, {
+                totalCitations: citationStats.length,
+                processed: citationStats.length,
+                qualified: valuableCitations.length,
+                verified: aiRecommendations.recommendations?.length || 0
+            }, "正在整合分析結果...", 5);
+        }
+
+        const finalResult = {
             totalCitations: citationStats.reduce((sum, c) => sum + c.usageCount, 0),
             uniqueCitations: citationStats.length,
             valuableCitations: compactCitations.slice(0, 15), // 限制前15個最有價值的
@@ -1057,6 +1108,18 @@ async function analyzeCitationsFromCasePool(casePool, position, caseDescription,
             // 🆕 傳遞原始分析的 positionStats
             originalPositionStats
         };
+
+        // 🆕 最終完成進度
+        if (taskRef) {
+            await updateTaskProgress(taskRef, 5, 100, {
+                totalCitations: citationStats.length,
+                processed: citationStats.length,
+                qualified: valuableCitations.length,
+                verified: aiRecommendations.recommendations?.length || 0
+            }, "援引分析完成！", 0);
+        }
+
+        return finalResult;
 
     } catch (error) {
         console.error('[analyzeCitationsFromCasePool] 分析失敗:', error);
@@ -1175,7 +1238,7 @@ ${JSON.stringify(citationDataWithContext, null, 2)}
  * 🆕 三階段 AI 分析：Mini初篩 → 4o嚴格驗證 → 深度分析
  * 新流程：確保數據可靠性，律師願意付費的關鍵
  */
-async function generateCitationRecommendationsThreeStage(valuableCitations, position, caseDescription, casePool) {
+async function generateCitationRecommendationsThreeStage(valuableCitations, position, caseDescription, casePool, taskRef = null) {
     try {
         console.log(`[generateCitationRecommendationsThreeStage] 🚀 開始三階段分析，立場: ${position}`);
 
@@ -1187,9 +1250,29 @@ async function generateCitationRecommendationsThreeStage(valuableCitations, posi
             };
         }
 
+        // 🆕 階段 2：Mini 快速初篩
+        if (taskRef) {
+            await updateTaskProgress(taskRef, 2, 55, {
+                totalCitations: valuableCitations.length,
+                processed: valuableCitations.length,
+                qualified: valuableCitations.length,
+                verified: 0
+            }, "Mini AI 正在快速評估援引相關性...", 105);
+        }
+
         // 🎯 階段一：GPT-4o-mini 快速初篩（寬鬆標準）
         console.log(`[generateCitationRecommendationsThreeStage] 📋 階段一：Mini 快速初篩`);
         const miniFilteredCitations = await miniQuickScreening(valuableCitations, position, caseDescription);
+
+        // 🆕 更新進度：Mini 初篩完成
+        if (taskRef) {
+            await updateTaskProgress(taskRef, 2, 65, {
+                totalCitations: valuableCitations.length,
+                processed: valuableCitations.length,
+                qualified: miniFilteredCitations.length,
+                verified: 0
+            }, `Mini 初篩完成，${miniFilteredCitations.length} 個援引進入專家驗證...`, 95);
+        }
 
         if (miniFilteredCitations.length === 0) {
             return {
@@ -1199,9 +1282,29 @@ async function generateCitationRecommendationsThreeStage(valuableCitations, posi
             };
         }
 
+        // 🆕 階段 3：專家級品質驗證
+        if (taskRef) {
+            await updateTaskProgress(taskRef, 3, 70, {
+                totalCitations: valuableCitations.length,
+                processed: valuableCitations.length,
+                qualified: miniFilteredCitations.length,
+                verified: 0
+            }, "專家級 AI 正在嚴格驗證推薦品質...", 85);
+        }
+
         // 🎯 階段二：GPT-4o 嚴格驗證（否決權）
         console.log(`[generateCitationRecommendationsThreeStage] 🛡️ 階段二：4o 嚴格驗證`);
         const strictVerifiedCitations = await strictVerificationWith4o(miniFilteredCitations, position, caseDescription);
+
+        // 🆕 更新進度：專家驗證完成
+        if (taskRef) {
+            await updateTaskProgress(taskRef, 3, 80, {
+                totalCitations: valuableCitations.length,
+                processed: valuableCitations.length,
+                qualified: miniFilteredCitations.length,
+                verified: strictVerifiedCitations.length
+            }, `專家驗證完成，${strictVerifiedCitations.length} 個援引通過驗證，開始深度分析...`, 75);
+        }
 
         if (strictVerifiedCitations.length === 0) {
             return {
@@ -1211,9 +1314,29 @@ async function generateCitationRecommendationsThreeStage(valuableCitations, posi
             };
         }
 
+        // 🆕 階段 4：個案化建議生成
+        if (taskRef) {
+            await updateTaskProgress(taskRef, 4, 85, {
+                totalCitations: valuableCitations.length,
+                processed: valuableCitations.length,
+                qualified: miniFilteredCitations.length,
+                verified: strictVerifiedCitations.length
+            }, "正在為每個援引生成個案化使用建議...", 65);
+        }
+
         // 🎯 階段三：深度分析（只針對通過驗證的援引）
         console.log(`[generateCitationRecommendationsThreeStage] 🔍 階段三：深度分析`);
         const finalRecommendations = await deepAnalysisVerifiedCitations(strictVerifiedCitations, position, caseDescription, casePool);
+
+        // 🆕 更新進度：深度分析完成
+        if (taskRef) {
+            await updateTaskProgress(taskRef, 4, 95, {
+                totalCitations: valuableCitations.length,
+                processed: valuableCitations.length,
+                qualified: miniFilteredCitations.length,
+                verified: strictVerifiedCitations.length
+            }, `深度分析完成，生成 ${finalRecommendations.length} 個專業建議...`, 15);
+        }
 
         return {
             recommendations: finalRecommendations,
@@ -1735,20 +1858,80 @@ async function startCitationAnalysis(originalTaskId, userId) {
 }
 
 /**
+ * 🆕 進度更新輔助函數
+ */
+async function updateTaskProgress(taskRef, stage, progress, stats, currentAction, estimatedRemaining = null) {
+    // 🔧 確保數據輕量化
+    const progressData = {
+        stage: Math.min(stage, 5), // 限制階段範圍
+        progress: Math.min(Math.max(progress, 0), 100), // 限制進度範圍
+        stats: {
+            totalCitations: Math.min(stats.totalCitations || 0, 9999),
+            processed: Math.min(stats.processed || 0, 9999),
+            qualified: Math.min(stats.qualified || 0, 9999),
+            verified: Math.min(stats.verified || 0, 9999)
+        },
+        currentAction: (currentAction || '').substring(0, 100), // 限制文字長度
+        timestamp: admin.firestore.FieldValue.serverTimestamp()
+    };
+
+    if (estimatedRemaining !== null) {
+        progressData.estimatedRemaining = Math.max(estimatedRemaining, 0);
+    }
+
+    // 🔧 檢查數據大小（粗略估算）
+    const dataSize = JSON.stringify(progressData).length;
+    if (dataSize > 1000) { // 如果超過 1KB，簡化數據
+        progressData.currentAction = progressData.currentAction.substring(0, 50);
+        console.warn(`[updateTaskProgress] 進度數據過大 (${dataSize} bytes)，已簡化`);
+    }
+
+    await taskRef.update({
+        status: 'processing',
+        progressData
+    });
+
+    console.log(`[updateTaskProgress] 階段 ${stage}: ${progress}% - ${currentAction}`);
+}
+
+/**
+ * 🆕 階段定義（律師友好術語）
+ * 注意：這個常數主要用於文檔和前端同步，後端邏輯中直接使用數字
+ */
+// const ANALYSIS_STAGES = [
+//     { id: 0, name: "收集援引判例", duration: 20 },
+//     { id: 1, name: "上下文深度分析", duration: 30 },
+//     { id: 2, name: "智能相關性評估", duration: 25 },
+//     { id: 3, name: "專家級品質驗證", duration: 40 },
+//     { id: 4, name: "個案化建議生成", duration: 35 },
+//     { id: 5, name: "整合最終結果", duration: 10 }
+// ];
+
+/**
  * 背景執行援引分析
  */
-async function executeCitationAnalysisInBackground(taskId, originalTaskData, userId) {
+async function executeCitationAnalysisInBackground(taskId, originalTaskData, userId = null) {
     const db = admin.firestore();
     const taskRef = db.collection('aiAnalysisTasks').doc(taskId);
 
     try {
         console.log(`[executeCitationAnalysisInBackground] 開始執行援引分析任務: ${taskId}`);
 
-        // 更新狀態為處理中
-        await taskRef.update({
-            status: 'processing',
-            processingStartedAt: admin.firestore.FieldValue.serverTimestamp()
-        });
+        // 🆕 階段 0：初始化
+        await updateTaskProgress(taskRef, 0, 5, {
+            totalCitations: 0,
+            processed: 0,
+            qualified: 0,
+            verified: 0
+        }, "正在初始化分析環境...", 160);
+
+        // 🆕 階段 0：獲取案例池數據
+        await updateTaskProgress(taskRef, 0, 10, {
+            totalCitations: 0,
+            processed: 0,
+            qualified: 0,
+            verified: 0
+        }, "正在載入案例池數據...", 150);
 
         // 獲取案例池數據（檢查兩個可能的路徑）
         const casePool = originalTaskData.result?.casePool || originalTaskData.result?.casePrecedentData?.casePool;
@@ -1774,19 +1957,30 @@ async function executeCitationAnalysisInBackground(taskId, originalTaskData, use
             });
         }
 
-        // 執行援引分析
+        // 🆕 階段 0 完成：開始分析
+        await updateTaskProgress(taskRef, 0, 15, {
+            totalCitations: 0,
+            processed: 0,
+            qualified: 0,
+            verified: 0
+        }, "案例池載入完成，開始援引分析...", 145);
+
+        // 執行援引分析（帶進度更新）
         const analysisResult = await analyzeCitationsFromCasePool(
             casePool,
             originalTaskData.analysisData.position || 'neutral',
             originalTaskData.analysisData.caseDescription,
-            originalPositionStats // 🆕 傳遞原始的 positionStats
+            originalPositionStats,
+            taskRef // 🆕 傳遞 taskRef 用於進度更新
         );
 
-        // 保存結果
+        // 🆕 保存結果並清理進度數據
         await taskRef.update({
             status: 'complete',
             result: analysisResult,
-            completedAt: admin.firestore.FieldValue.serverTimestamp()
+            completedAt: admin.firestore.FieldValue.serverTimestamp(),
+            // 🔧 清理進度數據以節省存儲空間
+            progressData: admin.firestore.FieldValue.delete()
         });
 
         console.log(`[executeCitationAnalysisInBackground] 援引分析任務 ${taskId} 完成`);
@@ -1797,7 +1991,9 @@ async function executeCitationAnalysisInBackground(taskId, originalTaskData, use
         await taskRef.update({
             status: 'failed',
             error: error.message,
-            failedAt: admin.firestore.FieldValue.serverTimestamp()
+            failedAt: admin.firestore.FieldValue.serverTimestamp(),
+            // 🔧 清理進度數據以節省存儲空間
+            progressData: admin.firestore.FieldValue.delete()
         });
     }
 }

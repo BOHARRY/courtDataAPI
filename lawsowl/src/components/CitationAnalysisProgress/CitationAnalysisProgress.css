@@ -1,0 +1,327 @@
+/* 🎯 援引分析進度顯示組件樣式 */
+.citation-analysis-progress {
+    background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+    border-radius: 16px;
+    padding: 24px;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    max-width: 500px;
+    width: 100%;
+    margin: 0 auto;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    position: relative;
+    overflow: hidden;
+}
+
+/* 🎯 主要進度指示器 */
+.main-progress {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    margin-bottom: 24px;
+}
+
+.progress-circle {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    flex-shrink: 0;
+}
+
+.progress-inner {
+    width: 60px;
+    height: 60px;
+    background: white;
+    border-radius: 50%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.stage-icon {
+    font-size: 20px;
+    margin-bottom: 2px;
+}
+
+.progress-text {
+    font-size: 12px;
+    font-weight: 600;
+    color: #374151;
+}
+
+.stage-info {
+    flex: 1;
+}
+
+.stage-name {
+    font-size: 18px;
+    font-weight: 600;
+    color: #1f2937;
+    margin: 0 0 8px 0;
+}
+
+.stage-description {
+    font-size: 14px;
+    color: #6b7280;
+    margin: 0 0 8px 0;
+    line-height: 1.4;
+}
+
+.time-estimate {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: #9ca3af;
+}
+
+/* 📊 實時統計 */
+.analysis-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 24px;
+}
+
+.stat-card {
+    background: white;
+    border-radius: 12px;
+    padding: 16px 12px;
+    text-align: center;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    transition: transform 0.2s ease;
+}
+
+.stat-card:hover {
+    transform: translateY(-2px);
+}
+
+.stat-number {
+    display: block;
+    font-size: 24px;
+    font-weight: 700;
+    color: #1f2937;
+    margin-bottom: 4px;
+}
+
+.stat-label {
+    font-size: 12px;
+    color: #6b7280;
+    font-weight: 500;
+}
+
+/* ⭐ 品質保證標章 */
+.quality-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 24px;
+}
+
+.quality-badge {
+    background: rgba(59, 130, 246, 0.1);
+    border: 1px solid rgba(59, 130, 246, 0.2);
+    border-radius: 20px;
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: #1e40af;
+    cursor: help;
+    transition: all 0.2s ease;
+}
+
+.quality-badge:hover {
+    background: rgba(59, 130, 246, 0.15);
+    border-color: rgba(59, 130, 246, 0.3);
+}
+
+.badge-icon {
+    font-size: 14px;
+}
+
+.badge-text {
+    font-weight: 500;
+}
+
+/* 🔄 階段進度條 */
+.stage-progress {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    position: relative;
+    padding: 0 10px;
+}
+
+.stage-progress::before {
+    content: '';
+    position: absolute;
+    top: 15px;
+    left: 20px;
+    right: 20px;
+    height: 2px;
+    background: #e5e7eb;
+    z-index: 1;
+}
+
+.stage-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    position: relative;
+    z-index: 2;
+    flex: 1;
+    max-width: 80px;
+}
+
+.stage-dot {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #e5e7eb;
+    transition: all 0.3s ease;
+    position: relative;
+}
+
+.stage-item.completed .stage-dot {
+    background: #10b981;
+}
+
+.stage-item.active .stage-dot {
+    background: #3b82f6;
+    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.2);
+}
+
+.check-icon {
+    color: white;
+    font-size: 16px;
+}
+
+.pulse-dot {
+    width: 8px;
+    height: 8px;
+    background: white;
+    border-radius: 50%;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 0.5;
+        transform: scale(1.2);
+    }
+}
+
+.stage-number {
+    font-size: 12px;
+    font-weight: 600;
+    color: #6b7280;
+}
+
+.stage-label {
+    font-size: 11px;
+    color: #6b7280;
+    text-align: center;
+    line-height: 1.2;
+    font-weight: 500;
+}
+
+.stage-item.completed .stage-label,
+.stage-item.active .stage-label {
+    color: #374151;
+    font-weight: 600;
+}
+
+/* 🎨 載入動畫效果 */
+.citation-analysis-progress::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+    animation: shimmer 2s infinite;
+    pointer-events: none;
+}
+
+@keyframes shimmer {
+    0% {
+        left: -100%;
+    }
+    100% {
+        left: 100%;
+    }
+}
+
+/* 📱 響應式設計 */
+@media (max-width: 768px) {
+    .citation-analysis-progress {
+        padding: 20px;
+        max-width: 100%;
+    }
+
+    .main-progress {
+        flex-direction: column;
+        text-align: center;
+        gap: 16px;
+    }
+
+    .analysis-stats {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+    }
+
+    .quality-badges {
+        justify-content: center;
+    }
+
+    .stage-progress {
+        flex-wrap: wrap;
+        gap: 16px;
+        justify-content: center;
+    }
+
+    .stage-progress::before {
+        display: none;
+    }
+
+    .stage-item {
+        max-width: none;
+        min-width: 60px;
+    }
+}
+
+@media (max-width: 480px) {
+    .analysis-stats {
+        grid-template-columns: 1fr;
+        gap: 8px;
+    }
+    
+    .stat-card {
+        padding: 12px;
+    }
+    
+    .stat-number {
+        font-size: 20px;
+    }
+    
+    .quality-badge {
+        font-size: 11px;
+        padding: 6px 10px;
+    }
+}
