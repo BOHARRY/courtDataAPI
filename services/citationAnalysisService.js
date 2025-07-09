@@ -147,11 +147,17 @@ async function miniQuickScreening(valuableCitations, position, caseDescription) 
 
         // 準備援引數據（包含上下文摘要）
         const citationsWithContext = valuableCitations.slice(0, 20).map(citation => {
-            // 提取上下文摘要
+            // 🔧 修復：安全地提取上下文摘要
             const contextSummary = citation.totalContexts && citation.totalContexts.length > 0
-                ? citation.totalContexts.slice(0, 2).map(ctx =>
-                    `案例：${ctx.caseTitle}，上下文：${ctx.context?.substring(0, 100) || '無'}...`
-                  ).join('\n')
+                ? citation.totalContexts.slice(0, 2).map(ctx => {
+                    // context 是一個對象，包含 fullContext 屬性
+                    const contextText = ctx.context?.fullContext || ctx.context?.before || '無上下文';
+                    const displayText = typeof contextText === 'string'
+                        ? contextText.substring(0, 100)
+                        : '無上下文';
+
+                    return `案例：${ctx.caseTitle || '未知'}，上下文：${displayText}...`;
+                  }).join('\n')
                 : '無可用上下文';
 
             return {
@@ -226,9 +232,19 @@ ${citationsWithContext.map((c, i) => `${i+1}. ${c.citation}
 
     } catch (error) {
         console.error('[miniQuickScreening] Mini 初篩失敗:', error);
-        // 如果 Mini 失敗，返回前10個作為降級方案
+        // 🔧 修復：如果 Mini 失敗，返回前10個並添加默認的 miniScreening
         console.log('[miniQuickScreening] 降級到基於分數的篩選');
-        return valuableCitations.slice(0, 10);
+        const fallbackCitations = valuableCitations.slice(0, 10);
+
+        // 為降級的援引添加默認的 miniScreening 屬性
+        fallbackCitations.forEach(citation => {
+            citation.miniScreening = {
+                relevanceScore: 3, // 默認中等相關性
+                quickReason: 'Mini 初篩失敗，基於分數篩選'
+            };
+        });
+
+        return fallbackCitations;
     }
 }
 
@@ -315,12 +331,18 @@ async function strictVerificationWith4o(miniFilteredCitations, position, caseDes
 
         const positionLabel = position === 'plaintiff' ? '原告' : position === 'defendant' ? '被告' : '中性';
 
-        // 準備詳細的援引數據（包含完整上下文）
+        // 🔧 修復：準備詳細的援引數據（包含完整上下文）
         const detailedCitations = miniFilteredCitations.map(citation => {
             const contexts = citation.totalContexts || [];
-            const contextDetails = contexts.slice(0, 3).map(ctx =>
-                `【案例：${ctx.caseTitle}】\n${ctx.context || '無上下文'}\n法院見解內：${ctx.inCourtInsight ? '是' : '否'}`
-            ).join('\n\n');
+            const contextDetails = contexts.slice(0, 3).map(ctx => {
+                // context 是一個對象，包含 fullContext 屬性
+                const contextText = ctx.context?.fullContext || ctx.context?.before || '無上下文';
+                const displayText = typeof contextText === 'string'
+                    ? contextText
+                    : '無上下文';
+
+                return `【案例：${ctx.caseTitle || '未知'}】\n${displayText}\n法院見解內：${ctx.inCourtInsight ? '是' : '否'}`;
+            }).join('\n\n');
 
             return {
                 citation: citation.citation,
@@ -414,9 +436,21 @@ ${detailedCitations.map((c, i) => `${i+1}. ${c.citation}
 
     } catch (error) {
         console.error('[strictVerificationWith4o] 4o 嚴格驗證失敗:', error);
-        // 如果 4o 失敗，返回前5個作為降級方案
+        // 🔧 修復：如果 4o 失敗，返回前5個並添加默認的 strictVerification
         console.log('[strictVerificationWith4o] 降級到基於分數的篩選');
-        return miniFilteredCitations.slice(0, 5);
+        const fallbackCitations = miniFilteredCitations.slice(0, 5);
+
+        // 為降級的援引添加默認的 strictVerification 屬性
+        fallbackCitations.forEach(citation => {
+            citation.strictVerification = {
+                finalScore: 5, // 默認中等分數
+                verificationReason: '4o 驗證失敗，基於分數篩選',
+                shouldDisplay: true,
+                riskWarning: '未經嚴格驗證，請謹慎使用'
+            };
+        });
+
+        return fallbackCitations;
     }
 }
 
@@ -435,17 +469,35 @@ async function deepAnalysisVerifiedCitations(verifiedCitations, position, caseDe
             try {
                 const analysis = await analyzeSingleVerifiedCitation(citation, position, caseDescription);
                 if (analysis) {
-                    // 🆕 整合三階段的分析結果
+                    // 🆕 整合三階段的分析結果（確保沒有 undefined 值）
                     const enhancedRecommendation = {
-                        ...analysis,
-                        // Mini 初篩結果
-                        miniScreening: citation.miniScreening,
-                        // 4o 嚴格驗證結果
-                        strictVerification: citation.strictVerification,
-                        // 統計數據
-                        usageCount: citation.usageCount,
-                        inCourtInsightCount: citation.inCourtInsightCount,
-                        valueAssessment: citation.valueAssessment,
+                        // 🔧 確保 analysis 的所有屬性都有默認值
+                        citation: analysis.citation || citation.citation,
+                        recommendationLevel: analysis.recommendationLevel || '謹慎使用',
+                        reason: analysis.reason || '分析結果不完整',
+                        usageStrategy: analysis.usageStrategy || '請謹慎評估使用',
+                        contextEvidence: analysis.contextEvidence || '無可用證據',
+                        riskWarning: analysis.riskWarning || null,
+                        confidence: analysis.confidence || '低',
+                        // Mini 初篩結果（提供默認值）
+                        miniScreening: citation.miniScreening || {
+                            relevanceScore: 0,
+                            quickReason: '未經 Mini 初篩'
+                        },
+                        // 4o 嚴格驗證結果（提供默認值）
+                        strictVerification: citation.strictVerification || {
+                            finalScore: 0,
+                            verificationReason: '未經嚴格驗證',
+                            shouldDisplay: false,
+                            riskWarning: null
+                        },
+                        // 統計數據（提供默認值）
+                        usageCount: citation.usageCount || 0,
+                        inCourtInsightCount: citation.inCourtInsightCount || 0,
+                        valueAssessment: citation.valueAssessment || {
+                            grade: 'C',
+                            totalScore: 0
+                        },
                         // 🆕 最終信心度（基於三階段結果）
                         finalConfidence: calculateFinalConfidence(citation)
                     };
@@ -476,11 +528,17 @@ async function analyzeSingleVerifiedCitation(citation, position, caseDescription
     try {
         const positionLabel = position === 'plaintiff' ? '原告' : position === 'defendant' ? '被告' : '中性';
 
-        // 準備最佳的上下文樣本
+        // 🔧 修復：準備最佳的上下文樣本
         const bestContexts = citation.totalContexts?.slice(0, 2) || [];
-        const contextEvidence = bestContexts.map(ctx =>
-            `【${ctx.caseTitle}】\n${ctx.context}\n(法院見解內：${ctx.inCourtInsight ? '是' : '否'})`
-        ).join('\n\n') || '無可用上下文';
+        const contextEvidence = bestContexts.map(ctx => {
+            // context 是一個對象，包含 fullContext 屬性
+            const contextText = ctx.context?.fullContext || ctx.context?.before || '無上下文';
+            const displayText = typeof contextText === 'string'
+                ? contextText
+                : '無上下文';
+
+            return `【${ctx.caseTitle || '未知'}】\n${displayText}\n(法院見解內：${ctx.inCourtInsight ? '是' : '否'})`;
+        }).join('\n\n') || '無可用上下文';
 
         const prompt = `你是資深法律顧問，請對這個已通過嚴格驗證的援引判例提供具體的使用建議。
 
