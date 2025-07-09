@@ -177,6 +177,19 @@ async function getJudgmentNodeData(caseId) {
         });
 
         console.log(`[getJudgmentNodeData] 成功獲取案例 ${caseId} 數據`);
+
+        // 🔍 調試：檢查是否包含幽靈援引
+        if (response._source.citations && Array.isArray(response._source.citations)) {
+            const suspiciousCitations = response._source.citations.filter(citation =>
+                citation && citation.includes('司法院釋字第548號')
+            );
+            if (suspiciousCitations.length > 0) {
+                console.error(`🚨 [GHOST_CITATION_DETECTED] 案例 ${caseId} 包含幽靈援引:`, suspiciousCitations);
+                console.error(`🚨 [GHOST_CITATION_DETECTED] 案例標題: ${response._source.JTITLE}`);
+                console.error(`🚨 [GHOST_CITATION_DETECTED] 所有援引:`, response._source.citations);
+            }
+        }
+
         return response._source;
     } catch (error) {
         console.error(`[getJudgmentNodeData] 獲取案例 ${caseId} 詳細數據失敗:`, error);
@@ -306,6 +319,13 @@ async function extractCitationsFromCases(cases) {
                 continue; // 跳過無效的援引
             }
 
+            // 🔍 調試：檢查幽靈援引
+            if (citation.includes('司法院釋字第548號')) {
+                console.error(`🚨 [GHOST_CITATION_PROCESSING] 正在處理幽靈援引: ${citation}`);
+                console.error(`🚨 [GHOST_CITATION_PROCESSING] 來源案例: ${case_.id} - ${case_.title}`);
+                console.error(`🚨 [GHOST_CITATION_PROCESSING] 案例所有援引:`, citations);
+            }
+
             totalCitationsFound++;
 
             // 初始化援引判例記錄
@@ -360,7 +380,16 @@ async function extractCitationsFromCases(cases) {
     }
 
     const citationStats = Array.from(citationMap.values());
-    
+
+    // 🔍 調試：檢查是否包含幽靈援引
+    const ghostCitations = citationStats.filter(stat =>
+        stat.citation && stat.citation.includes('司法院釋字第548號')
+    );
+    if (ghostCitations.length > 0) {
+        console.error(`🚨 [GHOST_CITATION_FOUND] 在統計結果中發現幽靈援引:`, ghostCitations);
+        console.error(`🚨 [GHOST_CITATION_FOUND] 幽靈援引詳情:`, ghostCitations[0]);
+    }
+
     console.log(`[extractCitationsFromCases] 統計完成:`);
     console.log(`- 總案例數: ${cases.length}`);
     console.log(`- 有援引的案例: ${casesWithCitations}`);
@@ -1179,6 +1208,20 @@ async function executeCitationAnalysisInBackground(taskId, originalTaskData, use
 
         // 🆕 獲取原始分析的 positionStats 數據
         const originalPositionStats = originalTaskData.result?.casePrecedentData?.positionBasedAnalysis?.positionStats;
+
+        // 🔍 調試：檢查案例池數據
+        console.log(`[executeCitationAnalysisInBackground] 案例池包含 ${casePool.allCases?.length || 0} 個案例`);
+        if (casePool.allCases && casePool.allCases.length > 0) {
+            const firstCase = casePool.allCases[0];
+            console.log(`[executeCitationAnalysisInBackground] 第一個案例結構:`, {
+                id: firstCase.id,
+                title: firstCase.title,
+                hasSource: !!firstCase.source,
+                hasCitations: !!firstCase.source?.citations,
+                citationsLength: firstCase.source?.citations?.length || 0,
+                citationsPreview: firstCase.source?.citations?.slice(0, 3) || []
+            });
+        }
 
         // 執行援引分析
         const analysisResult = await analyzeCitationsFromCasePool(
