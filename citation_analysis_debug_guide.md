@@ -2,44 +2,39 @@
 
 ## 📋 **問題診斷流程**
 
-### **第一步：檢查數據獲取**
-查看以下日誌來確認數據是否正確獲取：
+### **第一步：檢查關鍵錯誤**
+查看以下簡化日誌來快速定位問題：
 
 ```
-[CitationDebug:DataRetrieval] 處理案例 1/40 - { caseId: "xxx", title: "最高法院...", hasSource: true }
-[CitationDebug:DataRetrieval] 初始數據狀態 - { citationsFromSource: 0, hasJFULL: false, JFULLLength: 0 }
-[CitationDebug:DataRetrieval] 需要從ES獲取完整數據 - { reason: "no_citations" }
-[CitationDebug:DataRetrieval] ES數據獲取成功 - { citationsFromES: 15, JFULLFromES: 45000 }
+[Citation:DataFetch] ES返回空數據: case-id-123
+[Citation:DataFetch] ES獲取失敗: case-id-456 { error: "Connection timeout" }
 ```
 
 **關鍵檢查點**：
-- `citationsFromSource` 是否為 0（表示案例池數據不完整）
-- `citationsFromES` 是否 > 0（表示ES有數據）
-- `JFULLFromES` 是否 > 0（表示有判決書全文）
+- ES數據獲取是否成功
+- 是否有大量的數據獲取失敗
 
-### **第二步：檢查文本匹配**
-查看以下日誌來確認匹配過程：
+### **第二步：檢查匹配結果**
+查看匹配成功和失敗的日誌：
 
 ```
-[CitationDebug:ExtractContext] 開始提取上下文 - { citation: "最高法院51年度台上字第223號判決...", hasJFULL: true }
-[CitationDebug:ExtractContext] 判例名稱比較 - { original: "最高法院51年度台上字第223號判決", cleaned: "最高法院51年度台上字第223號判決" }
-[CitationDebug:ExtractContext] 精確匹配結果 - { citationIndex: -1, found: false }
-[CitationDebug:ExtractContext] 數字格式變換策略 - { variants: ["最高法院五一年度台上字第二二三號判決", ...] }
+[Citation:MatchOK] "最高法院51年度台上字第223號判決" in "某案例標題" (exact)
+[Citation:MatchOK] "最高法院51年度台上字第223號判決" in "某案例標題" (variant)
+[Citation:MatchOK] "最高法院51年度台上字第223號判決" in "某案例標題" (fuzzy)
+[Citation:MatchFail] "最高法院51年度台上字第223號判決" in "某案例標題" - no_text_match
 ```
 
 **關鍵檢查點**：
-- `citationIndex` 是否為 -1（表示精確匹配失敗）
-- `variants` 數組是否包含可能的格式變體
-- 是否有 `✅ 找到數字變換匹配` 的成功日誌
+- `MatchOK` vs `MatchFail` 的比例
+- 成功匹配的策略類型 (`exact`, `variant`, `fuzzy`)
+- 失敗原因 (`no_text_match`, `no_variant_match`)
 
-### **第三步：檢查單個分析**
-查看以下日誌來確認深度分析過程：
+### **第三步：檢查分析結果**
+查看分析過程的關鍵信息：
 
 ```
-[CitationDebug:SingleAnalysis] 開始搜尋 "最高法院51年度台上字第223號判決" 的上下文
-[CitationDebug:SingleAnalysis] 檢查案例: 最高法院65年度台上字第2908號判決
-[CitationDebug:SingleAnalysis] 精確匹配檢查 - { hasExactMatch: false, totalCitations: 12 }
-[CitationDebug:SingleAnalysis] ✅ 找到模糊匹配 - { original: "...", matched: "..." }
+[Citation:SingleAnalysis] 未找到任何上下文: 最高法院51年度台上字第223號判決
+[Citation:SingleAnalysis] 獲取案例數據失敗: 某案例標題 { error: "..." }
 ```
 
 ## 🚨 **常見問題和解決方案**
@@ -103,13 +98,17 @@ grep "CitationDebug:ExtractContext" logs/citation-analysis.log
 grep "CitationDebug:DataRetrieval" logs/citation-analysis.log
 ```
 
-### **檢查援引統計結果**
+### **檢查關鍵日誌**
 ```bash
-# 查看援引統計摘要
-grep "援引統計完成" logs/citation-analysis.log
+# 查看匹配成功率
+grep "Citation:MatchOK" logs/citation-analysis.log | wc -l
+grep "Citation:MatchFail" logs/citation-analysis.log | wc -l
 
-# 查看AI分析結果
-grep "AI 分析完成" logs/citation-analysis.log
+# 查看數據獲取問題
+grep "Citation:DataFetch" logs/citation-analysis.log
+
+# 查看分析問題
+grep "Citation:SingleAnalysis" logs/citation-analysis.log
 ```
 
 ## 📊 **性能監控指標**
