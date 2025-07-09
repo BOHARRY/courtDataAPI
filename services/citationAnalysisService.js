@@ -59,7 +59,11 @@ function generateNumberVariants(citationText) {
         /\(一\)$/g, /\(二\)$/g, /\(三\)$/g, /\(四\)$/g, /\(五\)$/g,
         /㈠$/g, /㈡$/g, /㈢$/g, /㈣$/g, /㈤$/g,
         /\(1\)$/g, /\(2\)$/g, /\(3\)$/g, /\(4\)$/g, /\(5\)$/g,
-        /第1項$/g, /第2項$/g, /第3項$/g
+        /第1項$/g, /第2項$/g, /第3項$/g,
+        // 🆕 司法院釋字常見後綴
+        /解釋參照$/g, /解釋$/g, /參照$/g, /意旨$/g, /見解$/g,
+        // 🆕 判決常見後綴
+        /判決$/g, /判例$/g, /裁定$/g, /決議$/g, /函釋$/g
     ];
 
     // 生成移除後綴的版本
@@ -69,6 +73,24 @@ function generateNumberVariants(citationText) {
             variants.push(withoutSuffix);
         }
     }
+
+    // 🆕 生成添加後綴的版本（用於反向匹配）
+    const commonSuffixes = ['解釋參照', '解釋', '參照', '意旨', '見解', '判決', '判例', '裁定', '決議'];
+    for (const suffix of commonSuffixes) {
+        if (!citationText.endsWith(suffix)) {
+            variants.push(citationText + suffix);
+        }
+    }
+
+    // 🆕 生成括號包圍的版本
+    const bracketVariants = [];
+    for (const variant of variants) {
+        bracketVariants.push(`(${variant})`);
+        bracketVariants.push(`（${variant}）`);
+        bracketVariants.push(`「${variant}」`);
+        bracketVariants.push(`【${variant}】`);
+    }
+    variants.push(...bracketVariants);
 
 
 
@@ -113,7 +135,426 @@ function generateNumberVariants(citationText) {
     return [...new Set(variants)]; // 去重
 }
 
+/**
+ * 🆕 階段一：GPT-4o-mini 快速初篩
+ * 任務：寬鬆篩選，寧可錯殺不可放過，為 4o 減輕負擔
+ */
+async function miniQuickScreening(valuableCitations, position, caseDescription) {
+    try {
+        console.log(`[miniQuickScreening] 🚀 Mini 開始快速初篩 ${valuableCitations.length} 個援引`);
 
+        const positionLabel = position === 'plaintiff' ? '原告' : position === 'defendant' ? '被告' : '中性';
+
+        // 準備援引數據（包含上下文摘要）
+        const citationsWithContext = valuableCitations.slice(0, 20).map(citation => {
+            // 提取上下文摘要
+            const contextSummary = citation.totalContexts && citation.totalContexts.length > 0
+                ? citation.totalContexts.slice(0, 2).map(ctx =>
+                    `案例：${ctx.caseTitle}，上下文：${ctx.context?.substring(0, 100) || '無'}...`
+                  ).join('\n')
+                : '無可用上下文';
+
+            return {
+                citation: citation.citation,
+                usageCount: citation.usageCount,
+                inCourtInsightCount: citation.inCourtInsightCount,
+                valueScore: citation.valueAssessment?.totalScore || 0,
+                contextSummary: contextSummary
+            };
+        });
+
+        const prompt = `你是法律助理，負責快速初篩援引判例。採用寬鬆標準，寧可多選不要漏掉重要的。
+
+案件描述：${caseDescription}
+分析立場：${positionLabel}
+
+援引判例列表：
+${citationsWithContext.map((c, i) => `${i+1}. ${c.citation}
+   - 使用次數：${c.usageCount}
+   - 法院見解內使用：${c.inCourtInsightCount}次
+   - 價值分數：${c.valueScore}
+   - 使用上下文：${c.contextSummary}
+`).join('\n')}
+
+請快速評估每個援引是否可能與案件相關，標準要寬鬆：
+1. 可能相關就選擇（不確定也選）
+2. 明顯無關才排除
+3. 最多選擇15個，最少選擇5個
+
+回應格式：
+{
+  "selectedCitations": [
+    {
+      "citation": "援引名稱",
+      "relevanceScore": 1-5,
+      "quickReason": "可能相關的簡短原因"
+    }
+  ],
+  "totalSelected": 數量,
+  "screeningNote": "初篩說明"
+}`;
+
+        const response = await openai.chat.completions.create({
+            model: "gpt-4o-mini", // 🆕 使用 Mini 模型
+            messages: [
+                { role: "system", content: "你是法律助理，負責快速初篩。採用寬鬆標準，寧可多選不要漏掉。" },
+                { role: "user", content: prompt }
+            ],
+            temperature: 0.7, // 稍高溫度，允許更多可能性
+            max_tokens: 1500,
+            response_format: { type: "json_object" }
+        });
+
+        const result = JSON.parse(response.choices[0].message.content);
+
+        // 根據 Mini 篩選結果，返回對應的完整援引數據
+        const selectedCitations = [];
+        for (const selected of result.selectedCitations || []) {
+            const fullCitation = valuableCitations.find(c => c.citation === selected.citation);
+            if (fullCitation) {
+                // 🆕 添加 Mini 的評估結果
+                fullCitation.miniScreening = {
+                    relevanceScore: selected.relevanceScore,
+                    quickReason: selected.quickReason
+                };
+                selectedCitations.push(fullCitation);
+            }
+        }
+
+        console.log(`[miniQuickScreening] ✅ Mini 篩選完成：${selectedCitations.length}/${valuableCitations.length} 個援引通過初篩`);
+        return selectedCitations;
+
+    } catch (error) {
+        console.error('[miniQuickScreening] Mini 初篩失敗:', error);
+        // 如果 Mini 失敗，返回前10個作為降級方案
+        console.log('[miniQuickScreening] 降級到基於分數的篩選');
+        return valuableCitations.slice(0, 10);
+    }
+}
+
+/**
+ * 🆕 批量提取所有援引的上下文
+ * 這是新流程的核心改進：在統計階段就獲取完整上下文
+ */
+async function batchExtractContexts(citationMap, allCaseData) {
+    console.log(`[batchExtractContexts] 🚀 開始批量提取 ${citationMap.size} 個援引的上下文`);
+
+    let processedCitations = 0;
+    let totalContextsFound = 0;
+
+    // 對每個援引進行上下文提取
+    for (const [citation, citationRecord] of citationMap) {
+        processedCitations++;
+        console.log(`[batchExtractContexts] 📝 處理援引 ${processedCitations}/${citationMap.size}: ${citation}`);
+
+        // 在所有相關案例中尋找此援引的上下文
+        for (const caseData of allCaseData) {
+            // 檢查此案例是否包含此援引
+            if (!caseData.citations.includes(citation)) {
+                continue;
+            }
+
+            // 從 ES 獲取完整的 JFULL 數據
+            try {
+                const fullData = await getJudgmentNodeData(caseData.id);
+                if (!fullData || !fullData.JFULL) {
+                    console.warn(`[batchExtractContexts] ⚠️ 無法獲取案例 ${caseData.id} 的 JFULL 數據`);
+                    continue;
+                }
+
+                // 提取上下文
+                const context = extractCitationContext(
+                    citation,
+                    fullData.JFULL,
+                    fullData.CourtInsightsStart || '',
+                    fullData.CourtInsightsEND || ''
+                );
+
+                if (context.found) {
+                    totalContextsFound++;
+
+                    // 🆕 保存完整的上下文資訊
+                    citationRecord.totalContexts.push({
+                        caseId: caseData.id,
+                        caseTitle: caseData.title,
+                        context: context.context,
+                        inCourtInsight: context.inCourtInsight,
+                        position: context.position
+                    });
+
+                    // 更新對應的 occurrence 記錄
+                    const occurrence = citationRecord.occurrences.find(occ => occ.caseId === caseData.id);
+                    if (occurrence) {
+                        occurrence.found = true;
+                        occurrence.inCourtInsight = context.inCourtInsight;
+
+                        if (context.inCourtInsight) {
+                            citationRecord.inCourtInsightCount++;
+                        }
+                    }
+                }
+
+            } catch (error) {
+                console.error(`[batchExtractContexts] ❌ 提取案例 ${caseData.id} 上下文失敗:`, error.message);
+            }
+        }
+    }
+
+    console.log(`[batchExtractContexts] ✅ 批量提取完成:`);
+    console.log(`- 處理援引數: ${processedCitations}`);
+    console.log(`- 找到上下文: ${totalContextsFound}`);
+}
+
+/**
+ * 🆕 階段二：GPT-4o 嚴格驗證機制
+ * 任務：擁有完全否決權，嚴格把關，確保推薦品質
+ */
+async function strictVerificationWith4o(miniFilteredCitations, position, caseDescription) {
+    try {
+        console.log(`[strictVerificationWith4o] 🛡️ 4o 開始嚴格驗證 ${miniFilteredCitations.length} 個援引`);
+
+        const positionLabel = position === 'plaintiff' ? '原告' : position === 'defendant' ? '被告' : '中性';
+
+        // 準備詳細的援引數據（包含完整上下文）
+        const detailedCitations = miniFilteredCitations.map(citation => {
+            const contexts = citation.totalContexts || [];
+            const contextDetails = contexts.slice(0, 3).map(ctx =>
+                `【案例：${ctx.caseTitle}】\n${ctx.context || '無上下文'}\n法院見解內：${ctx.inCourtInsight ? '是' : '否'}`
+            ).join('\n\n');
+
+            return {
+                citation: citation.citation,
+                usageCount: citation.usageCount,
+                inCourtInsightCount: citation.inCourtInsightCount,
+                valueScore: citation.valueAssessment?.totalScore || 0,
+                miniReason: citation.miniScreening?.quickReason || '無',
+                contextDetails: contextDetails || '無可用上下文'
+            };
+        });
+
+        const prompt = `你是資深法律專家，擁有完全的否決權。請嚴格評估每個援引判例的實際參考價值。
+
+重要原則：
+1. 如果援引與案件主題完全無關，直接給 0 分
+2. 如果上下文顯示援引處理的是不同類型問題，給 1-3 分
+3. 只有真正相關且有實質幫助的援引才給高分
+4. 寧可嚴格也不要推薦無關的援引
+
+案件描述：${caseDescription}
+分析立場：${positionLabel}
+
+待驗證援引：
+${detailedCitations.map((c, i) => `${i+1}. ${c.citation}
+   Mini 初篩理由：${c.miniReason}
+   使用統計：${c.usageCount}次使用，${c.inCourtInsightCount}次在法院見解內
+   價值分數：${c.valueScore}
+
+   實際使用上下文：
+   ${c.contextDetails}
+
+   ---`).join('\n')}
+
+請對每個援引進行嚴格評分（0-10分）：
+- 9-10分：極高價值，強烈推薦
+- 7-8分：有價值，值得參考
+- 4-6分：一般參考價值
+- 1-3分：低價值，前端可忽略
+- 0分：完全無關，建議隱藏
+
+回應格式：
+{
+  "verifiedCitations": [
+    {
+      "citation": "援引名稱",
+      "finalScore": 0-10,
+      "verificationReason": "嚴格評估的詳細理由",
+      "shouldDisplay": true/false,
+      "riskWarning": "如果有風險的警告"
+    }
+  ],
+  "verificationSummary": "整體驗證說明",
+  "rejectedCount": 被否決的數量
+}`;
+
+        const response = await openai.chat.completions.create({
+            model: "gpt-4o", // 🆕 使用 4o 進行嚴格驗證
+            messages: [
+                { role: "system", content: "你是資深法律專家，擁有完全否決權。請嚴格把關，確保推薦品質。寧可嚴格也不要推薦無關援引。" },
+                { role: "user", content: prompt }
+            ],
+            temperature: 0.1, // 低溫度，確保一致性
+            max_tokens: 2000,
+            response_format: { type: "json_object" }
+        });
+
+        const result = JSON.parse(response.choices[0].message.content);
+
+        // 根據 4o 驗證結果，過濾援引
+        const verifiedCitations = [];
+        for (const verified of result.verifiedCitations || []) {
+            if (verified.finalScore >= 4) { // 只保留 4 分以上的援引
+                const fullCitation = miniFilteredCitations.find(c => c.citation === verified.citation);
+                if (fullCitation) {
+                    // 🆕 添加 4o 的嚴格驗證結果
+                    fullCitation.strictVerification = {
+                        finalScore: verified.finalScore,
+                        verificationReason: verified.verificationReason,
+                        shouldDisplay: verified.shouldDisplay,
+                        riskWarning: verified.riskWarning
+                    };
+                    verifiedCitations.push(fullCitation);
+                }
+            }
+        }
+
+        console.log(`[strictVerificationWith4o] ✅ 4o 驗證完成：${verifiedCitations.length}/${miniFilteredCitations.length} 個援引通過嚴格驗證`);
+        console.log(`[strictVerificationWith4o] 被否決：${result.rejectedCount || 0} 個援引`);
+
+        return verifiedCitations;
+
+    } catch (error) {
+        console.error('[strictVerificationWith4o] 4o 嚴格驗證失敗:', error);
+        // 如果 4o 失敗，返回前5個作為降級方案
+        console.log('[strictVerificationWith4o] 降級到基於分數的篩選');
+        return miniFilteredCitations.slice(0, 5);
+    }
+}
+
+/**
+ * 🆕 階段三：深度分析通過驗證的援引
+ * 任務：對高品質援引進行詳細分析，提供具體建議
+ */
+async function deepAnalysisVerifiedCitations(verifiedCitations, position, caseDescription, casePool) {
+    try {
+        console.log(`[deepAnalysisVerifiedCitations] 🔍 開始深度分析 ${verifiedCitations.length} 個通過驗證的援引`);
+
+        const recommendations = [];
+
+        // 對每個通過驗證的援引進行深度分析
+        for (const citation of verifiedCitations) {
+            try {
+                const analysis = await analyzeSingleVerifiedCitation(citation, position, caseDescription);
+                if (analysis) {
+                    // 🆕 整合三階段的分析結果
+                    const enhancedRecommendation = {
+                        ...analysis,
+                        // Mini 初篩結果
+                        miniScreening: citation.miniScreening,
+                        // 4o 嚴格驗證結果
+                        strictVerification: citation.strictVerification,
+                        // 統計數據
+                        usageCount: citation.usageCount,
+                        inCourtInsightCount: citation.inCourtInsightCount,
+                        valueAssessment: citation.valueAssessment,
+                        // 🆕 最終信心度（基於三階段結果）
+                        finalConfidence: calculateFinalConfidence(citation)
+                    };
+
+                    recommendations.push(enhancedRecommendation);
+                }
+            } catch (error) {
+                console.error(`[deepAnalysisVerifiedCitations] 分析援引失敗: ${citation.citation}`, error);
+            }
+        }
+
+        // 根據最終分數排序
+        recommendations.sort((a, b) => (b.strictVerification?.finalScore || 0) - (a.strictVerification?.finalScore || 0));
+
+        console.log(`[deepAnalysisVerifiedCitations] ✅ 深度分析完成：${recommendations.length} 個最終推薦`);
+        return recommendations;
+
+    } catch (error) {
+        console.error('[deepAnalysisVerifiedCitations] 深度分析失敗:', error);
+        return [];
+    }
+}
+
+/**
+ * 🆕 分析單個通過驗證的援引
+ */
+async function analyzeSingleVerifiedCitation(citation, position, caseDescription) {
+    try {
+        const positionLabel = position === 'plaintiff' ? '原告' : position === 'defendant' ? '被告' : '中性';
+
+        // 準備最佳的上下文樣本
+        const bestContexts = citation.totalContexts?.slice(0, 2) || [];
+        const contextEvidence = bestContexts.map(ctx =>
+            `【${ctx.caseTitle}】\n${ctx.context}\n(法院見解內：${ctx.inCourtInsight ? '是' : '否'})`
+        ).join('\n\n') || '無可用上下文';
+
+        const prompt = `你是資深法律顧問，請對這個已通過嚴格驗證的援引判例提供具體的使用建議。
+
+案件描述：${caseDescription}
+分析立場：${positionLabel}
+
+援引判例：${citation.citation}
+4o 驗證分數：${citation.strictVerification?.finalScore || 0}/10
+驗證理由：${citation.strictVerification?.verificationReason || '無'}
+
+實際使用上下文：
+${contextEvidence}
+
+請提供具體的使用建議：
+
+回應格式：
+{
+  "citation": "${citation.citation}",
+  "recommendationLevel": "強烈推薦/建議考慮/謹慎使用",
+  "reason": "基於上下文的具體推薦理由",
+  "usageStrategy": "具體的使用策略和建議",
+  "contextEvidence": "支持此推薦的上下文證據摘要",
+  "riskWarning": "如果有的話，使用風險警告",
+  "confidence": "高/中/低"
+}`;
+
+        const response = await openai.chat.completions.create({
+            model: "gpt-4o",
+            messages: [
+                { role: "system", content: "你是資深法律顧問，請基於實際上下文提供具體建議。" },
+                { role: "user", content: prompt }
+            ],
+            temperature: 0.1,
+            max_tokens: 800,
+            response_format: { type: "json_object" }
+        });
+
+        return JSON.parse(response.choices[0].message.content);
+
+    } catch (error) {
+        console.error(`[analyzeSingleVerifiedCitation] 分析失敗: ${citation.citation}`, error);
+        return null;
+    }
+}
+
+/**
+ * 🆕 計算最終信心度（基於三階段結果）
+ */
+function calculateFinalConfidence(citation) {
+    const miniScore = citation.miniScreening?.relevanceScore || 0;
+    const strictScore = citation.strictVerification?.finalScore || 0;
+    const usageCount = citation.usageCount || 0;
+    const inCourtCount = citation.inCourtInsightCount || 0;
+
+    // 綜合評分
+    let confidence = 0;
+
+    // Mini 篩選貢獻 (20%)
+    confidence += (miniScore / 5) * 20;
+
+    // 4o 嚴格驗證貢獻 (50%)
+    confidence += (strictScore / 10) * 50;
+
+    // 使用統計貢獻 (20%)
+    confidence += Math.min(usageCount / 5, 1) * 20;
+
+    // 法院見解貢獻 (10%)
+    confidence += Math.min(inCourtCount / 3, 1) * 10;
+
+    if (confidence >= 80) return '極高';
+    if (confidence >= 65) return '高';
+    if (confidence >= 45) return '中';
+    return '低';
+}
 
 /**
  * 🔧 構建上下文結果對象
@@ -269,35 +710,33 @@ function extractCitationContext(citation, JFULL, CourtInsightsStart, CourtInsigh
 }
 
 /**
- * 從案例池中提取所有援引判例並進行統計分析
- * 注意：案例池中的數據可能已精簡，需要從 ES 獲取完整數據
+ * 🆕 從案例池中提取所有援引判例並進行統計分析（改良版）
+ * 新增功能：批量提取上下文，為後續 AI 分析提供完整資訊
  */
 async function extractCitationsFromCases(cases) {
-    console.log(`[extractCitationsFromCases] 開始分析 ${cases.length} 個案例的援引判例`);
+    console.log(`[extractCitationsFromCases] 🚀 開始改良版援引分析 - ${cases.length} 個案例`);
 
     const citationMap = new Map();
     let totalCitationsFound = 0;
     let casesWithCitations = 0;
 
-    // 🚨 優化：逐個處理案例，避免在內存中保留大型 JFULL 數據
+    // 🆕 第一階段：收集所有援引並統計
+    console.log(`[extractCitationsFromCases] 📊 第一階段：收集援引統計`);
+    const allCaseData = []; // 暫存案例數據，用於後續上下文提取
+
+    // 第一階段：快速收集所有援引統計
     for (let caseIndex = 0; caseIndex < cases.length; caseIndex++) {
         const case_ = cases[caseIndex];
 
         // 檢查案例是否有 citations 數據
         let citations = case_.source?.citations || [];
-        let JFULL = case_.source?.JFULL || '';
-        let CourtInsightsStart = case_.source?.CourtInsightsStart || '';
-        let CourtInsightsEND = case_.source?.CourtInsightsEND || '';
 
-        // 如果案例池中沒有完整數據，從 ES 獲取（但不保存到內存中）
-        if (citations.length === 0 || !JFULL) {
+        // 如果案例池中沒有 citations，從 ES 獲取
+        if (citations.length === 0) {
             try {
                 const fullData = await getJudgmentNodeData(case_.id);
                 if (fullData) {
                     citations = fullData.citations || [];
-                    JFULL = fullData.JFULL || '';
-                    CourtInsightsStart = fullData.CourtInsightsStart || '';
-                    CourtInsightsEND = fullData.CourtInsightsEND || '';
                 } else {
                     CitationDebugLogger.logCritical('DataFetch', `ES返回空數據: ${case_.id}`);
                 }
@@ -312,18 +751,23 @@ async function extractCitationsFromCases(cases) {
         }
 
         casesWithCitations++;
-        console.log(`[extractCitationsFromCases] 案例 ${caseIndex + 1}: ${case_.title} - 發現 ${citations.length} 個援引`);
+        console.log(`[extractCitationsFromCases] 📋 案例 ${caseIndex + 1}: ${case_.title} - 發現 ${citations.length} 個援引`);
 
+        // 🆕 暫存案例基本資訊，用於後續上下文提取
+        allCaseData.push({
+            id: case_.id,
+            title: case_.title,
+            court: case_.court,
+            year: case_.year,
+            verdictType: case_.verdictType,
+            similarity: case_.similarity,
+            citations: citations
+        });
+
+        // 統計每個援引的使用次數
         for (const citation of citations) {
             if (!citation || typeof citation !== 'string') {
                 continue; // 跳過無效的援引
-            }
-
-            // 🔍 調試：檢查幽靈援引
-            if (citation.includes('司法院釋字第548號')) {
-                console.error(`🚨 [GHOST_CITATION_PROCESSING] 正在處理幽靈援引: ${citation}`);
-                console.error(`🚨 [GHOST_CITATION_PROCESSING] 來源案例: ${case_.id} - ${case_.title}`);
-                console.error(`🚨 [GHOST_CITATION_PROCESSING] 案例所有援引:`, citations);
             }
 
             totalCitationsFound++;
@@ -336,21 +780,13 @@ async function extractCitationsFromCases(cases) {
                     usageCount: 0,
                     inCourtInsightCount: 0,
                     casesUsed: new Set(),
-                    totalContexts: []
+                    totalContexts: [] // 🆕 將在第二階段填充
                 });
             }
 
             const citationRecord = citationMap.get(citation);
 
-            // 提取前後文脈絡
-            const context = extractCitationContext(
-                citation,
-                JFULL,
-                CourtInsightsStart,
-                CourtInsightsEND
-            );
-
-            // 🚨 記錄使用情況（精簡版，不保存完整 context）
+            // 🆕 暫時記錄使用情況（不提取上下文）
             citationRecord.occurrences.push({
                 caseId: case_.id,
                 caseTitle: case_.title,
@@ -358,26 +794,20 @@ async function extractCitationsFromCases(cases) {
                 year: case_.year,
                 verdictType: case_.verdictType,
                 similarity: case_.similarity,
-                found: context.found,
-                inCourtInsight: context.inCourtInsight
-                // 🚨 不保存完整的 context 數據
+                found: false, // 將在第二階段確定
+                inCourtInsight: false // 將在第二階段確定
             });
 
             citationRecord.usageCount++;
             citationRecord.casesUsed.add(case_.id);
-
-            if (context.inCourtInsight) {
-                citationRecord.inCourtInsightCount++;
-            }
-
-            // 🚨 不保存 totalContexts 以節省內存
         }
-
-        // 🚨 清理變量，釋放內存
-        JFULL = null;
-        CourtInsightsStart = null;
-        CourtInsightsEND = null;
     }
+
+    console.log(`[extractCitationsFromCases] 📊 第一階段完成 - 發現 ${citationMap.size} 個獨特援引`);
+
+    // 🆕 第二階段：批量提取上下文
+    console.log(`[extractCitationsFromCases] 🔍 第二階段：批量提取上下文`);
+    await batchExtractContexts(citationMap, allCaseData);
 
     const citationStats = Array.from(citationMap.values());
 
@@ -528,8 +958,8 @@ async function analyzeCitationsFromCasePool(casePool, position, caseDescription,
 
         console.log(`[analyzeCitationsFromCasePool] 發現 ${valuableCitations.length} 個有價值的援引判例，已按重要性重新排序`);
 
-        // 4. 🆕 兩階段 AI 分析：先篩選重要性，再逐個深度分析
-        const aiRecommendations = await generateCitationRecommendationsTwoStage(
+        // 4. 🆕 三階段 AI 分析：Mini初篩 → 4o嚴格驗證 → 深度分析
+        const aiRecommendations = await generateCitationRecommendationsThreeStage(
             valuableCitations,
             position,
             caseDescription,
@@ -685,7 +1115,71 @@ ${JSON.stringify(citationDataWithContext, null, 2)}
 }
 
 /**
- * 🆕 兩階段 AI 分析：先篩選重要性，再逐個深度分析
+ * 🆕 三階段 AI 分析：Mini初篩 → 4o嚴格驗證 → 深度分析
+ * 新流程：確保數據可靠性，律師願意付費的關鍵
+ */
+async function generateCitationRecommendationsThreeStage(valuableCitations, position, caseDescription, casePool) {
+    try {
+        console.log(`[generateCitationRecommendationsThreeStage] 🚀 開始三階段分析，立場: ${position}`);
+
+        if (valuableCitations.length === 0) {
+            return {
+                recommendations: [],
+                summary: '未發現有價值的援引判例',
+                aiAnalysisStatus: 'no_data'
+            };
+        }
+
+        // 🎯 階段一：GPT-4o-mini 快速初篩（寬鬆標準）
+        console.log(`[generateCitationRecommendationsThreeStage] 📋 階段一：Mini 快速初篩`);
+        const miniFilteredCitations = await miniQuickScreening(valuableCitations, position, caseDescription);
+
+        if (miniFilteredCitations.length === 0) {
+            return {
+                recommendations: [],
+                summary: '經 Mini 初篩後，未發現相關的援引判例',
+                aiAnalysisStatus: 'mini_filtered_out'
+            };
+        }
+
+        // 🎯 階段二：GPT-4o 嚴格驗證（否決權）
+        console.log(`[generateCitationRecommendationsThreeStage] 🛡️ 階段二：4o 嚴格驗證`);
+        const strictVerifiedCitations = await strictVerificationWith4o(miniFilteredCitations, position, caseDescription);
+
+        if (strictVerifiedCitations.length === 0) {
+            return {
+                recommendations: [],
+                summary: '經 GPT-4o 嚴格驗證後，所有援引判例均被認定為不相關或無參考價值',
+                aiAnalysisStatus: 'strict_filtered_out'
+            };
+        }
+
+        // 🎯 階段三：深度分析（只針對通過驗證的援引）
+        console.log(`[generateCitationRecommendationsThreeStage] 🔍 階段三：深度分析`);
+        const finalRecommendations = await deepAnalysisVerifiedCitations(strictVerifiedCitations, position, caseDescription, casePool);
+
+        return {
+            recommendations: finalRecommendations,
+            summary: `經三階段 AI 驗證，推薦 ${finalRecommendations.length} 個高價值援引判例`,
+            aiAnalysisStatus: 'three_stage_success',
+            stageResults: {
+                miniFiltered: miniFilteredCitations.length,
+                strictVerified: strictVerifiedCitations.length,
+                finalRecommended: finalRecommendations.length
+            }
+        };
+
+    } catch (error) {
+        console.error('[generateCitationRecommendationsThreeStage] 三階段分析失敗:', error);
+
+        // 降級到原有的兩階段分析
+        console.log('[generateCitationRecommendationsThreeStage] 降級到兩階段分析');
+        return await generateCitationRecommendationsTwoStage(valuableCitations, position, caseDescription, casePool);
+    }
+}
+
+/**
+ * 🆕 兩階段 AI 分析：先篩選重要性，再逐個深度分析（保留作為降級方案）
  */
 async function generateCitationRecommendationsTwoStage(valuableCitations, position, caseDescription, casePool) {
     try {
