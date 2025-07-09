@@ -648,7 +648,17 @@ ${JSON.stringify(simplifiedCitations, null, 2)}
             max_tokens: 1000
         });
 
-        const result = JSON.parse(response.choices[0].message.content);
+        // 🔧 修復：處理 AI 可能返回的 markdown 格式
+        let responseContent = response.choices[0].message.content.trim();
+
+        // 移除可能的 markdown 代碼塊標記
+        if (responseContent.startsWith('```json')) {
+            responseContent = responseContent.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+        } else if (responseContent.startsWith('```')) {
+            responseContent = responseContent.replace(/^```\s*/, '').replace(/\s*```$/, '');
+        }
+
+        const result = JSON.parse(responseContent);
 
         // 根據 AI 篩選結果，返回對應的完整援引數據
         const selectedCitations = [];
@@ -744,7 +754,17 @@ ${JSON.stringify(contextSamples, null, 2)}
             max_tokens: 800
         });
 
-        const result = JSON.parse(response.choices[0].message.content);
+        // 🔧 修復：處理 AI 可能返回的 markdown 格式
+        let responseContent = response.choices[0].message.content.trim();
+
+        // 移除可能的 markdown 代碼塊標記
+        if (responseContent.startsWith('```json')) {
+            responseContent = responseContent.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+        } else if (responseContent.startsWith('```')) {
+            responseContent = responseContent.replace(/^```\s*/, '').replace(/\s*```$/, '');
+        }
+
+        const result = JSON.parse(responseContent);
         console.log(`[analyzeSingleCitation] 完成單個分析: ${citation.citation}`);
         return result;
 
@@ -805,7 +825,17 @@ async function generateCitationRecommendations(valuableCitations, position, case
             throw new Error('AI 分析回應為空');
         }
 
-        const aiResult = JSON.parse(response.choices[0].message.content);
+        // 🔧 修復：處理 AI 可能返回的 markdown 格式
+        let responseContent = response.choices[0].message.content.trim();
+
+        // 移除可能的 markdown 代碼塊標記
+        if (responseContent.startsWith('```json')) {
+            responseContent = responseContent.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+        } else if (responseContent.startsWith('```')) {
+            responseContent = responseContent.replace(/^```\s*/, '').replace(/\s*```$/, '');
+        }
+
+        const aiResult = JSON.parse(responseContent);
 
         console.log(`[generateCitationRecommendations] AI 分析完成，推薦 ${aiResult.recommendations?.length || 0} 個判例`);
 
