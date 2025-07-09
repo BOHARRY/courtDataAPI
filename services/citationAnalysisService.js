@@ -533,8 +533,20 @@ async function generateCitationRecommendations(valuableCitations, position, case
 
         console.log(`[generateCitationRecommendations] AI 分析完成，推薦 ${aiResult.recommendations?.length || 0} 個判例`);
 
+        // 🆕 增強推薦結果：添加統計數據
+        const enhancedRecommendations = (aiResult.recommendations || []).map(rec => {
+            const originalCitation = valuableCitations.find(vc => vc.citation === rec.citation);
+            return {
+                ...rec,
+                // 🆕 添加統計數據用於前端顯示
+                usageCount: originalCitation?.usageCount || 0,
+                inCourtInsightCount: originalCitation?.inCourtInsightCount || 0,
+                valueAssessment: originalCitation?.valueAssessment || null
+            };
+        });
+
         return {
-            recommendations: aiResult.recommendations || [],
+            recommendations: enhancedRecommendations,
             summary: aiResult.summary || '分析完成',
             aiAnalysisStatus: 'success',
             analysisTimestamp: new Date().toISOString()
