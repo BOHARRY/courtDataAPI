@@ -41,7 +41,7 @@ class XAIClient {
             if (response_format?.type === 'json_object') {
                 const lastMessage = requestData.messages[requestData.messages.length - 1];
                 if (lastMessage && lastMessage.role === 'user') {
-                    lastMessage.content += '\n\n請確保回應是有效的 JSON 格式，不要包含任何其他文字。';
+                    lastMessage.content += '\n\n重要：請確保回應是有效的 JSON 格式。不要包含任何其他文字、註釋或 markdown 標記。字符串中的換行符必須正確轉義為 \\n。確保所有字符串都正確關閉引號。';
                 }
             }
 

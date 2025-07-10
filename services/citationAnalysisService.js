@@ -410,7 +410,27 @@ ${detailedCitations.map((c, i) => `${i+1}. ${c.citation}
             response_format: { type: "json_object" }
         });
 
-        const result = JSON.parse(response.choices[0].message.content);
+        // 🔧 安全解析 JSON，處理 Grok 可能的格式問題
+        const rawContent = response.choices[0].message.content;
+        console.log(`[strictVerificationWithGrok] 原始回應內容:`, rawContent.substring(0, 500) + '...');
+
+        let result;
+        try {
+            result = JSON.parse(rawContent);
+        } catch (parseError) {
+            console.error(`[strictVerificationWithGrok] JSON 解析失敗:`, parseError.message);
+            console.error(`[strictVerificationWithGrok] 原始內容:`, rawContent);
+
+            // 嘗試修復常見的 JSON 問題
+            const cleanedContent = cleanJsonResponse(rawContent);
+            try {
+                result = JSON.parse(cleanedContent);
+                console.log(`[strictVerificationWithGrok] JSON 修復成功`);
+            } catch (secondError) {
+                console.error(`[strictVerificationWithGrok] JSON 修復也失敗:`, secondError.message);
+                throw parseError; // 拋出原始錯誤
+            }
+        }
 
         // 根據 Grok 驗證結果，過濾援引
         const verifiedCitations = [];
@@ -453,6 +473,45 @@ ${detailedCitations.map((c, i) => `${i+1}. ${c.citation}
 
         return fallbackCitations;
     }
+}
+
+/**
+ * 清理和修復 JSON 回應中的常見問題
+ * @param {string} rawContent - 原始 JSON 字符串
+ * @returns {string} - 清理後的 JSON 字符串
+ */
+function cleanJsonResponse(rawContent) {
+    let cleaned = rawContent.trim();
+
+    // 移除可能的 markdown 代碼塊標記
+    if (cleaned.startsWith('```json')) {
+        cleaned = cleaned.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+    } else if (cleaned.startsWith('```')) {
+        cleaned = cleaned.replace(/^```\s*/, '').replace(/\s*```$/, '');
+    }
+
+    // 嘗試提取 JSON 對象（從第一個 { 到最後一個 }）
+    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+        cleaned = jsonMatch[0];
+    }
+
+    // 修復常見的 JSON 問題
+    cleaned = cleaned
+        // 移除控制字符，但保留必要的空白字符
+        .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
+        // 修復字符串中的未轉義換行符（在雙引號內）
+        .replace(/"([^"]*)\n([^"]*)"/g, '"$1\\n$2"')
+        .replace(/"([^"]*)\r([^"]*)"/g, '"$1\\r$2"')
+        .replace(/"([^"]*)\t([^"]*)"/g, '"$1\\t$2"')
+        // 移除尾隨逗號
+        .replace(/,(\s*[}\]])/g, '$1')
+        // 修復可能的雙重轉義
+        .replace(/\\\\n/g, '\\n')
+        .replace(/\\\\r/g, '\\r')
+        .replace(/\\\\t/g, '\\t');
+
+    return cleaned;
 }
 
 /**
@@ -576,7 +635,27 @@ ${contextEvidence}
             response_format: { type: "json_object" }
         });
 
-        return JSON.parse(response.choices[0].message.content);
+        // 🔧 安全解析 JSON，處理 Grok 可能的格式問題
+        const rawContent = response.choices[0].message.content;
+        console.log(`[analyzeSingleVerifiedCitation] 原始回應內容:`, rawContent.substring(0, 300) + '...');
+
+        try {
+            return JSON.parse(rawContent);
+        } catch (parseError) {
+            console.error(`[analyzeSingleVerifiedCitation] JSON 解析失敗:`, parseError.message);
+            console.error(`[analyzeSingleVerifiedCitation] 原始內容:`, rawContent);
+
+            // 嘗試修復常見的 JSON 問題
+            const cleanedContent = cleanJsonResponse(rawContent);
+            try {
+                const result = JSON.parse(cleanedContent);
+                console.log(`[analyzeSingleVerifiedCitation] JSON 修復成功`);
+                return result;
+            } catch (secondError) {
+                console.error(`[analyzeSingleVerifiedCitation] JSON 修復也失敗:`, secondError.message);
+                throw parseError; // 拋出原始錯誤
+            }
+        }
 
     } catch (error) {
         console.error(`[analyzeSingleVerifiedCitation] 分析失敗: ${citation.citation}`, error);
