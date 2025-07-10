@@ -29,10 +29,10 @@ class XAIClient {
         try {
             const { model, messages, temperature, max_tokens, response_format } = options;
 
-            // 準備請求數據
+            // 準備請求數據 - 深拷貝 messages 避免修改原始數據
             const requestData = {
                 model: model,
-                messages: messages,
+                messages: JSON.parse(JSON.stringify(messages)), // 深拷貝
                 temperature: temperature || 0.7,
                 max_tokens: max_tokens || 1000
             };
@@ -40,17 +40,31 @@ class XAIClient {
             // 如果需要 JSON 格式，添加到最後一個用戶訊息
             if (response_format?.type === 'json_object') {
                 const lastMessage = requestData.messages[requestData.messages.length - 1];
-                if (lastMessage.role === 'user') {
+                if (lastMessage && lastMessage.role === 'user') {
                     lastMessage.content += '\n\n請確保回應是有效的 JSON 格式，不要包含任何其他文字。';
                 }
             }
 
             // 調用 xAI API
+            console.log(`[XAIClient] 調用 xAI API: ${model}`);
+            console.log(`[XAIClient] 請求數據:`, {
+                model: requestData.model,
+                messagesCount: requestData.messages.length,
+                temperature: requestData.temperature,
+                max_tokens: requestData.max_tokens
+            });
+
             const response = await axios.post(`${this.baseURL}/chat/completions`, requestData, {
                 headers: {
                     'Authorization': `Bearer ${this.apiKey}`,
                     'Content-Type': 'application/json'
                 }
+            });
+
+            console.log(`[XAIClient] API 調用成功，狀態碼: ${response.status}`);
+            console.log(`[XAIClient] 回應數據:`, {
+                choices: response.data.choices?.length || 0,
+                usage: response.data.usage
             });
 
             // 返回與 OpenAI 相容的格式
@@ -61,11 +75,16 @@ class XAIClient {
 
             // 提供更詳細的錯誤信息
             if (error.response) {
+                console.error('[XAIClient] HTTP 錯誤狀態:', error.response.status);
+                console.error('[XAIClient] 錯誤回應:', error.response.data);
+
                 const errorMsg = error.response.data?.error?.message || error.response.statusText;
                 throw new Error(`xAI API 調用失敗 (${error.response.status}): ${errorMsg}`);
             } else if (error.request) {
+                console.error('[XAIClient] 網路請求失敗:', error.request);
                 throw new Error(`xAI API 網路錯誤: 無法連接到 xAI 服務`);
             } else {
+                console.error('[XAIClient] 其他錯誤:', error.message);
                 throw new Error(`xAI API 調用失敗: ${error.message}`);
             }
         }
