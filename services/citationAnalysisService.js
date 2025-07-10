@@ -1,9 +1,8 @@
 // services/citationAnalysisService.js
 import admin from 'firebase-admin';
 import OpenAI from 'openai';
-import { OPENAI_API_KEY, XAI_API_KEY, XAI_MODEL_VERIFICATION, XAI_MODEL_ANALYSIS } from '../config/environment.js';
+import { OPENAI_API_KEY } from '../config/environment.js';
 import esClient from '../config/elasticsearch.js';
-import xaiClient from '../utils/xaiClient.js';
 
 // Elasticsearch 索引名稱
 const ES_INDEX_NAME = 'search-boooook';
@@ -138,7 +137,7 @@ function generateNumberVariants(citationText) {
 
 /**
  * 🆕 階段一：GPT-4o-mini 快速初篩
- * 任務：寬鬆篩選，寧可錯殺不可放過，為 Grok 減輕負擔
+ * 任務：寬鬆篩選，寧可錯殺不可放過，為 GPT-4o 減輕負擔
  */
 async function miniQuickScreening(valuableCitations, position, caseDescription) {
     try {
@@ -323,12 +322,12 @@ async function batchExtractContexts(citationMap, allCaseData) {
 }
 
 /**
- * 🆕 階段二：Grok 嚴格驗證機制
+ * 🆕 階段二：GPT-4o 嚴格驗證機制
  * 任務：擁有完全否決權，嚴格把關，確保推薦品質
  */
-async function strictVerificationWithGrok(miniFilteredCitations, position, caseDescription) {
+async function strictVerificationWith4o(miniFilteredCitations, position, caseDescription) {
     try {
-        console.log(`[strictVerificationWithGrok] 🛡️ Grok 開始嚴格驗證 ${miniFilteredCitations.length} 個援引`);
+        console.log(`[strictVerificationWith4o] 🛡️ GPT-4o 開始嚴格驗證 ${miniFilteredCitations.length} 個援引`);
 
         const positionLabel = position === 'plaintiff' ? '原告' : position === 'defendant' ? '被告' : '中性';
 
@@ -399,8 +398,8 @@ ${detailedCitations.map((c, i) => `${i+1}. ${c.citation}
   "rejectedCount": 被否決的數量
 }`;
 
-        const response = await xaiClient.chat.completions.create({
-            model: XAI_MODEL_VERIFICATION, // 🆕 使用 Grok 進行嚴格驗證
+        const response = await openai.chat.completions.create({
+            model: "gpt-4o", // 🆕 使用 GPT-4o 進行嚴格驗證
             messages: [
                 { role: "system", content: "你是資深法律專家，擁有完全否決權。請嚴格把關，確保推薦品質。寧可嚴格也不要推薦無關援引。" },
                 { role: "user", content: prompt }
@@ -410,35 +409,41 @@ ${detailedCitations.map((c, i) => `${i+1}. ${c.citation}
             response_format: { type: "json_object" }
         });
 
-        // 🔧 安全解析 JSON，處理 Grok 可能的格式問題
+        // 🔧 安全解析 JSON，處理 GPT-4o 可能的格式問題
         const rawContent = response.choices[0].message.content;
-        console.log(`[strictVerificationWithGrok] 原始回應內容:`, rawContent.substring(0, 500) + '...');
+        console.log(`[strictVerificationWith4o] 原始回應內容:`, rawContent.substring(0, 500) + '...');
 
         let result;
         try {
             result = JSON.parse(rawContent);
         } catch (parseError) {
-            console.error(`[strictVerificationWithGrok] JSON 解析失敗:`, parseError.message);
-            console.error(`[strictVerificationWithGrok] 原始內容:`, rawContent);
+            console.error(`[strictVerificationWith4o] JSON 解析失敗:`, parseError.message);
 
             // 嘗試修復常見的 JSON 問題
             const cleanedContent = cleanJsonResponse(rawContent);
             try {
                 result = JSON.parse(cleanedContent);
-                console.log(`[strictVerificationWithGrok] JSON 修復成功`);
+                console.log(`[strictVerificationWith4o] JSON 修復成功`);
             } catch (secondError) {
-                console.error(`[strictVerificationWithGrok] JSON 修復也失敗:`, secondError.message);
-                throw parseError; // 拋出原始錯誤
+                console.error(`[strictVerificationWith4o] JSON 修復也失敗:`, secondError.message);
+
+                // 最後嘗試：使用正則表達式提取部分有效數據
+                result = extractPartialJsonData(rawContent);
+                if (result) {
+                    console.log(`[strictVerificationWith4o] 部分數據提取成功`);
+                } else {
+                    throw parseError; // 拋出原始錯誤
+                }
             }
         }
 
-        // 根據 Grok 驗證結果，過濾援引
+        // 根據 GPT-4o 驗證結果，過濾援引
         const verifiedCitations = [];
         for (const verified of result.verifiedCitations || []) {
             if (verified.finalScore >= 4) { // 只保留 4 分以上的援引
                 const fullCitation = miniFilteredCitations.find(c => c.citation === verified.citation);
                 if (fullCitation) {
-                    // 🆕 添加 Grok 的嚴格驗證結果
+                    // 🆕 添加 GPT-4o 的嚴格驗證結果
                     fullCitation.strictVerification = {
                         finalScore: verified.finalScore,
                         verificationReason: verified.verificationReason,
@@ -450,22 +455,22 @@ ${detailedCitations.map((c, i) => `${i+1}. ${c.citation}
             }
         }
 
-        console.log(`[strictVerificationWithGrok] ✅ Grok 驗證完成：${verifiedCitations.length}/${miniFilteredCitations.length} 個援引通過嚴格驗證`);
-        console.log(`[strictVerificationWithGrok] 被否決：${result.rejectedCount || 0} 個援引`);
+        console.log(`[strictVerificationWith4o] ✅ GPT-4o 驗證完成：${verifiedCitations.length}/${miniFilteredCitations.length} 個援引通過嚴格驗證`);
+        console.log(`[strictVerificationWith4o] 被否決：${result.rejectedCount || 0} 個援引`);
 
         return verifiedCitations;
 
     } catch (error) {
-        console.error('[strictVerificationWithGrok] Grok 嚴格驗證失敗:', error);
-        // 🔧 修復：如果 Grok 失敗，返回前5個並添加默認的 strictVerification
-        console.log('[strictVerificationWithGrok] 降級到基於分數的篩選');
+        console.error('[strictVerificationWith4o] GPT-4o 嚴格驗證失敗:', error);
+        // 🔧 修復：如果 GPT-4o 失敗，返回前5個並添加默認的 strictVerification
+        console.log('[strictVerificationWith4o] 降級到基於分數的篩選');
         const fallbackCitations = miniFilteredCitations.slice(0, 5);
 
         // 為降級的援引添加默認的 strictVerification 屬性
         fallbackCitations.forEach(citation => {
             citation.strictVerification = {
                 finalScore: 5, // 默認中等分數
-                verificationReason: 'Grok 驗證失敗，基於分數篩選',
+                verificationReason: 'GPT-4o 驗證失敗，基於分數篩選',
                 shouldDisplay: true,
                 riskWarning: '未經嚴格驗證，請謹慎使用'
             };
@@ -496,6 +501,12 @@ function cleanJsonResponse(rawContent) {
         cleaned = jsonMatch[0];
     }
 
+    // 修復截斷的字符串 - 如果字符串沒有正確結束，嘗試修復
+    cleaned = fixTruncatedStrings(cleaned);
+
+    // 修復重複的對象結構
+    cleaned = fixDuplicateObjects(cleaned);
+
     // 修復常見的 JSON 問題
     cleaned = cleaned
         // 移除控制字符，但保留必要的空白字符
@@ -515,6 +526,90 @@ function cleanJsonResponse(rawContent) {
 }
 
 /**
+ * 修復截斷的字符串
+ */
+function fixTruncatedStrings(content) {
+    // 查找未結束的字符串（以 " 開始但沒有對應的結束 "）
+    const lines = content.split('\n');
+    const fixedLines = [];
+
+    for (let i = 0; i < lines.length; i++) {
+        let line = lines[i];
+
+        // 檢查是否有未結束的字符串
+        const quotes = (line.match(/"/g) || []).length;
+        if (quotes % 2 === 1 && !line.trim().endsWith('"')) {
+            // 如果引號數量是奇數且行不以引號結束，添加結束引號
+            line = line + '"';
+        }
+
+        fixedLines.push(line);
+    }
+
+    return fixedLines.join('\n');
+}
+
+/**
+ * 修復重複的對象結構
+ */
+function fixDuplicateObjects(content) {
+    // 移除重複的對象開始標記
+    content = content.replace(/\{\s*"([^"]+)":\s*[^,}]+,\s*\{\s*"([^"]+)":/g, '{"$2":');
+
+    // 修復缺失的屬性名稱
+    content = content.replace(/,\s*"([^"]*)":\s*([^,}]+)\s*,\s*\{/g, ', "$1": $2, {');
+
+    return content;
+}
+
+/**
+ * 從損壞的 JSON 中提取部分有效數據
+ */
+function extractPartialJsonData(rawContent) {
+    try {
+        // 嘗試提取 verifiedCitations 數組中的有效對象
+        const citationMatches = rawContent.match(/"citation":\s*"([^"]+)"/g);
+        const scoreMatches = rawContent.match(/"finalScore":\s*(\d+)/g);
+        const reasonMatches = rawContent.match(/"verificationReason":\s*"([^"]*(?:\\.[^"]*)*)"/g);
+        const displayMatches = rawContent.match(/"shouldDisplay":\s*(true|false)/g);
+
+        if (citationMatches && scoreMatches) {
+            const verifiedCitations = [];
+
+            for (let i = 0; i < Math.min(citationMatches.length, scoreMatches.length); i++) {
+                const citation = citationMatches[i].match(/"citation":\s*"([^"]+)"/)[1];
+                const score = parseInt(scoreMatches[i].match(/"finalScore":\s*(\d+)/)[1]);
+                const reason = reasonMatches && reasonMatches[i] ?
+                    reasonMatches[i].match(/"verificationReason":\s*"([^"]*(?:\\.[^"]*)*)"/)[1] :
+                    'GPT-4o 驗證失敗，基於分數篩選';
+                const shouldDisplay = displayMatches && displayMatches[i] ?
+                    displayMatches[i].match(/"shouldDisplay":\s*(true|false)/)[1] === 'true' :
+                    score >= 5;
+
+                verifiedCitations.push({
+                    citation,
+                    finalScore: score,
+                    verificationReason: reason,
+                    shouldDisplay,
+                    riskWarning: score < 5 ? '未經完整驗證，請謹慎使用' : ''
+                });
+            }
+
+            return {
+                verifiedCitations,
+                verificationSummary: `部分數據提取：成功提取 ${verifiedCitations.length} 個援引`,
+                rejectedCount: verifiedCitations.filter(c => !c.shouldDisplay).length
+            };
+        }
+
+        return null;
+    } catch (error) {
+        console.error('[extractPartialJsonData] 部分數據提取失敗:', error);
+        return null;
+    }
+}
+
+/**
  * 🆕 階段三：深度分析通過驗證的援引
  * 任務：對高品質援引進行詳細分析，提供具體建議
  */
@@ -525,7 +620,10 @@ async function deepAnalysisVerifiedCitations(verifiedCitations, position, caseDe
         const recommendations = [];
 
         // 對每個通過驗證的援引進行深度分析
-        for (const citation of verifiedCitations) {
+        for (let i = 0; i < verifiedCitations.length; i++) {
+            const citation = verifiedCitations[i];
+            console.log(`[deepAnalysisVerifiedCitations] 分析第 ${i + 1}/${verifiedCitations.length} 個援引: ${citation.citation}`);
+
             try {
                 const analysis = await analyzeSingleVerifiedCitation(citation, position, caseDescription);
                 if (analysis) {
@@ -544,7 +642,7 @@ async function deepAnalysisVerifiedCitations(verifiedCitations, position, caseDe
                             relevanceScore: 0,
                             quickReason: '未經 Mini 初篩'
                         },
-                        // Grok 嚴格驗證結果（提供默認值）
+                        // GPT-4o 嚴格驗證結果（提供默認值）
                         strictVerification: citation.strictVerification || {
                             finalScore: 0,
                             verificationReason: '未經嚴格驗證',
@@ -606,7 +704,7 @@ async function analyzeSingleVerifiedCitation(citation, position, caseDescription
 分析立場：${positionLabel}
 
 援引判例：${citation.citation}
-Grok 驗證分數：${citation.strictVerification?.finalScore || 0}/10
+GPT-4o 驗證分數：${citation.strictVerification?.finalScore || 0}/10
 驗證理由：${citation.strictVerification?.verificationReason || '無'}
 
 實際使用上下文：
@@ -624,8 +722,8 @@ ${contextEvidence}
   "confidence": "高/中/低"
 }`;
 
-        const response = await xaiClient.chat.completions.create({
-            model: XAI_MODEL_ANALYSIS,
+        const response = await openai.chat.completions.create({
+            model: "gpt-4o",
             messages: [
                 { role: "system", content: "你是資深法律顧問，請基於實際上下文提供具體建議。" },
                 { role: "user", content: prompt }
@@ -635,7 +733,7 @@ ${contextEvidence}
             response_format: { type: "json_object" }
         });
 
-        // 🔧 安全解析 JSON，處理 Grok 可能的格式問題
+        // 🔧 安全解析 JSON，處理 GPT-4o 可能的格式問題
         const rawContent = response.choices[0].message.content;
         console.log(`[analyzeSingleVerifiedCitation] 原始回應內容:`, rawContent.substring(0, 300) + '...');
 
@@ -643,7 +741,6 @@ ${contextEvidence}
             return JSON.parse(rawContent);
         } catch (parseError) {
             console.error(`[analyzeSingleVerifiedCitation] JSON 解析失敗:`, parseError.message);
-            console.error(`[analyzeSingleVerifiedCitation] 原始內容:`, rawContent);
 
             // 嘗試修復常見的 JSON 問題
             const cleanedContent = cleanJsonResponse(rawContent);
@@ -653,7 +750,17 @@ ${contextEvidence}
                 return result;
             } catch (secondError) {
                 console.error(`[analyzeSingleVerifiedCitation] JSON 修復也失敗:`, secondError.message);
-                throw parseError; // 拋出原始錯誤
+
+                // 返回降級的分析結果
+                return {
+                    citation: citation.citation,
+                    recommendationLevel: "謹慎使用",
+                    reason: "GPT-4o JSON 解析失敗，無法提供詳細分析",
+                    usageStrategy: "建議人工審查此援引的相關性",
+                    contextEvidence: "系統無法解析 AI 回應",
+                    riskWarning: "未經完整 AI 分析，請謹慎使用",
+                    confidence: "低"
+                };
             }
         }
 
@@ -678,7 +785,7 @@ function calculateFinalConfidence(citation) {
     // Mini 篩選貢獻 (20%)
     confidence += (miniScore / 5) * 20;
 
-    // Grok 嚴格驗證貢獻 (50%)
+    // GPT-4o 嚴格驗證貢獻 (50%)
     confidence += (strictScore / 10) * 50;
 
     // 使用統計貢獻 (20%)
@@ -1135,7 +1242,7 @@ async function analyzeCitationsFromCasePool(casePool, position, caseDescription,
             }, "開始三階段 AI 智能分析...", 110);
         }
 
-        // 4. 🆕 三階段 AI 分析：Mini初篩 → Grok嚴格驗證 → 深度分析
+        // 4. 🆕 三階段 AI 分析：Mini初篩 → GPT-4o嚴格驗證 → 深度分析
         const aiRecommendations = await generateCitationRecommendationsThreeStage(
             valuableCitations,
             position,
@@ -1315,7 +1422,7 @@ ${JSON.stringify(citationDataWithContext, null, 2)}
 }
 
 /**
- * 🆕 三階段 AI 分析：Mini初篩 → Grok嚴格驗證 → 深度分析
+ * 🆕 三階段 AI 分析：Mini初篩 → GPT-4o嚴格驗證 → 深度分析
  * 新流程：確保數據可靠性，律師願意付費的關鍵
  */
 async function generateCitationRecommendationsThreeStage(valuableCitations, position, caseDescription, casePool, taskRef = null) {
@@ -1372,9 +1479,9 @@ async function generateCitationRecommendationsThreeStage(valuableCitations, posi
             }, "專家級 AI 正在嚴格驗證推薦品質...", 85);
         }
 
-        // 🎯 階段二：Grok 嚴格驗證（否決權）
-        console.log(`[generateCitationRecommendationsThreeStage] 🛡️ 階段二：Grok 嚴格驗證`);
-        const strictVerifiedCitations = await strictVerificationWithGrok(miniFilteredCitations, position, caseDescription);
+        // 🎯 階段二：GPT-4o 嚴格驗證（否決權）
+        console.log(`[generateCitationRecommendationsThreeStage] 🛡️ 階段二：GPT-4o 嚴格驗證`);
+        const strictVerifiedCitations = await strictVerificationWith4o(miniFilteredCitations, position, caseDescription);
 
         // 🆕 更新進度：專家驗證完成
         if (taskRef) {
@@ -1389,7 +1496,7 @@ async function generateCitationRecommendationsThreeStage(valuableCitations, posi
         if (strictVerifiedCitations.length === 0) {
             return {
                 recommendations: [],
-                summary: '經 Grok 嚴格驗證後，所有援引判例均被認定為不相關或無參考價值',
+                summary: '經 GPT-4o 嚴格驗證後，所有援引判例均被認定為不相關或無參考價值',
                 aiAnalysisStatus: 'strict_filtered_out'
             };
         }
@@ -1540,8 +1647,8 @@ ${JSON.stringify(simplifiedCitations, null, 2)}
 
 請使用繁體中文回應，並確保回應是有效的 JSON 格式。`;
 
-        const response = await xaiClient.chat.completions.create({
-            model: XAI_MODEL_VERIFICATION,
+        const response = await openai.chat.completions.create({
+            model: "gpt-4o",
             messages: [
                 { role: "system", content: "你是專業的法律分析師，專門協助律師篩選最相關的援引判例。" },
                 { role: "user", content: prompt }
@@ -1735,8 +1842,8 @@ ${sample.fullContext}
 4. 如果上下文顯示該判例處理的是不同類型的問題，要誠實指出
 5. 必須使用繁體中文回應，確保 JSON 格式正確`;
 
-        const response = await xaiClient.chat.completions.create({
-            model: XAI_MODEL_ANALYSIS,
+        const response = await openai.chat.completions.create({
+            model: "gpt-4o",
             messages: [
                 { role: "system", content: "你是專業的法律分析師，專門提供精確的援引判例分析。你必須嚴格基於提供的上下文，不能推測或編造。" },
                 { role: "user", content: prompt }
@@ -1794,9 +1901,9 @@ async function generateCitationRecommendations(valuableCitations, position, case
 
         const prompt = createCitationRecommendationPrompt(valuableCitations, position, caseDescription, casePool);
 
-        // 🆕 升級到 Grok：提升分析品質，減少瞎掰風險
-        const response = await xaiClient.chat.completions.create({
-            model: XAI_MODEL_ANALYSIS,
+        // 🆕 升級到 GPT-4o：提升分析品質，減少瞎掰風險
+        const response = await openai.chat.completions.create({
+            model: "gpt-4o",
             messages: [
                 {
                     role: "system",
@@ -1808,7 +1915,7 @@ async function generateCitationRecommendations(valuableCitations, position, case
                 }
             ],
             temperature: 0.1, // 保持低溫度確保一致性
-            max_tokens: 2500, // 稍微增加 token 限制，因為 Grok 分析更詳細
+            max_tokens: 2500, // 稍微增加 token 限制，因為 GPT-4o 分析更詳細
             response_format: { type: "json_object" }
         });
 

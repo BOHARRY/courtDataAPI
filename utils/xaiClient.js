@@ -78,7 +78,16 @@ class XAIClient {
                 console.error('[XAIClient] HTTP 錯誤狀態:', error.response.status);
                 console.error('[XAIClient] 錯誤回應:', error.response.data);
 
-                const errorMsg = error.response.data?.error?.message || error.response.statusText;
+                // 處理速率限制錯誤
+                if (error.response.status === 429) {
+                    const retryAfter = error.response.headers['retry-after'] || 60; // 默認等待 60 秒
+                    console.log(`[XAIClient] 速率限制觸發，建議等待 ${retryAfter} 秒後重試`);
+
+                    const errorMsg = error.response.data?.error || 'Rate limit exceeded';
+                    throw new Error(`xAI API 速率限制 (${error.response.status}): ${errorMsg}. 請等待 ${retryAfter} 秒後重試`);
+                }
+
+                const errorMsg = error.response.data?.error?.message || error.response.data?.error || error.response.statusText;
                 throw new Error(`xAI API 調用失敗 (${error.response.status}): ${errorMsg}`);
             } else if (error.request) {
                 console.error('[XAIClient] 網路請求失敗:', error.request);
