@@ -12,6 +12,16 @@ const ES_INDEX_NAME = 'search-boooook'; // 與 searchService 保持一致
 export async function getJudgmentDetails(judgmentId) {
   // console.log(`[Judgment Service] Getting details for judgment ID: ${judgmentId}`);
   try {
+    // 🚨 添加 ES 連接檢查
+    try {
+      await esClient.ping();
+    } catch (pingError) {
+      console.error(`[Judgment Service] Elasticsearch connection failed:`, pingError.message);
+      console.warn(`[Judgment Service] 🚨 降級模式：返回 null 以避免應用崩潰`);
+      // 🚨 降級模式：返回 null 而不是拋出錯誤
+      return null;
+    }
+
     const result = await esClient.get({
       index: ES_INDEX_NAME,
       id: judgmentId
@@ -48,13 +58,23 @@ export async function getJudgmentDetails(judgmentId) {
 export async function getJudgmentsByIds(judgmentIds) {
   // 備註：這是我們新增的核心批次查詢函式。
   console.log(`[Judgment Service] Batch getting details for ${judgmentIds.length} judgment IDs.`);
-  
+
   // 如果傳入的陣列為空，直接返回空物件，避免不必要的 ES 查詢。
   if (!judgmentIds || judgmentIds.length === 0) {
     return {};
   }
 
   try {
+    // 🚨 添加 ES 連接檢查
+    try {
+      await esClient.ping();
+    } catch (pingError) {
+      console.error(`[Judgment Service] Elasticsearch connection failed:`, pingError.message);
+      console.warn(`[Judgment Service] 🚨 降級模式：返回空結果以避免應用崩潰`);
+      // 🚨 降級模式：返回空結果而不是拋出錯誤
+      return {};
+    }
+
     const result = await esClient.mget({
       index: ES_INDEX_NAME,
       body: {

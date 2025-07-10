@@ -12,6 +12,11 @@ export const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 export const OPENAI_MODEL_NAME_EMBEDDING = 'text-embedding-3-large';
 export const OPENAI_MODEL_NAME_CHAT = 'gpt-4.1';
 export const OPENAI_MODEL_NAME_NANO = process.env.OPENAI_MODEL_NAME_NANO || 'gpt-4.1-nano';
+
+// xAI 配置
+export const XAI_API_KEY = process.env.XAI_API_KEY;
+export const XAI_MODEL_VERIFICATION = process.env.XAI_MODEL_VERIFICATION || 'grok-4-latest';
+export const XAI_MODEL_ANALYSIS = process.env.XAI_MODEL_ANALYSIS || 'grok-4-latest';
 export const GMAIL_APP_USER = process.env.GMAIL_APP_USER;
 export const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD;
 export const CONTACT_FORM_RECIPIENT_EMAIL = process.env.CONTACT_FORM_RECIPIENT_EMAIL;
@@ -41,6 +46,10 @@ if (!FIREBASE_SERVICE_ACCOUNT_KEY_JSON) {
 }
 if (!OPENAI_API_KEY) {
   console.error("FATAL ERROR: OPENAI_API_KEY environment variable is not set.");
+  process.exit(1);
+}
+if (!XAI_API_KEY) {
+  console.error("FATAL ERROR: XAI_API_KEY environment variable is not set.");
   process.exit(1);
 }
 
