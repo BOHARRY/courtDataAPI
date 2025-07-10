@@ -1,18 +1,16 @@
 // utils/xaiClient.js
-import { xai } from '@ai-sdk/xai';
-import { generateText } from 'ai';
+import axios from 'axios';
 import { XAI_API_KEY } from '../config/environment.js';
 
 /**
  * xAI 客戶端工具類
  * 提供與 OpenAI 相容的介面，方便從 OpenAI 遷移到 xAI
+ * 使用直接的 HTTP 調用方式，避免 SDK 相容性問題
  */
 class XAIClient {
     constructor(apiKey) {
         this.apiKey = apiKey;
-        this.xaiProvider = xai({
-            apiKey: apiKey
-        });
+        this.baseURL = 'https://api.x.ai/v1';
 
         // 創建與 OpenAI 相容的結構
         this.chat = {
@@ -30,65 +28,50 @@ class XAIClient {
     async createChatCompletion(options) {
         try {
             const { model, messages, temperature, max_tokens, response_format } = options;
-            
-            // 轉換 messages 格式
-            let prompt = this.convertMessagesToPrompt(messages);
 
-            // 如果需要 JSON 格式，添加指示
+            // 準備請求數據
+            const requestData = {
+                model: model,
+                messages: messages,
+                temperature: temperature || 0.7,
+                max_tokens: max_tokens || 1000
+            };
+
+            // 如果需要 JSON 格式，添加到最後一個用戶訊息
             if (response_format?.type === 'json_object') {
-                prompt += '\n\n請確保回應是有效的 JSON 格式，不要包含任何其他文字。';
+                const lastMessage = requestData.messages[requestData.messages.length - 1];
+                if (lastMessage.role === 'user') {
+                    lastMessage.content += '\n\n請確保回應是有效的 JSON 格式，不要包含任何其他文字。';
+                }
             }
 
-            // 調用 xAI
-            const result = await generateText({
-                model: this.xaiProvider(model),
-                prompt: prompt,
-                temperature: temperature || 0.7,
-                maxTokens: max_tokens || 1000
+            // 調用 xAI API
+            const response = await axios.post(`${this.baseURL}/chat/completions`, requestData, {
+                headers: {
+                    'Authorization': `Bearer ${this.apiKey}`,
+                    'Content-Type': 'application/json'
+                }
             });
 
-            // 轉換為 OpenAI 相容的格式
-            return {
-                choices: [{
-                    message: {
-                        content: result.text,
-                        role: 'assistant'
-                    },
-                    finish_reason: 'stop'
-                }],
-                usage: {
-                    prompt_tokens: result.usage?.promptTokens || 0,
-                    completion_tokens: result.usage?.completionTokens || 0,
-                    total_tokens: result.usage?.totalTokens || 0
-                }
-            };
+            // 返回與 OpenAI 相容的格式
+            return response.data;
 
         } catch (error) {
             console.error('[XAIClient] 調用失敗:', error);
-            throw new Error(`xAI API 調用失敗: ${error.message}`);
+
+            // 提供更詳細的錯誤信息
+            if (error.response) {
+                const errorMsg = error.response.data?.error?.message || error.response.statusText;
+                throw new Error(`xAI API 調用失敗 (${error.response.status}): ${errorMsg}`);
+            } else if (error.request) {
+                throw new Error(`xAI API 網路錯誤: 無法連接到 xAI 服務`);
+            } else {
+                throw new Error(`xAI API 調用失敗: ${error.message}`);
+            }
         }
     }
 
-    /**
-     * 將 OpenAI 格式的 messages 轉換為單一 prompt
-     * @param {Array} messages - OpenAI 格式的訊息陣列
-     * @returns {string} - 轉換後的 prompt
-     */
-    convertMessagesToPrompt(messages) {
-        let prompt = '';
-        
-        for (const message of messages) {
-            if (message.role === 'system') {
-                prompt += `系統指示: ${message.content}\n\n`;
-            } else if (message.role === 'user') {
-                prompt += `用戶: ${message.content}\n\n`;
-            } else if (message.role === 'assistant') {
-                prompt += `助手: ${message.content}\n\n`;
-            }
-        }
-        
-        return prompt.trim();
-    }
+
 }
 
 // 創建全域實例
