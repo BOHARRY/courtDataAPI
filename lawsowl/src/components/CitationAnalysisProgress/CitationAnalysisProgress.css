@@ -126,6 +126,99 @@
     border-radius: 8px;
     padding: 2px 6px;
     border: 1px solid rgba(59, 130, 246, 0.2);
+    line-height: 1.2;
+}
+
+/* 🚀 新增：並行進度容器 */
+.parallel-progress {
+    margin-top: 4px;
+}
+
+/* 🚀 新增：並行處理狀態顯示 */
+.parallel-status {
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(59, 130, 246, 0.1));
+    border: 1px solid rgba(16, 185, 129, 0.2);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 20px;
+}
+
+.parallel-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.parallel-icon {
+    font-size: 18px;
+    color: #10b981;
+}
+
+.parallel-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #1f2937;
+}
+
+.parallel-workers {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 8px;
+}
+
+.worker-status {
+    background: white;
+    border-radius: 8px;
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border: 1px solid #e5e7eb;
+    transition: all 0.2s ease;
+}
+
+.worker-status.analyzing {
+    border-color: #3b82f6;
+    background: rgba(59, 130, 246, 0.05);
+}
+
+.worker-status.idle {
+    border-color: #10b981;
+    background: rgba(16, 185, 129, 0.05);
+}
+
+.worker-id {
+    font-size: 11px;
+    font-weight: 600;
+    color: #6b7280;
+}
+
+.worker-task {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    color: #374151;
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.worker-icon {
+    font-size: 12px;
+    flex-shrink: 0;
+}
+
+.worker-icon.spinning {
+    animation: spin 1s linear infinite;
+    color: #3b82f6;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
 }
 
 /* ⭐ 品質保證標章 */

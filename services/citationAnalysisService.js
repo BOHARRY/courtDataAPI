@@ -7,10 +7,119 @@ import esClient from '../config/elasticsearch.js';
 // Elasticsearch 索引名稱
 const ES_INDEX_NAME = 'search-boooook';
 
-// 初始化 OpenAI 客戶端
-const openai = new OpenAI({
-    apiKey: OPENAI_API_KEY,
-});
+// 🚀 新增：OpenAI 客戶端池管理器
+class OpenAIClientPool {
+    constructor() {
+        this.clients = [];
+        this.currentIndex = 0;
+        this.initializeClients();
+    }
+
+    initializeClients() {
+        const apiKeys = [
+            process.env.OPENAI_API_KEY,
+            process.env.OPENAI_API_KEY_2,
+            process.env.OPENAI_API_KEY_3,
+            process.env.OPENAI_API_KEY_4,
+            process.env.OPENAI_API_KEY_5
+        ].filter(Boolean); // 過濾掉未定義的 key
+
+        console.log(`[OpenAIClientPool] 初始化 ${apiKeys.length} 個 OpenAI 客戶端`);
+
+        this.clients = apiKeys.map((key, index) => {
+            const client = new OpenAI({ apiKey: key });
+            console.log(`[OpenAIClientPool] 客戶端 ${index + 1} 初始化完成`);
+            return {
+                client,
+                keyIndex: index + 1,
+                isHealthy: true,
+                lastUsed: null,
+                errorCount: 0
+            };
+        });
+
+        if (this.clients.length === 0) {
+            throw new Error('沒有可用的 OpenAI API Key');
+        }
+    }
+
+    /**
+     * 獲取下一個可用的客戶端（輪替策略）
+     */
+    getNextClient() {
+        if (this.clients.length === 0) {
+            throw new Error('沒有可用的 OpenAI 客戶端');
+        }
+
+        // 尋找健康的客戶端
+        let attempts = 0;
+        while (attempts < this.clients.length) {
+            const clientInfo = this.clients[this.currentIndex];
+            this.currentIndex = (this.currentIndex + 1) % this.clients.length;
+
+            if (clientInfo.isHealthy) {
+                clientInfo.lastUsed = Date.now();
+                console.log(`[OpenAIClientPool] 使用客戶端 ${clientInfo.keyIndex}`);
+                return clientInfo.client;
+            }
+
+            attempts++;
+        }
+
+        // 如果所有客戶端都不健康，重置狀態並使用第一個
+        console.warn('[OpenAIClientPool] 所有客戶端都不健康，重置狀態');
+        this.resetAllClients();
+        const firstClient = this.clients[0];
+        firstClient.lastUsed = Date.now();
+        return firstClient.client;
+    }
+
+    /**
+     * 標記客戶端為不健康
+     */
+    markClientUnhealthy(client) {
+        const clientInfo = this.clients.find(c => c.client === client);
+        if (clientInfo) {
+            clientInfo.isHealthy = false;
+            clientInfo.errorCount++;
+            console.warn(`[OpenAIClientPool] 客戶端 ${clientInfo.keyIndex} 標記為不健康，錯誤次數: ${clientInfo.errorCount}`);
+        }
+    }
+
+    /**
+     * 重置所有客戶端狀態
+     */
+    resetAllClients() {
+        this.clients.forEach(clientInfo => {
+            clientInfo.isHealthy = true;
+            clientInfo.errorCount = 0;
+        });
+        console.log('[OpenAIClientPool] 重置所有客戶端狀態');
+    }
+
+    /**
+     * 獲取客戶端池狀態
+     */
+    getStatus() {
+        return {
+            totalClients: this.clients.length,
+            healthyClients: this.clients.filter(c => c.isHealthy).length,
+            currentIndex: this.currentIndex,
+            clients: this.clients.map(c => ({
+                keyIndex: c.keyIndex,
+                isHealthy: c.isHealthy,
+                errorCount: c.errorCount,
+                lastUsed: c.lastUsed
+            }))
+        };
+    }
+}
+
+// 初始化客戶端池
+const openaiClientPool = new OpenAIClientPool();
+
+// 保持向後兼容：默認客戶端
+const openai = openaiClientPool.getNextClient();
 
 /**
  * 🔍 援引分析關鍵日誌系統 (簡化版)
@@ -639,77 +748,149 @@ async function deepAnalysisVerifiedCitations(verifiedCitations, position, caseDe
         const recommendations = [];
         const totalToProcess = verifiedCitations.length;
 
-        // 對每個通過驗證的援引進行深度分析
-        for (let i = 0; i < verifiedCitations.length; i++) {
-            const citation = verifiedCitations[i];
-            const currentProcessing = i + 1;
+        // 🚀 新增：並行處理邏輯
+        const maxConcurrency = Math.min(openaiClientPool.clients.length, totalToProcess, 5); // 最多5個並行
+        console.log(`[deepAnalysisVerifiedCitations] 🚀 啟動 ${maxConcurrency} 個並行處理器`);
 
-            console.log(`[deepAnalysisVerifiedCitations] 分析第 ${currentProcessing}/${totalToProcess} 個援引: ${citation.citation}`);
+        // 並行狀態追蹤
+        const parallelStatus = {
+            completed: 0,
+            inProgress: 0,
+            failed: 0,
+            workers: []
+        };
 
-            // 🚀 新增：更新逐個處理進度
-            if (taskRef) {
-                const progressPercentage = 85 + Math.floor((i / totalToProcess) * 10); // 85% 到 95%
-                const estimatedRemaining = Math.max(15 - (i * 2), 5); // 動態估算剩餘時間
+        // 創建並行處理器
+        const processNextCitation = async (workerId) => {
+            let processedCount = 0;
 
-                await updateTaskProgress(taskRef, 4, progressPercentage, {
-                    totalCitations: progressContext.totalCitations || 0,
-                    processed: progressContext.processed || 0,
-                    qualified: progressContext.qualified || 0,
-                    verified: progressContext.verified || 0,
-                    // 🆕 新增逐個處理進度字段
-                    currentProcessing: currentProcessing,
-                    totalToProcess: totalToProcess
-                }, `正在深度分析第 ${currentProcessing}/${totalToProcess} 個援引: ${citation.citation.substring(0, 20)}...`, estimatedRemaining);
-            }
+            for (let i = workerId - 1; i < verifiedCitations.length; i += maxConcurrency) {
+                const citation = verifiedCitations[i];
+                const currentIndex = i + 1;
 
-            try {
-                const analysis = await analyzeSingleVerifiedCitation(citation, position, caseDescription);
-                if (analysis) {
-                    // 🆕 整合三階段的分析結果（確保沒有 undefined 值）
-                    const enhancedRecommendation = {
-                        // 🔧 確保 analysis 的所有屬性都有默認值
-                        citation: analysis.citation || citation.citation,
-                        recommendationLevel: analysis.recommendationLevel || '謹慎使用',
-                        reason: analysis.reason || '分析結果不完整',
-                        usageStrategy: analysis.usageStrategy || '請謹慎評估使用',
-                        contextEvidence: analysis.contextEvidence || '無可用證據',
-                        riskWarning: analysis.riskWarning || null,
-                        confidence: analysis.confidence || '低',
-                        // Mini 初篩結果（提供默認值）
-                        miniScreening: citation.miniScreening || {
-                            relevanceScore: 0,
-                            quickReason: '未經 Mini 初篩'
-                        },
-                        // GPT-4o 嚴格驗證結果（提供默認值）
-                        strictVerification: citation.strictVerification || {
-                            finalScore: 0,
-                            verificationReason: '未經嚴格驗證',
-                            shouldDisplay: false,
-                            riskWarning: null
-                        },
-                        // 統計數據（提供默認值）
-                        usageCount: citation.usageCount || 0,
-                        inCourtInsightCount: citation.inCourtInsightCount || 0,
-                        valueAssessment: citation.valueAssessment || {
-                            grade: 'C',
-                            totalScore: 0
-                        },
-                        // 🆕 最終信心度（基於三階段結果）
-                        finalConfidence: calculateFinalConfidence(citation)
-                    };
+                console.log(`[Worker ${workerId}] 分析第 ${currentIndex}/${totalToProcess} 個援引: ${citation.citation}`);
 
-                    recommendations.push(enhancedRecommendation);
+                // 更新並行狀態
+                parallelStatus.inProgress++;
+                parallelStatus.workers[workerId - 1] = {
+                    workerId,
+                    status: 'analyzing',
+                    citation: citation.citation.substring(0, 30) + '...',
+                    currentIndex
+                };
+
+                // 🚀 更新並行進度
+                if (taskRef) {
+                    const progressPercentage = 85 + Math.floor((parallelStatus.completed / totalToProcess) * 10);
+                    const estimatedRemaining = Math.max(25 - (parallelStatus.completed * 2), 5);
+
+                    await updateTaskProgress(taskRef, 4, progressPercentage, {
+                        totalCitations: progressContext.totalCitations || 0,
+                        processed: progressContext.processed || 0,
+                        qualified: progressContext.qualified || 0,
+                        verified: progressContext.verified || 0,
+                        // 🆕 並行處理進度字段
+                        currentProcessing: parallelStatus.inProgress,
+                        totalToProcess: totalToProcess,
+                        completedInParallel: parallelStatus.completed,
+                        parallelWorkers: parallelStatus.workers.filter(w => w && w.status === 'analyzing')
+                    }, `並行分析中: ${parallelStatus.completed}/${totalToProcess} 完成, ${parallelStatus.inProgress} 進行中`, estimatedRemaining);
                 }
-            } catch (error) {
-                console.error(`[deepAnalysisVerifiedCitations] 分析援引失敗: ${citation.citation}`, error);
+
+                try {
+                    // 🚀 使用專用客戶端進行分析
+                    const dedicatedClient = openaiClientPool.getNextClient();
+                    const analysis = await analyzeSingleVerifiedCitation(citation, position, caseDescription, dedicatedClient);
+
+                    if (analysis) {
+                        // 🆕 整合三階段的分析結果（確保沒有 undefined 值）
+                        const enhancedRecommendation = {
+                            // 🔧 確保 analysis 的所有屬性都有默認值
+                            citation: analysis.citation || citation.citation,
+                            recommendationLevel: analysis.recommendationLevel || '謹慎使用',
+                            reason: analysis.reason || '分析結果不完整',
+                            usageStrategy: analysis.usageStrategy || '請謹慎評估使用',
+                            contextEvidence: analysis.contextEvidence || '無可用證據',
+                            riskWarning: analysis.riskWarning || null,
+                            confidence: analysis.confidence || '低',
+                            // Mini 初篩結果（提供默認值）
+                            miniScreening: citation.miniScreening || {
+                                relevanceScore: 0,
+                                quickReason: '未經 Mini 初篩'
+                            },
+                            // GPT-4o 嚴格驗證結果（提供默認值）
+                            strictVerification: citation.strictVerification || {
+                                finalScore: 0,
+                                verificationReason: '未經嚴格驗證',
+                                shouldDisplay: false,
+                                riskWarning: null
+                            },
+                            // 統計數據（提供默認值）
+                            usageCount: citation.usageCount || 0,
+                            inCourtInsightCount: citation.inCourtInsightCount || 0,
+                            valueAssessment: citation.valueAssessment || {
+                                grade: 'C',
+                                totalScore: 0
+                            },
+                            // 🆕 最終信心度（基於三階段結果）
+                            finalConfidence: calculateFinalConfidence(citation),
+                            // 🆕 添加處理信息
+                            processedBy: `Worker ${workerId}`,
+                            processedAt: new Date().toISOString()
+                        };
+
+                        // 線程安全地添加結果
+                        recommendations[i] = enhancedRecommendation;
+                        console.log(`[Worker ${workerId}] ✅ 完成分析: ${citation.citation}`);
+                    }
+
+                    parallelStatus.completed++;
+                    processedCount++;
+
+                } catch (error) {
+                    console.error(`[Worker ${workerId}] ❌ 分析援引失敗: ${citation.citation}`, error);
+                    parallelStatus.failed++;
+
+                    // 標記客戶端可能有問題
+                    if (error.message.includes('API') || error.message.includes('rate limit')) {
+                        openaiClientPool.markClientUnhealthy(dedicatedClient);
+                    }
+                } finally {
+                    parallelStatus.inProgress--;
+                    parallelStatus.workers[workerId - 1] = {
+                        workerId,
+                        status: 'idle',
+                        citation: null,
+                        currentIndex: null
+                    };
+                }
             }
+
+            console.log(`[Worker ${workerId}] 🏁 完成所有任務，處理了 ${processedCount} 個援引`);
+            return processedCount;
+        };
+
+        // 🚀 啟動並行處理
+        const workerPromises = [];
+        for (let workerId = 1; workerId <= maxConcurrency; workerId++) {
+            workerPromises.push(processNextCitation(workerId));
         }
 
-        // 根據最終分數排序
-        recommendations.sort((a, b) => (b.strictVerification?.finalScore || 0) - (a.strictVerification?.finalScore || 0));
+        // 等待所有並行處理完成
+        const workerResults = await Promise.all(workerPromises);
+        const totalProcessed = workerResults.reduce((sum, count) => sum + count, 0);
 
-        console.log(`[deepAnalysisVerifiedCitations] ✅ 深度分析完成：${recommendations.length} 個最終推薦`);
-        return recommendations;
+        console.log(`[deepAnalysisVerifiedCitations] 🎉 並行處理完成: ${totalProcessed} 個援引處理完畢`);
+        console.log(`[deepAnalysisVerifiedCitations] 📊 統計: 完成 ${parallelStatus.completed}, 失敗 ${parallelStatus.failed}`);
+
+        // 過濾掉空結果並保持原始順序
+        const validRecommendations = recommendations.filter(rec => rec !== undefined);
+
+        // 根據最終分數排序
+        validRecommendations.sort((a, b) => (b.strictVerification?.finalScore || 0) - (a.strictVerification?.finalScore || 0));
+
+        console.log(`[deepAnalysisVerifiedCitations] ✅ 並行深度分析完成：${validRecommendations.length} 個最終推薦`);
+        return validRecommendations;
 
     } catch (error) {
         console.error('[deepAnalysisVerifiedCitations] 深度分析失敗:', error);
@@ -719,8 +900,12 @@ async function deepAnalysisVerifiedCitations(verifiedCitations, position, caseDe
 
 /**
  * 🆕 分析單個通過驗證的援引
+ * @param {Object} citation - 援引對象
+ * @param {string} position - 立場
+ * @param {string} caseDescription - 案件描述
+ * @param {OpenAI} customClient - 可選的自定義 OpenAI 客戶端
  */
-async function analyzeSingleVerifiedCitation(citation, position, caseDescription) {
+async function analyzeSingleVerifiedCitation(citation, position, caseDescription, customClient = null) {
     try {
         const positionLabel = position === 'plaintiff' ? '原告' : position === 'defendant' ? '被告' : '中性';
 
@@ -760,7 +945,10 @@ ${contextEvidence}
   "confidence": "高/中/低"
 }`;
 
-        const response = await openai.chat.completions.create({
+        // 🚀 使用指定的客戶端或從池中獲取
+        const clientToUse = customClient || openaiClientPool.getNextClient();
+
+        const response = await clientToUse.chat.completions.create({
             model: "gpt-4o",
             messages: [
                 { role: "system", content: "你是資深法律顧問，請基於實際上下文提供具體建議。" },
