@@ -325,139 +325,53 @@ async function batchExtractContexts(citationMap, allCaseData) {
  * 🆕 階段二：GPT-4o 嚴格驗證機制
  * 任務：擁有完全否決權，嚴格把關，確保推薦品質
  */
-async function strictVerificationWith4o(miniFilteredCitations, position, caseDescription) {
+async function strictVerificationWith4o(miniFilteredCitations, position, caseDescription, taskRef = null, progressContext = {}) {
     try {
         console.log(`[strictVerificationWith4o] 🛡️ GPT-4o 開始嚴格驗證 ${miniFilteredCitations.length} 個援引`);
 
         const positionLabel = position === 'plaintiff' ? '原告' : position === 'defendant' ? '被告' : '中性';
-
-        // 🔧 修復：準備詳細的援引數據（包含完整上下文）
-        const detailedCitations = miniFilteredCitations.map(citation => {
-            const contexts = citation.totalContexts || [];
-            const contextDetails = contexts.slice(0, 3).map(ctx => {
-                // context 是一個對象，包含 fullContext 屬性
-                const contextText = ctx.context?.fullContext || ctx.context?.before || '無上下文';
-                const displayText = typeof contextText === 'string'
-                    ? contextText
-                    : '無上下文';
-
-                return `【案例：${ctx.caseTitle || '未知'}】\n${displayText}\n法院見解內：${ctx.inCourtInsight ? '是' : '否'}`;
-            }).join('\n\n');
-
-            return {
-                citation: citation.citation,
-                usageCount: citation.usageCount,
-                inCourtInsightCount: citation.inCourtInsightCount,
-                valueScore: citation.valueAssessment?.totalScore || 0,
-                miniReason: citation.miniScreening?.quickReason || '無',
-                contextDetails: contextDetails || '無可用上下文'
-            };
-        });
-
-        const prompt = `你是資深法律專家，擁有完全的否決權。請嚴格評估每個援引判例的實際參考價值。
-
-重要原則：
-1. 如果援引與案件主題完全無關，直接給 0 分
-2. 如果上下文顯示援引處理的是不同類型問題，給 1-3 分
-3. 只有真正相關且有實質幫助的援引才給高分
-4. 寧可嚴格也不要推薦無關的援引
-
-案件描述：${caseDescription}
-分析立場：${positionLabel}
-
-待驗證援引：
-${detailedCitations.map((c, i) => `${i+1}. ${c.citation}
-   Mini 初篩理由：${c.miniReason}
-   使用統計：${c.usageCount}次使用，${c.inCourtInsightCount}次在法院見解內
-   價值分數：${c.valueScore}
-
-   實際使用上下文：
-   ${c.contextDetails}
-
-   ---`).join('\n')}
-
-請對每個援引進行嚴格評分（0-10分）：
-- 9-10分：極高價值，強烈推薦
-- 7-8分：有價值，值得參考
-- 4-6分：一般參考價值
-- 1-3分：低價值，前端可忽略
-- 0分：完全無關，建議隱藏
-
-請以 JSON 格式回應：
-{
-  "verifiedCitations": [
-    {
-      "citation": "援引名稱",
-      "finalScore": 0-10,
-      "verificationReason": "嚴格評估的詳細理由",
-      "shouldDisplay": true/false,
-      "riskWarning": "如果有風險的警告"
-    }
-  ],
-  "verificationSummary": "整體驗證說明",
-  "rejectedCount": 被否決的數量
-}`;
-
-        const response = await openai.chat.completions.create({
-            model: "gpt-4o", // 🆕 使用 GPT-4o 進行嚴格驗證
-            messages: [
-                { role: "system", content: "你是資深法律專家，擁有完全否決權。請嚴格把關，確保推薦品質。寧可嚴格也不要推薦無關援引。" },
-                { role: "user", content: prompt }
-            ],
-            temperature: 0.1, // 低溫度，確保一致性
-            max_tokens: 2000,
-            response_format: { type: "json_object" }
-        });
-
-        // 🔧 安全解析 JSON，處理 GPT-4o 可能的格式問題
-        const rawContent = response.choices[0].message.content;
-        console.log(`[strictVerificationWith4o] 原始回應內容:`, rawContent.substring(0, 500) + '...');
-
-        let result;
-        try {
-            result = JSON.parse(rawContent);
-        } catch (parseError) {
-            console.error(`[strictVerificationWith4o] JSON 解析失敗:`, parseError.message);
-
-            // 嘗試修復常見的 JSON 問題
-            const cleanedContent = cleanJsonResponse(rawContent);
-            try {
-                result = JSON.parse(cleanedContent);
-                console.log(`[strictVerificationWith4o] JSON 修復成功`);
-            } catch (secondError) {
-                console.error(`[strictVerificationWith4o] JSON 修復也失敗:`, secondError.message);
-
-                // 最後嘗試：使用正則表達式提取部分有效數據
-                result = extractPartialJsonData(rawContent);
-                if (result) {
-                    console.log(`[strictVerificationWith4o] 部分數據提取成功`);
-                } else {
-                    throw parseError; // 拋出原始錯誤
-                }
-            }
-        }
-
-        // 根據 GPT-4o 驗證結果，過濾援引
+        const totalToProcess = miniFilteredCitations.length;
         const verifiedCitations = [];
-        for (const verified of result.verifiedCitations || []) {
-            if (verified.finalScore >= 4) { // 只保留 4 分以上的援引
-                const fullCitation = miniFilteredCitations.find(c => c.citation === verified.citation);
-                if (fullCitation) {
-                    // 🆕 添加 GPT-4o 的嚴格驗證結果
-                    fullCitation.strictVerification = {
-                        finalScore: verified.finalScore,
-                        verificationReason: verified.verificationReason,
-                        shouldDisplay: verified.shouldDisplay,
-                        riskWarning: verified.riskWarning
-                    };
-                    verifiedCitations.push(fullCitation);
-                }
+
+        // 🚀 新增：逐個處理每個援引進行嚴格驗證
+        for (let i = 0; i < miniFilteredCitations.length; i++) {
+            const citation = miniFilteredCitations[i];
+            const currentProcessing = i + 1;
+
+            console.log(`[strictVerificationWith4o] 驗證第 ${currentProcessing}/${totalToProcess} 個援引: ${citation.citation}`);
+
+            // 🚀 新增：更新逐個處理進度
+            if (taskRef) {
+                const progressPercentage = 70 + Math.floor((i / totalToProcess) * 10); // 70% 到 80%
+                const estimatedRemaining = Math.max(85 - (i * 5), 25); // 動態估算剩餘時間
+
+                await updateTaskProgress(taskRef, 3, progressPercentage, {
+                    totalCitations: progressContext.totalCitations || 0,
+                    processed: progressContext.processed || 0,
+                    qualified: progressContext.qualified || 0,
+                    verified: verifiedCitations.length,
+                    // 🆕 新增逐個處理進度字段
+                    currentProcessing: currentProcessing,
+                    totalToProcess: totalToProcess
+                }, `正在驗證第 ${currentProcessing}/${totalToProcess} 個援引: ${citation.citation.substring(0, 20)}...`, estimatedRemaining);
+            }
+
+            // 對單個援引進行驗證
+            const singleVerificationResult = await verifySingleCitation(citation, position, caseDescription, positionLabel);
+
+            if (singleVerificationResult && singleVerificationResult.finalScore >= 4) {
+                // 🆕 添加 GPT-4o 的嚴格驗證結果
+                citation.strictVerification = {
+                    finalScore: singleVerificationResult.finalScore,
+                    verificationReason: singleVerificationResult.verificationReason,
+                    shouldDisplay: singleVerificationResult.shouldDisplay,
+                    riskWarning: singleVerificationResult.riskWarning
+                };
+                verifiedCitations.push(citation);
             }
         }
 
         console.log(`[strictVerificationWith4o] ✅ GPT-4o 驗證完成：${verifiedCitations.length}/${miniFilteredCitations.length} 個援引通過嚴格驗證`);
-        console.log(`[strictVerificationWith4o] 被否決：${result.rejectedCount || 0} 個援引`);
-
         return verifiedCitations;
 
     } catch (error) {
@@ -477,6 +391,111 @@ ${detailedCitations.map((c, i) => `${i+1}. ${c.citation}
         });
 
         return fallbackCitations;
+    }
+}
+
+/**
+ * 🆕 驗證單個援引的輔助函數
+ */
+async function verifySingleCitation(citation, position, caseDescription, positionLabel) {
+    try {
+        // 🔧 修復：準備詳細的援引數據（包含完整上下文）
+        const contexts = citation.totalContexts || [];
+        const contextDetails = contexts.slice(0, 3).map(ctx => {
+            // context 是一個對象，包含 fullContext 屬性
+            const contextText = ctx.context?.fullContext || ctx.context?.before || '無上下文';
+            const displayText = typeof contextText === 'string'
+                ? contextText
+                : '無上下文';
+
+            return `【案例：${ctx.caseTitle || '未知'}】\n${displayText}\n法院見解內：${ctx.inCourtInsight ? '是' : '否'}`;
+        }).join('\n\n');
+
+        const detailedCitation = {
+            citation: citation.citation,
+            usageCount: citation.usageCount,
+            inCourtInsightCount: citation.inCourtInsightCount,
+            valueScore: citation.valueAssessment?.totalScore || 0,
+            miniReason: citation.miniScreening?.quickReason || '無',
+            contextDetails: contextDetails || '無可用上下文'
+        };
+
+        const prompt = `你是資深法律專家，擁有完全的否決權。請嚴格評估這個援引判例的實際參考價值。
+
+重要原則：
+1. 如果援引與案件主題完全無關，直接給 0 分
+2. 如果上下文顯示援引處理的是不同類型問題，給 1-3 分
+3. 只有真正相關且有實質幫助的援引才給高分
+4. 寧可嚴格也不要推薦無關的援引
+
+案件描述：${caseDescription}
+分析立場：${positionLabel}
+
+待驗證援引：
+${detailedCitation.citation}
+Mini 初篩理由：${detailedCitation.miniReason}
+使用統計：${detailedCitation.usageCount}次使用，${detailedCitation.inCourtInsightCount}次在法院見解內
+價值分數：${detailedCitation.valueScore}
+
+實際使用上下文：
+${detailedCitation.contextDetails}
+
+請對這個援引進行嚴格評分（0-10分）：
+- 9-10分：極高價值，強烈推薦
+- 7-8分：有價值，值得參考
+- 4-6分：一般參考價值
+- 1-3分：低價值，前端可忽略
+- 0分：完全無關，建議隱藏
+
+請以 JSON 格式回應：
+{
+  "citation": "${citation.citation}",
+  "finalScore": 0-10,
+  "verificationReason": "嚴格評估的詳細理由",
+  "shouldDisplay": true/false,
+  "riskWarning": "如果有風險的警告"
+}`;
+
+        const response = await openai.chat.completions.create({
+            model: "gpt-4o", // 🆕 使用 GPT-4o 進行嚴格驗證
+            messages: [
+                { role: "system", content: "你是資深法律專家，擁有完全否決權。請嚴格把關，確保推薦品質。寧可嚴格也不要推薦無關援引。" },
+                { role: "user", content: prompt }
+            ],
+            temperature: 0.1, // 低溫度，確保一致性
+            max_tokens: 800,
+            response_format: { type: "json_object" }
+        });
+
+        // 🔧 安全解析 JSON
+        const rawContent = response.choices[0].message.content;
+        let result;
+        try {
+            result = JSON.parse(rawContent);
+        } catch (parseError) {
+            console.error(`[verifySingleCitation] JSON 解析失敗:`, parseError.message);
+            // 返回默認的低分結果
+            return {
+                citation: citation.citation,
+                finalScore: 3,
+                verificationReason: 'JSON 解析失敗，給予保守分數',
+                shouldDisplay: false,
+                riskWarning: '驗證過程出現問題，請謹慎使用'
+            };
+        }
+
+        return result;
+
+    } catch (error) {
+        console.error(`[verifySingleCitation] 驗證援引失敗: ${citation.citation}`, error);
+        // 返回默認的低分結果
+        return {
+            citation: citation.citation,
+            finalScore: 2,
+            verificationReason: '驗證過程失敗，給予保守分數',
+            shouldDisplay: false,
+            riskWarning: '驗證失敗，請謹慎使用'
+        };
     }
 }
 
@@ -613,16 +632,35 @@ function extractPartialJsonData(rawContent) {
  * 🆕 階段三：深度分析通過驗證的援引
  * 任務：對高品質援引進行詳細分析，提供具體建議
  */
-async function deepAnalysisVerifiedCitations(verifiedCitations, position, caseDescription, casePool) {
+async function deepAnalysisVerifiedCitations(verifiedCitations, position, caseDescription, casePool, taskRef = null, progressContext = {}) {
     try {
         console.log(`[deepAnalysisVerifiedCitations] 🔍 開始深度分析 ${verifiedCitations.length} 個通過驗證的援引`);
 
         const recommendations = [];
+        const totalToProcess = verifiedCitations.length;
 
         // 對每個通過驗證的援引進行深度分析
         for (let i = 0; i < verifiedCitations.length; i++) {
             const citation = verifiedCitations[i];
-            console.log(`[deepAnalysisVerifiedCitations] 分析第 ${i + 1}/${verifiedCitations.length} 個援引: ${citation.citation}`);
+            const currentProcessing = i + 1;
+
+            console.log(`[deepAnalysisVerifiedCitations] 分析第 ${currentProcessing}/${totalToProcess} 個援引: ${citation.citation}`);
+
+            // 🚀 新增：更新逐個處理進度
+            if (taskRef) {
+                const progressPercentage = 85 + Math.floor((i / totalToProcess) * 10); // 85% 到 95%
+                const estimatedRemaining = Math.max(15 - (i * 2), 5); // 動態估算剩餘時間
+
+                await updateTaskProgress(taskRef, 4, progressPercentage, {
+                    totalCitations: progressContext.totalCitations || 0,
+                    processed: progressContext.processed || 0,
+                    qualified: progressContext.qualified || 0,
+                    verified: progressContext.verified || 0,
+                    // 🆕 新增逐個處理進度字段
+                    currentProcessing: currentProcessing,
+                    totalToProcess: totalToProcess
+                }, `正在深度分析第 ${currentProcessing}/${totalToProcess} 個援引: ${citation.citation.substring(0, 20)}...`, estimatedRemaining);
+            }
 
             try {
                 const analysis = await analyzeSingleVerifiedCitation(citation, position, caseDescription);
@@ -1481,7 +1519,22 @@ async function generateCitationRecommendationsThreeStage(valuableCitations, posi
 
         // 🎯 階段二：GPT-4o 嚴格驗證（否決權）
         console.log(`[generateCitationRecommendationsThreeStage] 🛡️ 階段二：GPT-4o 嚴格驗證`);
-        const strictVerifiedCitations = await strictVerificationWith4o(miniFilteredCitations, position, caseDescription);
+
+        // 🚀 新增：傳遞 taskRef 和進度上下文給驗證函數
+        const verificationContext = {
+            totalCitations: valuableCitations.length,
+            processed: valuableCitations.length,
+            qualified: miniFilteredCitations.length,
+            verified: 0
+        };
+
+        const strictVerifiedCitations = await strictVerificationWith4o(
+            miniFilteredCitations,
+            position,
+            caseDescription,
+            taskRef,              // 🆕 傳遞 taskRef
+            verificationContext   // 🆕 傳遞進度上下文
+        );
 
         // 🆕 更新進度：專家驗證完成
         if (taskRef) {
@@ -1489,7 +1542,10 @@ async function generateCitationRecommendationsThreeStage(valuableCitations, posi
                 totalCitations: valuableCitations.length,
                 processed: valuableCitations.length,
                 qualified: miniFilteredCitations.length,
-                verified: strictVerifiedCitations.length
+                verified: strictVerifiedCitations.length,
+                // 🆕 清除逐個處理進度（已完成）
+                currentProcessing: miniFilteredCitations.length,
+                totalToProcess: miniFilteredCitations.length
             }, `專家驗證完成，${strictVerifiedCitations.length} 個援引通過驗證，開始深度分析...`, 75);
         }
 
@@ -1513,7 +1569,23 @@ async function generateCitationRecommendationsThreeStage(valuableCitations, posi
 
         // 🎯 階段三：深度分析（只針對通過驗證的援引）
         console.log(`[generateCitationRecommendationsThreeStage] 🔍 階段三：深度分析`);
-        const finalRecommendations = await deepAnalysisVerifiedCitations(strictVerifiedCitations, position, caseDescription, casePool);
+
+        // 🚀 新增：準備進度上下文數據
+        const progressContext = {
+            totalCitations: valuableCitations.length,
+            processed: valuableCitations.length,
+            qualified: miniFilteredCitations.length,
+            verified: strictVerifiedCitations.length
+        };
+
+        const finalRecommendations = await deepAnalysisVerifiedCitations(
+            strictVerifiedCitations,
+            position,
+            caseDescription,
+            casePool,
+            taskRef,           // 🆕 傳遞 taskRef 用於進度更新
+            progressContext    // 🆕 傳遞進度上下文
+        );
 
         // 🆕 更新進度：深度分析完成
         if (taskRef) {
@@ -1521,7 +1593,10 @@ async function generateCitationRecommendationsThreeStage(valuableCitations, posi
                 totalCitations: valuableCitations.length,
                 processed: valuableCitations.length,
                 qualified: miniFilteredCitations.length,
-                verified: strictVerifiedCitations.length
+                verified: strictVerifiedCitations.length,
+                // 🆕 清除逐個處理進度（已完成）
+                currentProcessing: strictVerifiedCitations.length,
+                totalToProcess: strictVerifiedCitations.length
             }, `深度分析完成，生成 ${finalRecommendations.length} 個專業建議...`, 15);
         }
 
@@ -2056,7 +2131,10 @@ async function updateTaskProgress(taskRef, stage, progress, stats, currentAction
             totalCitations: Math.min(stats.totalCitations || 0, 9999),
             processed: Math.min(stats.processed || 0, 9999),
             qualified: Math.min(stats.qualified || 0, 9999),
-            verified: Math.min(stats.verified || 0, 9999)
+            verified: Math.min(stats.verified || 0, 9999),
+            // 🚀 新增：逐個處理進度字段
+            currentProcessing: Math.min(stats.currentProcessing || 0, 9999),
+            totalToProcess: Math.min(stats.totalToProcess || 0, 9999)
         },
         currentAction: (currentAction || '').substring(0, 100), // 限制文字長度
         timestamp: admin.firestore.FieldValue.serverTimestamp()

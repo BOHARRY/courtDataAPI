@@ -105,11 +105,19 @@ const CitationAnalysisProgress = ({ progressData }) => {
                 </div>
                 <div className="stat-card">
                     <span className="stat-number">{stats.qualified}</span>
-                    <span className="stat-label">通過篩選</span>
+                    <span className="stat-label">通過驗證</span>
+                    {/* 🚀 新增：階段3的逐個進度顯示 */}
+                    {stage === 3 && stats.currentProcessing && stats.totalToProcess && (
+                        <span className="stat-progress">{stats.currentProcessing}/{stats.totalToProcess} 進行中</span>
+                    )}
                 </div>
                 <div className="stat-card">
                     <span className="stat-number">{stats.verified}</span>
                     <span className="stat-label">專家驗證</span>
+                    {/* 🚀 新增：階段4的逐個進度顯示 */}
+                    {stage === 4 && stats.currentProcessing && stats.totalToProcess && (
+                        <span className="stat-progress">{stats.currentProcessing}/{stats.totalToProcess} 進行中</span>
+                    )}
                 </div>
             </div>
 
