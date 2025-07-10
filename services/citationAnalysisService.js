@@ -442,46 +442,125 @@ async function strictVerificationWith4o(miniFilteredCitations, position, caseDes
         const totalToProcess = miniFilteredCitations.length;
         const verifiedCitations = [];
 
-        // 🚀 新增：逐個處理每個援引進行嚴格驗證
-        for (let i = 0; i < miniFilteredCitations.length; i++) {
-            const citation = miniFilteredCitations[i];
-            const currentProcessing = i + 1;
+        // 🚀 新增：並行驗證邏輯
+        const maxConcurrency = Math.min(openaiClientPool.clients.length, totalToProcess, 5); // 最多5個並行
+        console.log(`[strictVerificationWith4o] 🚀 啟動 ${maxConcurrency} 個並行驗證器`);
 
-            console.log(`[strictVerificationWith4o] 驗證第 ${currentProcessing}/${totalToProcess} 個援引: ${citation.citation}`);
+        // 並行狀態追蹤
+        const parallelStatus = {
+            completed: 0,
+            inProgress: 0,
+            failed: 0,
+            verified: 0,
+            workers: []
+        };
 
-            // 🚀 新增：更新逐個處理進度
-            if (taskRef) {
-                const progressPercentage = 70 + Math.floor((i / totalToProcess) * 10); // 70% 到 80%
-                const estimatedRemaining = Math.max(85 - (i * 5), 25); // 動態估算剩餘時間
+        // 創建並行驗證器
+        const processNextVerification = async (workerId) => {
+            let processedCount = 0;
 
-                await updateTaskProgress(taskRef, 3, progressPercentage, {
-                    totalCitations: progressContext.totalCitations || 0,
-                    processed: progressContext.processed || 0,
-                    qualified: progressContext.qualified || 0,
-                    verified: verifiedCitations.length,
-                    // 🆕 新增逐個處理進度字段
-                    currentProcessing: currentProcessing,
-                    totalToProcess: totalToProcess
-                }, `正在驗證第 ${currentProcessing}/${totalToProcess} 個援引: ${citation.citation.substring(0, 20)}...`, estimatedRemaining);
-            }
+            for (let i = workerId - 1; i < miniFilteredCitations.length; i += maxConcurrency) {
+                const citation = miniFilteredCitations[i];
+                const currentIndex = i + 1;
 
-            // 對單個援引進行驗證
-            const singleVerificationResult = await verifySingleCitation(citation, position, caseDescription, positionLabel);
+                console.log(`[Verifier ${workerId}] 驗證第 ${currentIndex}/${totalToProcess} 個援引: ${citation.citation}`);
 
-            if (singleVerificationResult && singleVerificationResult.finalScore >= 4) {
-                // 🆕 添加 GPT-4o 的嚴格驗證結果
-                citation.strictVerification = {
-                    finalScore: singleVerificationResult.finalScore,
-                    verificationReason: singleVerificationResult.verificationReason,
-                    shouldDisplay: singleVerificationResult.shouldDisplay,
-                    riskWarning: singleVerificationResult.riskWarning
+                // 更新並行狀態
+                parallelStatus.inProgress++;
+                parallelStatus.workers[workerId - 1] = {
+                    workerId,
+                    status: 'verifying',
+                    citation: citation.citation.substring(0, 30) + '...',
+                    currentIndex
                 };
-                verifiedCitations.push(citation);
+
+                // 🚀 更新並行進度
+                if (taskRef) {
+                    const progressPercentage = 70 + Math.floor((parallelStatus.completed / totalToProcess) * 10);
+                    const estimatedRemaining = Math.max(85 - (parallelStatus.completed * 3), 25);
+
+                    await updateTaskProgress(taskRef, 3, progressPercentage, {
+                        totalCitations: progressContext.totalCitations || 0,
+                        processed: progressContext.processed || 0,
+                        qualified: progressContext.qualified || 0,
+                        verified: parallelStatus.verified,
+                        // 🆕 並行處理進度字段
+                        currentProcessing: parallelStatus.inProgress,
+                        totalToProcess: totalToProcess,
+                        completedInParallel: parallelStatus.completed,
+                        parallelWorkers: parallelStatus.workers.filter(w => w && w.status === 'verifying')
+                    }, `並行驗證中: ${parallelStatus.completed}/${totalToProcess} 完成, ${parallelStatus.inProgress} 進行中`, estimatedRemaining);
+                }
+
+                try {
+                    // 🚀 使用專用客戶端進行驗證
+                    const dedicatedClient = openaiClientPool.getNextClient();
+                    const singleVerificationResult = await verifySingleCitation(citation, position, caseDescription, positionLabel, dedicatedClient);
+
+                    if (singleVerificationResult && singleVerificationResult.finalScore >= 4) {
+                        // 🆕 添加 GPT-4o 的嚴格驗證結果
+                        citation.strictVerification = {
+                            finalScore: singleVerificationResult.finalScore,
+                            verificationReason: singleVerificationResult.verificationReason,
+                            shouldDisplay: singleVerificationResult.shouldDisplay,
+                            riskWarning: singleVerificationResult.riskWarning,
+                            // 🆕 添加處理信息
+                            verifiedBy: `Verifier ${workerId}`,
+                            verifiedAt: new Date().toISOString()
+                        };
+
+                        // 線程安全地添加結果
+                        verifiedCitations[i] = citation;
+                        parallelStatus.verified++;
+                        console.log(`[Verifier ${workerId}] ✅ 驗證通過: ${citation.citation}`);
+                    } else {
+                        console.log(`[Verifier ${workerId}] ❌ 驗證未通過: ${citation.citation} (分數: ${singleVerificationResult?.finalScore || 0})`);
+                    }
+
+                    parallelStatus.completed++;
+                    processedCount++;
+
+                } catch (error) {
+                    console.error(`[Verifier ${workerId}] ❌ 驗證援引失敗: ${citation.citation}`, error);
+                    parallelStatus.failed++;
+
+                    // 標記客戶端可能有問題
+                    if (error.message.includes('API') || error.message.includes('rate limit')) {
+                        openaiClientPool.markClientUnhealthy(dedicatedClient);
+                    }
+                } finally {
+                    parallelStatus.inProgress--;
+                    parallelStatus.workers[workerId - 1] = {
+                        workerId,
+                        status: 'idle',
+                        citation: null,
+                        currentIndex: null
+                    };
+                }
             }
+
+            console.log(`[Verifier ${workerId}] 🏁 完成所有驗證任務，處理了 ${processedCount} 個援引`);
+            return processedCount;
+        };
+
+        // 🚀 啟動並行驗證
+        const verifierPromises = [];
+        for (let workerId = 1; workerId <= maxConcurrency; workerId++) {
+            verifierPromises.push(processNextVerification(workerId));
         }
 
-        console.log(`[strictVerificationWith4o] ✅ GPT-4o 驗證完成：${verifiedCitations.length}/${miniFilteredCitations.length} 個援引通過嚴格驗證`);
-        return verifiedCitations;
+        // 等待所有並行驗證完成
+        const verifierResults = await Promise.all(verifierPromises);
+        const totalProcessed = verifierResults.reduce((sum, count) => sum + count, 0);
+
+        console.log(`[strictVerificationWith4o] 🎉 並行驗證完成: ${totalProcessed} 個援引處理完畢`);
+        console.log(`[strictVerificationWith4o] 📊 統計: 完成 ${parallelStatus.completed}, 通過 ${parallelStatus.verified}, 失敗 ${parallelStatus.failed}`);
+
+        // 過濾掉空結果並保持原始順序
+        const validVerifiedCitations = verifiedCitations.filter(citation => citation !== undefined);
+
+        console.log(`[strictVerificationWith4o] ✅ 並行驗證完成：${validVerifiedCitations.length}/${miniFilteredCitations.length} 個援引通過嚴格驗證`);
+        return validVerifiedCitations;
 
     } catch (error) {
         console.error('[strictVerificationWith4o] GPT-4o 嚴格驗證失敗:', error);
@@ -505,8 +584,13 @@ async function strictVerificationWith4o(miniFilteredCitations, position, caseDes
 
 /**
  * 🆕 驗證單個援引的輔助函數
+ * @param {Object} citation - 援引對象
+ * @param {string} position - 立場
+ * @param {string} caseDescription - 案件描述
+ * @param {string} positionLabel - 立場標籤
+ * @param {OpenAI} customClient - 可選的自定義 OpenAI 客戶端
  */
-async function verifySingleCitation(citation, position, caseDescription, positionLabel) {
+async function verifySingleCitation(citation, position, caseDescription, positionLabel, customClient = null) {
     try {
         // 🔧 修復：準備詳細的援引數據（包含完整上下文）
         const contexts = citation.totalContexts || [];
@@ -565,7 +649,10 @@ ${detailedCitation.contextDetails}
   "riskWarning": "如果有風險的警告"
 }`;
 
-        const response = await openai.chat.completions.create({
+        // 🚀 使用指定的客戶端或從池中獲取
+        const clientToUse = customClient || openaiClientPool.getNextClient();
+
+        const response = await clientToUse.chat.completions.create({
             model: "gpt-4o", // 🆕 使用 GPT-4o 進行嚴格驗證
             messages: [
                 { role: "system", content: "你是資深法律專家，擁有完全否決權。請嚴格把關，確保推薦品質。寧可嚴格也不要推薦無關援引。" },

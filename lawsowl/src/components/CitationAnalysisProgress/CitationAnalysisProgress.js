@@ -106,9 +106,21 @@ const CitationAnalysisProgress = ({ progressData }) => {
                 <div className="stat-card">
                     <span className="stat-number">{stats.qualified}</span>
                     <span className="stat-label">通過驗證</span>
-                    {/* 🚀 新增：階段3的逐個進度顯示 */}
-                    {stage === 3 && stats.currentProcessing && stats.totalToProcess && (
-                        <span className="stat-progress">{stats.currentProcessing}/{stats.totalToProcess} 進行中</span>
+                    {/* 🚀 新增：階段3的並行進度顯示 */}
+                    {stage === 3 && stats.totalToProcess && (
+                        <div className="parallel-progress">
+                            {stats.parallelWorkers && stats.parallelWorkers.length > 0 ? (
+                                <span className="stat-progress">
+                                    {stats.completedInParallel || 0}/{stats.totalToProcess} 完成
+                                    <br />
+                                    {stats.currentProcessing || 0} 並行中
+                                </span>
+                            ) : (
+                                <span className="stat-progress">
+                                    {stats.currentProcessing || 0}/{stats.totalToProcess} 進行中
+                                </span>
+                            )}
+                        </div>
                     )}
                 </div>
                 <div className="stat-card">
@@ -143,22 +155,26 @@ const CitationAnalysisProgress = ({ progressData }) => {
                 ))}
             </div>
 
-            {/* 🚀 新增：並行處理狀態顯示 */}
-            {stage === 4 && stats.parallelWorkers && stats.parallelWorkers.length > 0 && (
+            {/* 🚀 新增：並行處理狀態顯示 (階段3和階段4) */}
+            {(stage === 3 || stage === 4) && stats.parallelWorkers && stats.parallelWorkers.length > 0 && (
                 <div className="parallel-status">
                     <div className="parallel-header">
                         <Icon icon="mdi:lightning-bolt" className="parallel-icon" />
-                        <span className="parallel-title">並行處理狀態</span>
+                        <span className="parallel-title">
+                            {stage === 3 ? '並行驗證狀態' : '並行分析狀態'}
+                        </span>
                     </div>
                     <div className="parallel-workers">
                         {stats.parallelWorkers.map((worker, index) => (
                             <div key={worker.workerId || index} className={`worker-status ${worker.status}`}>
-                                <span className="worker-id">Worker {worker.workerId}</span>
+                                <span className="worker-id">
+                                    {stage === 3 ? `Verifier ${worker.workerId}` : `Worker ${worker.workerId}`}
+                                </span>
                                 <span className="worker-task">
-                                    {worker.status === 'analyzing' ? (
+                                    {(worker.status === 'analyzing' || worker.status === 'verifying') ? (
                                         <>
                                             <Icon icon="mdi:cog" className="worker-icon spinning" />
-                                            {worker.citation || '分析中...'}
+                                            {worker.citation || (stage === 3 ? '驗證中...' : '分析中...')}
                                         </>
                                     ) : (
                                         <>

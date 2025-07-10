@@ -178,7 +178,8 @@
     transition: all 0.2s ease;
 }
 
-.worker-status.analyzing {
+.worker-status.analyzing,
+.worker-status.verifying {
     border-color: #3b82f6;
     background: rgba(59, 130, 246, 0.05);
 }
