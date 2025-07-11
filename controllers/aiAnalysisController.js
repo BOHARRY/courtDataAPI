@@ -2,7 +2,7 @@
 import { analyzeSuccessFactors } from '../services/aiSuccessAnalysisService.js';
 import { startCommonPointsAnalysis, getAnalysisResult } from '../services/summarizeCommonPointsService.js';
 import { startCasePrecedentAnalysis, startMainstreamAnalysis } from '../services/casePrecedentAnalysisService.js';
-import { startCitationAnalysis } from '../services/citationAnalysisService.js';
+import { startCitationAnalysis, cancelCitationAnalysisTask } from '../services/citationAnalysisService.js';
 import { startWritingAssistantTask } from '../services/writingAssistantService.js';
 
 // 現有的 Controller
@@ -154,6 +154,39 @@ export const writingAssistantController = async (req, res, next) => {
 
     } catch (error) {
         console.error('[WritingAssistantController] 啟動任務失敗:', error);
+        next(error);
+    }
+};
+
+// 🆕 中止援引分析任務的控制器
+export const cancelCitationAnalysisController = async (req, res, next) => {
+    try {
+        const { taskId } = req.params;
+        const userId = req.user.uid;
+
+        if (!taskId) {
+            return res.status(400).json({ message: '缺少任務 ID。' });
+        }
+
+        console.log(`[CancelCitationAnalysisController] 用戶 ${userId} 請求中止任務: ${taskId}`);
+
+        const result = await cancelCitationAnalysisTask(taskId);
+
+        if (result.success) {
+            res.status(200).json({
+                success: true,
+                message: result.message
+            });
+        } else {
+            res.status(400).json({
+                success: false,
+                message: result.message,
+                error: result.error
+            });
+        }
+
+    } catch (error) {
+        console.error('[CancelCitationAnalysisController] 中止任務失敗:', error);
         next(error);
     }
 };

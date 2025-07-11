@@ -1,6 +1,6 @@
 // routes/aiAnalysisRoutes.js
 import express from 'express';
-import { analyzeSuccessFactorsController, summarizeCommonPointsController, getAnalysisResultController, casePrecedentAnalysisController, mainstreamAnalysisController, citationAnalysisController, writingAssistantController } from '../controllers/aiAnalysisController.js';
+import { analyzeSuccessFactorsController, summarizeCommonPointsController, getAnalysisResultController, casePrecedentAnalysisController, mainstreamAnalysisController, citationAnalysisController, writingAssistantController, cancelCitationAnalysisController } from '../controllers/aiAnalysisController.js';
 import { verifyToken } from '../middleware/auth.js';
 import { checkAndDeductCredits } from '../middleware/credit.js';
 import { CREDIT_COSTS, CREDIT_PURPOSES } from '../config/creditCosts.js';
@@ -97,6 +97,13 @@ router.post(
         }
     ),
     writingAssistantController
+);
+
+// 🆕 DELETE /api/ai/citation-analysis/:taskId - 中止援引分析任務
+router.delete(
+    '/citation-analysis/:taskId',
+    verifyToken,
+    cancelCitationAnalysisController
 );
 
 export default router;

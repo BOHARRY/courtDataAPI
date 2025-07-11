@@ -1565,6 +1565,24 @@ async function analyzeCitationsFromCasePool(casePool, position, caseDescription,
 
         // 🆕 階段 2：開始 AI 分析
         if (taskRef) {
+            // 🆕 檢查任務是否已被中止
+            const currentTask = await taskRef.get();
+            if (!currentTask.exists || currentTask.data().status === 'cancelled') {
+                console.log(`[analyzeCitationsFromCasePool] 任務已被中止，停止執行`);
+                return {
+                    totalCitations: 0,
+                    uniqueCitations: 0,
+                    recommendations: [],
+                    summary: '分析任務已被用戶取消',
+                    analysisMetadata: {
+                        basedOnCases: casePool.allCases.length,
+                        position,
+                        timestamp: new Date().toISOString(),
+                        cancelled: true
+                    }
+                };
+            }
+
             await updateTaskProgress(taskRef, 2, 50, {
                 totalCitations: citationStats.length,
                 processed: citationStats.length,
@@ -2484,6 +2502,52 @@ async function updateTaskProgress(taskRef, stage, progress, stats, currentAction
 // ];
 
 /**
+ * 🆕 中止援引分析任務
+ */
+async function cancelCitationAnalysisTask(taskId) {
+    const db = admin.firestore();
+    const taskRef = db.collection('aiAnalysisTasks').doc(taskId);
+
+    try {
+        console.log(`[cancelCitationAnalysisTask] 開始中止任務: ${taskId}`);
+
+        // 檢查任務是否存在
+        const taskDoc = await taskRef.get();
+        if (!taskDoc.exists) {
+            console.log(`[cancelCitationAnalysisTask] 任務不存在: ${taskId}`);
+            return { success: false, message: '任務不存在' };
+        }
+
+        const taskData = taskDoc.data();
+
+        // 檢查任務狀態
+        if (taskData.status === 'complete') {
+            console.log(`[cancelCitationAnalysisTask] 任務已完成，無需中止: ${taskId}`);
+            return { success: false, message: '任務已完成' };
+        }
+
+        if (taskData.status === 'cancelled') {
+            console.log(`[cancelCitationAnalysisTask] 任務已被中止: ${taskId}`);
+            return { success: true, message: '任務已被中止' };
+        }
+
+        // 更新任務狀態為已中止
+        await taskRef.update({
+            status: 'cancelled',
+            cancelledAt: admin.firestore.FieldValue.serverTimestamp(),
+            error: '用戶取消了分析任務'
+        });
+
+        console.log(`[cancelCitationAnalysisTask] 成功中止任務: ${taskId}`);
+        return { success: true, message: '任務已中止' };
+
+    } catch (error) {
+        console.error(`[cancelCitationAnalysisTask] 中止任務失敗: ${taskId}`, error);
+        return { success: false, message: '中止任務失敗', error: error.message };
+    }
+}
+
+/**
  * 背景執行援引分析
  */
 async function executeCitationAnalysisInBackground(taskId, originalTaskData, userId = null) {
@@ -2541,6 +2605,13 @@ async function executeCitationAnalysisInBackground(taskId, originalTaskData, use
             verified: 0
         }, "案例池載入完成，開始援引分析...", 145);
 
+        // 🆕 在開始分析前檢查是否已被中止
+        const currentTask = await taskRef.get();
+        if (!currentTask.exists || currentTask.data().status === 'cancelled') {
+            console.log(`[executeCitationAnalysisInBackground] 任務已被中止，停止執行: ${taskId}`);
+            return;
+        }
+
         // 執行援引分析（帶進度更新）
         const analysisResult = await analyzeCitationsFromCasePool(
             casePool,
@@ -2581,5 +2652,6 @@ export {
     enrichCitationsWithValue,
     analyzeCitationsFromCasePool,
     generateCitationRecommendations,
-    startCitationAnalysis
+    startCitationAnalysis,
+    cancelCitationAnalysisTask
 };
