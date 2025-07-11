@@ -65,7 +65,7 @@ ${context ? `額外上下文：「${context}」` : ''}
   "enhanced": "30字內精準描述"
 }`;
 
-        console.log(`[LawSearch] 使用 Claude Opus 4 優化法條查詢: "${userQuery}"`);
+        // console.log(`[LawSearch] 使用 Claude Opus 4 優化法條查詢: "${userQuery}"`);
 
         const response = await anthropic.messages.create({
             model: "claude-opus-4-20250514",
@@ -78,7 +78,7 @@ ${context ? `額外上下文：「${context}」` : ''}
         });
 
         const enhanced = JSON.parse(response.content[0].text);
-        console.log(`[LawSearch] Claude Opus 4 查詢優化結果:`, enhanced);
+        // console.log(`[LawSearch] Claude Opus 4 查詢優化結果:`, enhanced);
         return enhanced;
         
     } catch (error) {

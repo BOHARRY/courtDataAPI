@@ -542,15 +542,15 @@ async function performMultiAngleSearch(searchAngles, courtLevel, caseType, thres
                 });
 
                 // 🚨 調試：檢查搜尋結果的相關性
-                if (hits.length > 0) {
-                    console.log(`[casePrecedentAnalysisService] 🔍 角度「${angleName}」前3個結果:`, hits.slice(0, 3).map(hit => ({
-                        title: hit._source?.JTITLE?.substring(0, 50) + '...',
-                        score: hit._score,
-                        main_reasons_sample: hit._source?.main_reasons_ai?.slice(0, 2),
-                        has_text_embedding: !!hit._source?.text_embedding,
-                        text_embedding_length: hit._source?.text_embedding?.length
-                    })));
-                }
+                // if (hits.length > 0) {
+                //     console.log(`[casePrecedentAnalysisService] 🔍 角度「${angleName}」前3個結果:`, hits.slice(0, 3).map(hit => ({
+                //         title: hit._source?.JTITLE?.substring(0, 50) + '...',
+                //         score: hit._score,
+                //         main_reasons_sample: hit._source?.main_reasons_ai?.slice(0, 2),
+                //         has_text_embedding: !!hit._source?.text_embedding,
+                //         text_embedding_length: hit._source?.text_embedding?.length
+                //     })));
+                // }
 
                 // 篩選並標記來源角度
                 const filteredResults = hits
@@ -968,8 +968,8 @@ async function searchSimilarCases(caseDescription, courtLevel, caseType, thresho
 
         // 修正回應結構處理 - 參考 semanticSearchService.js 的成功模式
         const hits = response.hits?.hits || [];
-        console.log(`[casePrecedentAnalysisService] 搜索返回 ${hits.length} 個結果`);
-        console.log(`[casePrecedentAnalysisService] 完整回應結構:`, JSON.stringify(response, null, 2));
+        // console.log(`[casePrecedentAnalysisService] 搜索返回 ${hits.length} 個結果`);
+        // console.log(`[casePrecedentAnalysisService] 完整回應結構:`, JSON.stringify(response, null, 2));
 
         // 3. 根據用戶設定的相似度閾值篩選結果
         const filteredHits = hits.filter(hit => {
