@@ -923,7 +923,25 @@ async function deepAnalysisVerifiedCitations(verifiedCitations, position, caseDe
                             finalConfidence: calculateFinalConfidence(citation),
                             // 🆕 添加處理信息
                             processedBy: `Worker ${workerId}`,
-                            processedAt: new Date().toISOString()
+                            processedAt: new Date().toISOString(),
+                            // 🆕 援引該判例的案例列表
+                            citingCases: (citation.occurrences || [])
+                                .filter(occ => occ.found) // 只包含確實找到援引的案例
+                                .map(occ => ({
+                                    jid: occ.caseId,
+                                    court: occ.court || '未知法院',
+                                    verdictType: occ.verdictType || '未知結果',
+                                    caseTitle: occ.caseTitle || '未知案例',
+                                    year: occ.year || '未知年份',
+                                    inCourtInsight: occ.inCourtInsight || false,
+                                    similarity: occ.similarity || 0
+                                }))
+                                .sort((a, b) => {
+                                    // 優先顯示法院見解中的援引，然後按相似度排序
+                                    if (a.inCourtInsight && !b.inCourtInsight) return -1;
+                                    if (!a.inCourtInsight && b.inCourtInsight) return 1;
+                                    return (b.similarity || 0) - (a.similarity || 0);
+                                })
                         };
 
                         // 線程安全地添加結果
@@ -2320,7 +2338,25 @@ async function generateCitationRecommendations(valuableCitations, position, case
             // 🆕 添加統計數據用於前端顯示
             usageCount: citation.usageCount,
             inCourtInsightCount: citation.inCourtInsightCount,
-            valueAssessment: citation.valueAssessment
+            valueAssessment: citation.valueAssessment,
+            // 🆕 援引該判例的案例列表（降級處理也包含）
+            citingCases: (citation.occurrences || [])
+                .filter(occ => occ.found) // 只包含確實找到援引的案例
+                .map(occ => ({
+                    jid: occ.caseId,
+                    court: occ.court || '未知法院',
+                    verdictType: occ.verdictType || '未知結果',
+                    caseTitle: occ.caseTitle || '未知案例',
+                    year: occ.year || '未知年份',
+                    inCourtInsight: occ.inCourtInsight || false,
+                    similarity: occ.similarity || 0
+                }))
+                .sort((a, b) => {
+                    // 優先顯示法院見解中的援引，然後按相似度排序
+                    if (a.inCourtInsight && !b.inCourtInsight) return -1;
+                    if (!a.inCourtInsight && b.inCourtInsight) return 1;
+                    return (b.similarity || 0) - (a.similarity || 0);
+                })
         }));
 
         return {
