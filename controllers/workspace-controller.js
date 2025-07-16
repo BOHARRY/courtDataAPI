@@ -422,9 +422,46 @@ export async function batchSaveNodesController(req, res, next) {
     const { workspaceId } = req.params;
     const { nodes } = req.body;
 
+    console.log(`[WorkspaceController] 🔍 批次保存節點請求詳情:`, {
+      userId: userId,
+      workspaceId: workspaceId,
+      nodeCount: nodes?.length || 0,
+      requestBodyKeys: Object.keys(req.body),
+      hasNodes: !!nodes,
+      nodesType: typeof nodes,
+      isArray: Array.isArray(nodes),
+      bodySize: JSON.stringify(req.body).length
+    });
+
+    // 🎯 修復：詳細記錄接收到的原始數據
+    if (nodes && Array.isArray(nodes)) {
+      console.log(`[WorkspaceController] 🔍 接收到的節點原始數據:`);
+      nodes.forEach((node, index) => {
+        console.log(`[WorkspaceController] 🔍 原始節點 ${index}:`, {
+          rawNode: JSON.stringify(node, null, 2),
+          id: node?.id,
+          idExists: node?.hasOwnProperty('id'),
+          idType: typeof node?.id,
+          type: node?.type,
+          typeExists: node?.hasOwnProperty('type'),
+          typeType: typeof node?.type,
+          position: node?.position,
+          positionExists: node?.hasOwnProperty('position'),
+          positionType: typeof node?.position,
+          positionX: node?.position?.x,
+          positionY: node?.position?.y,
+          data: node?.data,
+          dataExists: node?.hasOwnProperty('data'),
+          dataType: typeof node?.data,
+          allKeys: node ? Object.keys(node) : 'undefined'
+        });
+      });
+    }
+
     // 驗證工作區擁有權
     const workspace = await workspaceService.getWorkspaceById(userId, workspaceId);
     if (!workspace) {
+      console.log(`[WorkspaceController] ❌ 工作區不存在: ${workspaceId}`);
       return res.status(404).json({
         error: 'Not Found',
         message: '找不到指定的工作區'
@@ -433,6 +470,11 @@ export async function batchSaveNodesController(req, res, next) {
 
     // 驗證 nodes 數據
     if (!Array.isArray(nodes) || nodes.length === 0) {
+      console.log(`[WorkspaceController] ❌ nodes 數據無效:`, {
+        isArray: Array.isArray(nodes),
+        length: nodes?.length,
+        type: typeof nodes
+      });
       return res.status(400).json({
         error: 'Bad Request',
         message: 'nodes 必須是非空陣列'
