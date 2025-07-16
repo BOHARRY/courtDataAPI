@@ -439,36 +439,65 @@ export async function batchSaveNodesController(req, res, next) {
       });
     }
 
-    // 🎯 修復：驗證 ReactFlow 節點格式
+    // 🎯 修復：驗證 ReactFlow 節點格式（增強調試和便條紙節點支持）
     const validationErrors = [];
+
+    console.log(`[WorkspaceController] 開始驗證 ${nodes.length} 個節點`);
+
     for (let i = 0; i < nodes.length; i++) {
       const node = nodes[i];
+
+      console.log(`[WorkspaceController] 驗證節點 ${i}:`, JSON.stringify(node, null, 2));
 
       // 基本結構驗證
       if (!node || typeof node !== 'object') {
         validationErrors.push(`節點 ${i}: 必須是有效的對象`);
+        console.log(`[WorkspaceController] ❌ 節點 ${i}: 不是對象`);
         continue;
       }
 
       // ID 驗證
       if (!node.id || typeof node.id !== 'string') {
-        validationErrors.push(`節點 ${i}: 缺少有效的 ID`);
+        validationErrors.push(`節點 ${i}: 缺少有效的 ID (當前: ${node.id}, 類型: ${typeof node.id})`);
+        console.log(`[WorkspaceController] ❌ 節點 ${i}: ID 無效`, { id: node.id, type: typeof node.id });
         continue;
       }
 
       // ReactFlow 必需字段驗證
       if (!node.type || typeof node.type !== 'string') {
-        validationErrors.push(`節點 ${node.id}: 缺少有效的 type`);
+        validationErrors.push(`節點 ${node.id}: 缺少有效的 type (當前: ${node.type}, 類型: ${typeof node.type})`);
+        console.log(`[WorkspaceController] ❌ 節點 ${node.id}: type 無效`, { type: node.type, typeOf: typeof node.type });
       }
 
-      if (!node.position || typeof node.position !== 'object' ||
-          typeof node.position.x !== 'number' || typeof node.position.y !== 'number') {
-        validationErrors.push(`節點 ${node.id}: 缺少有效的 position {x, y}`);
+      if (!node.position || typeof node.position !== 'object') {
+        validationErrors.push(`節點 ${node.id}: position 必須是對象 (當前: ${node.position}, 類型: ${typeof node.position})`);
+        console.log(`[WorkspaceController] ❌ 節點 ${node.id}: position 不是對象`, { position: node.position, typeOf: typeof node.position });
+      } else if (typeof node.position.x !== 'number' || typeof node.position.y !== 'number') {
+        validationErrors.push(`節點 ${node.id}: position.x 和 position.y 必須是數字 (x: ${node.position.x}[${typeof node.position.x}], y: ${node.position.y}[${typeof node.position.y}])`);
+        console.log(`[WorkspaceController] ❌ 節點 ${node.id}: position 座標無效`, {
+          x: node.position.x,
+          y: node.position.y,
+          xType: typeof node.position.x,
+          yType: typeof node.position.y
+        });
       }
 
       // data 字段可以為空，但如果存在必須是對象
       if (node.data !== undefined && (typeof node.data !== 'object' || node.data === null)) {
-        validationErrors.push(`節點 ${node.id}: data 必須是對象或 undefined`);
+        validationErrors.push(`節點 ${node.id}: data 必須是對象或 undefined (當前: ${node.data}, 類型: ${typeof node.data})`);
+        console.log(`[WorkspaceController] ❌ 節點 ${node.id}: data 無效`, { data: node.data, typeOf: typeof node.data });
+      }
+
+      // 🎯 特別檢查便條紙節點
+      if (node.type === 'noteNode') {
+        console.log(`[WorkspaceController] 🗒️ 便條紙節點詳細檢查:`, {
+          id: node.id,
+          type: node.type,
+          position: node.position,
+          data: node.data,
+          dragHandle: node.dragHandle,
+          allKeys: Object.keys(node)
+        });
       }
     }
 
