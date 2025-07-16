@@ -422,40 +422,101 @@ export async function batchSaveNodesController(req, res, next) {
     const { workspaceId } = req.params;
     const { nodes } = req.body;
 
-    console.log(`[WorkspaceController] 🔍 批次保存節點請求詳情:`, {
+    console.log(`[WorkspaceController] 🔍 ===== 批次保存節點請求開始 =====`);
+    console.log(`[WorkspaceController] 🔍 請求基本信息:`, {
       userId: userId,
       workspaceId: workspaceId,
-      nodeCount: nodes?.length || 0,
-      requestBodyKeys: Object.keys(req.body),
-      hasNodes: !!nodes,
-      nodesType: typeof nodes,
-      isArray: Array.isArray(nodes),
-      bodySize: JSON.stringify(req.body).length
+      timestamp: new Date().toISOString(),
+      requestMethod: req.method,
+      requestUrl: req.originalUrl
     });
 
-    // 🎯 修復：詳細記錄接收到的原始數據
+    console.log(`[WorkspaceController] 🔍 原始請求體詳情:`, {
+      fullRequestBody: JSON.stringify(req.body, null, 2),
+      requestBodyKeys: Object.keys(req.body),
+      bodySize: JSON.stringify(req.body).length,
+      contentType: req.headers['content-type']
+    });
+
+    console.log(`[WorkspaceController] 🔍 nodes 字段分析:`, {
+      hasNodes: !!nodes,
+      nodesExists: req.body.hasOwnProperty('nodes'),
+      nodesType: typeof nodes,
+      isArray: Array.isArray(nodes),
+      nodeCount: nodes?.length || 0,
+      nodesValue: nodes
+    });
+
+    // 🎯 詳細記錄接收到的原始數據
     if (nodes && Array.isArray(nodes)) {
-      console.log(`[WorkspaceController] 🔍 接收到的節點原始數據:`);
+      console.log(`[WorkspaceController] 🔍 ===== 節點詳細分析開始 =====`);
       nodes.forEach((node, index) => {
-        console.log(`[WorkspaceController] 🔍 原始節點 ${index}:`, {
-          rawNode: JSON.stringify(node, null, 2),
-          id: node?.id,
-          idExists: node?.hasOwnProperty('id'),
-          idType: typeof node?.id,
-          type: node?.type,
-          typeExists: node?.hasOwnProperty('type'),
-          typeType: typeof node?.type,
-          position: node?.position,
-          positionExists: node?.hasOwnProperty('position'),
-          positionType: typeof node?.position,
-          positionX: node?.position?.x,
-          positionY: node?.position?.y,
-          data: node?.data,
-          dataExists: node?.hasOwnProperty('data'),
-          dataType: typeof node?.data,
-          allKeys: node ? Object.keys(node) : 'undefined'
+        console.log(`[WorkspaceController] 🔍 節點 ${index} 完整原始數據:`);
+        console.log(JSON.stringify(node, null, 2));
+
+        console.log(`[WorkspaceController] 🔍 節點 ${index} 字段逐一檢查:`, {
+          // ID 字段詳細檢查
+          id: {
+            value: node?.id,
+            exists: node?.hasOwnProperty('id'),
+            type: typeof node?.id,
+            isString: typeof node?.id === 'string',
+            length: typeof node?.id === 'string' ? node.id.length : 'N/A',
+            isEmpty: typeof node?.id === 'string' ? node.id.length === 0 : 'N/A',
+            isNull: node?.id === null,
+            isUndefined: node?.id === undefined
+          },
+          // Type 字段詳細檢查
+          type: {
+            value: node?.type,
+            exists: node?.hasOwnProperty('type'),
+            type: typeof node?.type,
+            isString: typeof node?.type === 'string',
+            length: typeof node?.type === 'string' ? node.type.length : 'N/A',
+            isEmpty: typeof node?.type === 'string' ? node.type.length === 0 : 'N/A',
+            isNull: node?.type === null,
+            isUndefined: node?.type === undefined
+          },
+          // Position 字段詳細檢查
+          position: {
+            value: node?.position,
+            exists: node?.hasOwnProperty('position'),
+            type: typeof node?.position,
+            isObject: typeof node?.position === 'object',
+            isNull: node?.position === null,
+            isUndefined: node?.position === undefined,
+            hasX: node?.position?.hasOwnProperty('x'),
+            hasY: node?.position?.hasOwnProperty('y'),
+            x: {
+              value: node?.position?.x,
+              type: typeof node?.position?.x,
+              isNumber: typeof node?.position?.x === 'number',
+              isFinite: typeof node?.position?.x === 'number' ? Number.isFinite(node.position.x) : false
+            },
+            y: {
+              value: node?.position?.y,
+              type: typeof node?.position?.y,
+              isNumber: typeof node?.position?.y === 'number',
+              isFinite: typeof node?.position?.y === 'number' ? Number.isFinite(node.position.y) : false
+            }
+          },
+          // Data 字段詳細檢查
+          data: {
+            value: node?.data,
+            exists: node?.hasOwnProperty('data'),
+            type: typeof node?.data,
+            isObject: typeof node?.data === 'object',
+            isNull: node?.data === null,
+            isUndefined: node?.data === undefined,
+            keys: typeof node?.data === 'object' && node?.data !== null ? Object.keys(node.data) : 'N/A'
+          },
+          // 所有字段列表
+          allKeys: node ? Object.keys(node) : 'undefined',
+          // 節點大小
+          nodeSize: JSON.stringify(node).length
         });
       });
+      console.log(`[WorkspaceController] 🔍 ===== 節點詳細分析結束 =====`);
     }
 
     // 驗證工作區擁有權
@@ -481,75 +542,148 @@ export async function batchSaveNodesController(req, res, next) {
       });
     }
 
-    // 🎯 修復：驗證 ReactFlow 節點格式（增強調試和便條紙節點支持）
+    // 🎯 詳細的節點格式驗證
     const validationErrors = [];
 
-    console.log(`[WorkspaceController] 開始驗證 ${nodes.length} 個節點`);
+    console.log(`[WorkspaceController] 🔍 ===== 開始驗證 ${nodes.length} 個節點 =====`);
 
     for (let i = 0; i < nodes.length; i++) {
       const node = nodes[i];
 
-      console.log(`[WorkspaceController] 驗證節點 ${i}:`, JSON.stringify(node, null, 2));
+      console.log(`[WorkspaceController] 🔍 ===== 驗證節點 ${i} 開始 =====`);
+      console.log(`[WorkspaceController] 🔍 節點 ${i} 完整數據:`);
+      console.log(JSON.stringify(node, null, 2));
 
-      // 基本結構驗證
+      // 🔍 步驟 1: 基本結構驗證
+      console.log(`[WorkspaceController] 🔍 步驟 1 - 基本結構驗證:`);
+      console.log(`[WorkspaceController] 🔍 node 存在: ${!!node}`);
+      console.log(`[WorkspaceController] 🔍 node 類型: ${typeof node}`);
+      console.log(`[WorkspaceController] 🔍 node 是對象: ${typeof node === 'object'}`);
+      console.log(`[WorkspaceController] 🔍 node 不是 null: ${node !== null}`);
+
       if (!node || typeof node !== 'object') {
-        validationErrors.push(`節點 ${i}: 必須是有效的對象`);
-        console.log(`[WorkspaceController] ❌ 節點 ${i}: 不是對象`);
+        const errorMsg = `節點 ${i}: 必須是有效的對象 (當前: ${node}, 類型: ${typeof node})`;
+        validationErrors.push(errorMsg);
+        console.log(`[WorkspaceController] ❌ 步驟 1 失敗: ${errorMsg}`);
+        console.log(`[WorkspaceController] 🔍 ===== 節點 ${i} 驗證結束 (基本結構失敗) =====`);
         continue;
       }
+      console.log(`[WorkspaceController] ✅ 步驟 1 通過: 基本結構驗證`);
 
-      // 🎯 關鍵修復：ID 驗證（不使用 continue，收集所有錯誤）
+      // 🔍 步驟 2: ID 驗證
       let nodeHasErrors = false;
 
+      console.log(`[WorkspaceController] 🔍 步驟 2 - ID 驗證:`);
+      console.log(`[WorkspaceController] 🔍 node.id 存在: ${!!node.id}`);
+      console.log(`[WorkspaceController] 🔍 node.id 值: ${node.id}`);
+      console.log(`[WorkspaceController] 🔍 node.id 類型: ${typeof node.id}`);
+      console.log(`[WorkspaceController] 🔍 node.id 是字符串: ${typeof node.id === 'string'}`);
+      console.log(`[WorkspaceController] 🔍 node.id 長度: ${typeof node.id === 'string' ? node.id.length : 'N/A'}`);
+      console.log(`[WorkspaceController] 🔍 node.id 是空字符串: ${typeof node.id === 'string' ? node.id.length === 0 : 'N/A'}`);
+
       if (!node.id || typeof node.id !== 'string') {
-        validationErrors.push(`節點 ${i}: 缺少有效的 ID (當前: ${node.id}, 類型: ${typeof node.id})`);
-        console.log(`[WorkspaceController] ❌ 節點 ${i}: ID 無效`, { id: node.id, type: typeof node.id });
+        const errorMsg = `節點 ${i}: 缺少有效的 ID (當前: ${node.id}, 類型: ${typeof node.id})`;
+        validationErrors.push(errorMsg);
+        console.log(`[WorkspaceController] ❌ 步驟 2 失敗: ${errorMsg}`);
         nodeHasErrors = true;
+      } else {
+        console.log(`[WorkspaceController] ✅ 步驟 2 通過: ID 驗證`);
       }
 
-      // ReactFlow 必需字段驗證
+      // 🔍 步驟 3: Type 驗證
+      console.log(`[WorkspaceController] 🔍 步驟 3 - Type 驗證:`);
+      console.log(`[WorkspaceController] 🔍 node.type 存在: ${!!node.type}`);
+      console.log(`[WorkspaceController] 🔍 node.type 值: ${node.type}`);
+      console.log(`[WorkspaceController] 🔍 node.type 類型: ${typeof node.type}`);
+      console.log(`[WorkspaceController] 🔍 node.type 是字符串: ${typeof node.type === 'string'}`);
+
       if (!node.type || typeof node.type !== 'string') {
-        validationErrors.push(`節點 ${node.id || i}: 缺少有效的 type (當前: ${node.type}, 類型: ${typeof node.type})`);
-        console.log(`[WorkspaceController] ❌ 節點 ${node.id || i}: type 無效`, { type: node.type, typeOf: typeof node.type });
+        const errorMsg = `節點 ${node.id || i}: 缺少有效的 type (當前: ${node.type}, 類型: ${typeof node.type})`;
+        validationErrors.push(errorMsg);
+        console.log(`[WorkspaceController] ❌ 步驟 3 失敗: ${errorMsg}`);
         nodeHasErrors = true;
+      } else {
+        console.log(`[WorkspaceController] ✅ 步驟 3 通過: Type 驗證`);
       }
+
+      // 🔍 步驟 4: Position 驗證
+      console.log(`[WorkspaceController] 🔍 步驟 4 - Position 驗證:`);
+      console.log(`[WorkspaceController] 🔍 node.position 存在: ${!!node.position}`);
+      console.log(`[WorkspaceController] 🔍 node.position 值: ${JSON.stringify(node.position)}`);
+      console.log(`[WorkspaceController] 🔍 node.position 類型: ${typeof node.position}`);
+      console.log(`[WorkspaceController] 🔍 node.position 是對象: ${typeof node.position === 'object'}`);
+      console.log(`[WorkspaceController] 🔍 node.position 不是 null: ${node.position !== null}`);
 
       if (!node.position || typeof node.position !== 'object') {
-        validationErrors.push(`節點 ${node.id || i}: position 必須是對象 (當前: ${node.position}, 類型: ${typeof node.position})`);
-        console.log(`[WorkspaceController] ❌ 節點 ${node.id || i}: position 不是對象`, { position: node.position, typeOf: typeof node.position });
+        const errorMsg = `節點 ${node.id || i}: position 必須是對象 (當前: ${node.position}, 類型: ${typeof node.position})`;
+        validationErrors.push(errorMsg);
+        console.log(`[WorkspaceController] ❌ 步驟 4a 失敗: ${errorMsg}`);
         nodeHasErrors = true;
-      } else if (typeof node.position.x !== 'number' || typeof node.position.y !== 'number') {
-        validationErrors.push(`節點 ${node.id || i}: position.x 和 position.y 必須是數字 (x: ${node.position.x}[${typeof node.position.x}], y: ${node.position.y}[${typeof node.position.y}])`);
-        console.log(`[WorkspaceController] ❌ 節點 ${node.id || i}: position 座標無效`, {
-          x: node.position.x,
-          y: node.position.y,
-          xType: typeof node.position.x,
-          yType: typeof node.position.y
-        });
-        nodeHasErrors = true;
+      } else {
+        console.log(`[WorkspaceController] ✅ 步驟 4a 通過: Position 是對象`);
+
+        // 🔍 步驟 4b: Position 座標驗證
+        console.log(`[WorkspaceController] 🔍 步驟 4b - Position 座標驗證:`);
+        console.log(`[WorkspaceController] 🔍 node.position.x 存在: ${node.position.hasOwnProperty('x')}`);
+        console.log(`[WorkspaceController] 🔍 node.position.x 值: ${node.position.x}`);
+        console.log(`[WorkspaceController] 🔍 node.position.x 類型: ${typeof node.position.x}`);
+        console.log(`[WorkspaceController] 🔍 node.position.x 是數字: ${typeof node.position.x === 'number'}`);
+        console.log(`[WorkspaceController] 🔍 node.position.y 存在: ${node.position.hasOwnProperty('y')}`);
+        console.log(`[WorkspaceController] 🔍 node.position.y 值: ${node.position.y}`);
+        console.log(`[WorkspaceController] 🔍 node.position.y 類型: ${typeof node.position.y}`);
+        console.log(`[WorkspaceController] 🔍 node.position.y 是數字: ${typeof node.position.y === 'number'}`);
+
+        if (typeof node.position.x !== 'number' || typeof node.position.y !== 'number') {
+          const errorMsg = `節點 ${node.id || i}: position.x 和 position.y 必須是數字 (x: ${node.position.x}[${typeof node.position.x}], y: ${node.position.y}[${typeof node.position.y}])`;
+          validationErrors.push(errorMsg);
+          console.log(`[WorkspaceController] ❌ 步驟 4b 失敗: ${errorMsg}`);
+          nodeHasErrors = true;
+        } else {
+          console.log(`[WorkspaceController] ✅ 步驟 4b 通過: Position 座標驗證`);
+        }
       }
 
-      // data 字段可以為空，但如果存在必須是對象
+      // 🔍 步驟 5: Data 驗證
+      console.log(`[WorkspaceController] 🔍 步驟 5 - Data 驗證:`);
+      console.log(`[WorkspaceController] 🔍 node.data 存在: ${node.hasOwnProperty('data')}`);
+      console.log(`[WorkspaceController] 🔍 node.data 值: ${JSON.stringify(node.data)}`);
+      console.log(`[WorkspaceController] 🔍 node.data 類型: ${typeof node.data}`);
+      console.log(`[WorkspaceController] 🔍 node.data 是 undefined: ${node.data === undefined}`);
+      console.log(`[WorkspaceController] 🔍 node.data 是 null: ${node.data === null}`);
+      console.log(`[WorkspaceController] 🔍 node.data 是對象: ${typeof node.data === 'object'}`);
+
       if (node.data !== undefined && (typeof node.data !== 'object' || node.data === null)) {
-        validationErrors.push(`節點 ${node.id || i}: data 必須是對象或 undefined (當前: ${node.data}, 類型: ${typeof node.data})`);
-        console.log(`[WorkspaceController] ❌ 節點 ${node.id || i}: data 無效`, { data: node.data, typeOf: typeof node.data });
+        const errorMsg = `節點 ${node.id || i}: data 必須是對象或 undefined (當前: ${node.data}, 類型: ${typeof node.data})`;
+        validationErrors.push(errorMsg);
+        console.log(`[WorkspaceController] ❌ 步驟 5 失敗: ${errorMsg}`);
         nodeHasErrors = true;
+      } else {
+        console.log(`[WorkspaceController] ✅ 步驟 5 通過: Data 驗證`);
       }
 
-      // 🎯 新增：如果節點沒有錯誤，記錄成功信息
+      // 🔍 節點驗證結果總結
       if (!nodeHasErrors) {
-        console.log(`[WorkspaceController] ✅ 節點 ${i} 驗證通過:`, {
+        console.log(`[WorkspaceController] ✅ 節點 ${i} 所有驗證步驟通過:`, {
           id: node.id,
           type: node.type,
           position: `{x: ${node.position.x}, y: ${node.position.y}}`,
           dataType: typeof node.data,
-          allFieldsValid: true
+          allFieldsValid: true,
+          validationSteps: {
+            basicStructure: '✅ 通過',
+            idValidation: '✅ 通過',
+            typeValidation: '✅ 通過',
+            positionValidation: '✅ 通過',
+            dataValidation: '✅ 通過'
+          }
         });
+      } else {
+        console.log(`[WorkspaceController] ❌ 節點 ${i} 驗證失敗，有錯誤`);
       }
 
-      // 🎯 特別檢查便條紙節點
+      // 🔍 特別檢查便條紙節點
       if (node.type === 'noteNode') {
-        console.log(`[WorkspaceController] 🗒️ 便條紙節點詳細檢查:`, {
+        console.log(`[WorkspaceController] 🗒️ 便條紙節點特別檢查:`, {
           id: node.id,
           type: node.type,
           position: node.position,
@@ -558,15 +692,42 @@ export async function batchSaveNodesController(req, res, next) {
           allKeys: Object.keys(node)
         });
       }
+
+      console.log(`[WorkspaceController] 🔍 ===== 節點 ${i} 驗證結束 =====`);
     }
 
+    console.log(`[WorkspaceController] 🔍 ===== 所有節點驗證完成 =====`);
+
+    // 🔍 最終驗證結果總結
+    console.log(`[WorkspaceController] 🔍 驗證結果總結:`, {
+      totalNodes: nodes.length,
+      validationErrors: validationErrors.length,
+      hasErrors: validationErrors.length > 0,
+      errorDetails: validationErrors
+    });
+
     if (validationErrors.length > 0) {
-      return res.status(400).json({
+      console.log(`[WorkspaceController] ❌ 驗證失敗，返回 400 錯誤`);
+      console.log(`[WorkspaceController] ❌ 錯誤詳情:`, validationErrors);
+
+      const errorResponse = {
         error: 'Bad Request',
         message: 'Node 數據格式驗證失敗',
-        details: validationErrors
-      });
+        details: validationErrors,
+        debugInfo: {
+          totalNodes: nodes.length,
+          failedValidations: validationErrors.length,
+          timestamp: new Date().toISOString()
+        }
+      };
+
+      console.log(`[WorkspaceController] ❌ 返回錯誤響應:`, JSON.stringify(errorResponse, null, 2));
+
+      return res.status(400).json(errorResponse);
     }
+
+    console.log(`[WorkspaceController] ✅ 所有節點驗證通過，繼續處理`);
+    console.log(`[WorkspaceController] 🔍 ===== 驗證階段結束，開始保存處理 =====`);
 
     const savedNodes = await workspaceService.batchSaveNodes(userId, workspaceId, nodes);
 
