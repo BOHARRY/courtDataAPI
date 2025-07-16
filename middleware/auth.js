@@ -33,6 +33,13 @@ export async function verifyToken(req, res, next) {
     console.log('🚨🚨🚨 [AUTH-EMERGENCY] 即將調用 next() 繼續處理');
 
     // console.log("verifyToken: Token verified for UID:", req.user.uid); // 開發時調試用
+
+    // 🚨 緊急診斷：特別檢查 nodes/batch 請求
+    if (req.originalUrl.includes('/nodes/batch')) {
+      console.log('🚨🚨🚨 [AUTH-EMERGENCY] 即將為 nodes/batch 請求調用 next()');
+      console.log('🚨🚨🚨 [AUTH-EMERGENCY] 如果在這之後沒有看到路由日誌，說明有其他問題');
+    }
+
     next(); // Token 驗證通過，繼續處理請求
 
     // 🚨 緊急診斷：檢查 next() 是否被調用
