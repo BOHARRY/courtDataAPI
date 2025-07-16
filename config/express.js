@@ -41,7 +41,7 @@ app.use(cors({
     }
     return callback(null, true);
   },
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'], // 🎯 Stage 3: 新增 PATCH 方法
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true // 允許帶有憑證的請求
 }));
