@@ -69,6 +69,13 @@ app.use((req, res, next) => {
 // 基本的錯誤處理中間件 (應該放在所有路由和中間件之後)
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
+  // 🚨 緊急診斷：錯誤處理中間件被觸發
+  console.log('🚨🚨🚨 [ERROR-EMERGENCY] 錯誤處理中間件被觸發！！！');
+  console.log('🚨🚨🚨 [ERROR-EMERGENCY] 請求路徑:', req.originalUrl);
+  console.log('🚨🚨🚨 [ERROR-EMERGENCY] 請求方法:', req.method);
+  console.log('🚨🚨🚨 [ERROR-EMERGENCY] 錯誤信息:', err.message);
+  console.log('🚨🚨🚨 [ERROR-EMERGENCY] 錯誤堆疊:', err.stack);
+
   console.error("Unhandled error:", err.stack || err.message || err);
   // 避免在生產環境洩露堆疊追蹤
   const statusCode = err.statusCode || 500;

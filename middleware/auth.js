@@ -2,6 +2,11 @@
 import admin from 'firebase-admin'; // Firebase Admin SDK 已經在 config/firebase.js 中初始化
 
 export async function verifyToken(req, res, next) {
+  // 🚨 緊急診斷：verifyToken 中間件被調用
+  console.log('🚨🚨🚨 [AUTH-EMERGENCY] verifyToken 中間件被調用！！！');
+  console.log('🚨🚨🚨 [AUTH-EMERGENCY] 請求路徑:', req.originalUrl);
+  console.log('🚨🚨🚨 [AUTH-EMERGENCY] 請求方法:', req.method);
+
   const authHeader = req.headers.authorization || '';
   // console.log("Raw Authorization header (first 20 chars):", authHeader.substring(0, 20)); // 開發時調試用
 
@@ -21,6 +26,12 @@ export async function verifyToken(req, res, next) {
   try {
     const decodedToken = await admin.auth().verifyIdToken(idToken);
     req.user = decodedToken; // 將解碼後的 token (包含 uid 等信息) 附加到 req.user
+
+    // 🚨 緊急診斷：token 驗證成功
+    console.log('🚨🚨🚨 [AUTH-EMERGENCY] Token 驗證成功！！！');
+    console.log('🚨🚨🚨 [AUTH-EMERGENCY] 用戶 UID:', req.user.uid);
+    console.log('🚨🚨🚨 [AUTH-EMERGENCY] 即將調用 next() 繼續處理');
+
     // console.log("verifyToken: Token verified for UID:", req.user.uid); // 開發時調試用
     next(); // Token 驗證通過，繼續處理請求
   } catch (error) {
