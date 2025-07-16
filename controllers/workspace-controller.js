@@ -439,14 +439,45 @@ export async function batchSaveNodesController(req, res, next) {
       });
     }
 
-    // 驗證每個 node 都有 id
-    for (const node of nodes) {
-      if (!node || typeof node !== 'object' || !node.id) {
-        return res.status(400).json({
-          error: 'Bad Request',
-          message: '所有 Node 都必須包含有效的 ID'
-        });
+    // 🎯 修復：驗證 ReactFlow 節點格式
+    const validationErrors = [];
+    for (let i = 0; i < nodes.length; i++) {
+      const node = nodes[i];
+
+      // 基本結構驗證
+      if (!node || typeof node !== 'object') {
+        validationErrors.push(`節點 ${i}: 必須是有效的對象`);
+        continue;
       }
+
+      // ID 驗證
+      if (!node.id || typeof node.id !== 'string') {
+        validationErrors.push(`節點 ${i}: 缺少有效的 ID`);
+        continue;
+      }
+
+      // ReactFlow 必需字段驗證
+      if (!node.type || typeof node.type !== 'string') {
+        validationErrors.push(`節點 ${node.id}: 缺少有效的 type`);
+      }
+
+      if (!node.position || typeof node.position !== 'object' ||
+          typeof node.position.x !== 'number' || typeof node.position.y !== 'number') {
+        validationErrors.push(`節點 ${node.id}: 缺少有效的 position {x, y}`);
+      }
+
+      // data 字段可以為空，但如果存在必須是對象
+      if (node.data !== undefined && (typeof node.data !== 'object' || node.data === null)) {
+        validationErrors.push(`節點 ${node.id}: data 必須是對象或 undefined`);
+      }
+    }
+
+    if (validationErrors.length > 0) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'Node 數據格式驗證失敗',
+        details: validationErrors
+      });
     }
 
     const savedNodes = await workspaceService.batchSaveNodes(userId, workspaceId, nodes);
