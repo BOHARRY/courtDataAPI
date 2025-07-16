@@ -60,7 +60,13 @@ router.get('/:workspaceId/nodes/:nodeId', verifyToken, getNodeController);
 router.put('/:workspaceId/nodes/:nodeId', verifyToken, saveNodeController);
 
 // 批次 Node 操作
-router.post('/:workspaceId/nodes/batch', verifyToken, batchGetNodesController);
+router.post('/:workspaceId/nodes/batch', verifyToken, (req, _res, next) => {
+  console.log('🚨🚨🚨 [POST-EMERGENCY] POST /nodes/batch 路由被觸發！！！');
+  console.log('🚨🚨🚨 [POST-EMERGENCY] 這應該只處理 POST 請求，不是 PUT');
+  console.log('🚨🚨🚨 [POST-EMERGENCY] 請求方法:', req.method);
+  console.log('🚨🚨🚨 [POST-EMERGENCY] 如果看到這個日誌，說明路由匹配有問題');
+  next();
+}, batchGetNodesController);
 
 // 🚨 緊急診斷：修復路由定義（移除重複的 verifyToken）
 router.put('/:workspaceId/nodes/batch', verifyToken, (req, _res, next) => {
