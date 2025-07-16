@@ -78,14 +78,44 @@ router.post('/:workspaceId/nodes/batch', verifyToken, (req, _res, next) => {
 
 
 
-// 🚨 緊急診斷：修復路由定義（移除重複的 verifyToken）
-router.put('/:workspaceId/nodes/batch', verifyToken, (req, _res, next) => {
-  console.log('🚨🚨🚨 [ROUTE-EMERGENCY] PUT /nodes/batch 路由被觸發！！！');
-  console.log('🚨🚨🚨 [ROUTE-EMERGENCY] 時間戳:', new Date().toISOString());
-  console.log('🚨🚨🚨 [ROUTE-EMERGENCY] 工作區ID:', req.params.workspaceId);
-  console.log('🚨🚨🚨 [ROUTE-EMERGENCY] 請求體大小:', JSON.stringify(req.body).length);
-  console.log('🚨🚨🚨 [ROUTE-EMERGENCY] verifyToken 已通過，即將調用 batchSaveNodesController');
-  next();
-}, batchSaveNodesController);
+// 🚨 緊急診斷：簡化的測試路由
+router.put('/:workspaceId/nodes/batch', (req, res) => {
+  console.log('🚨🚨🚨 [SIMPLE-TEST] 簡化的 PUT 路由被觸發！！！');
+  console.log('🚨🚨🚨 [SIMPLE-TEST] 請求方法:', req.method);
+  console.log('🚨🚨🚨 [SIMPLE-TEST] 工作區ID:', req.params.workspaceId);
+  console.log('🚨🚨🚨 [SIMPLE-TEST] 用戶:', req.user?.uid || '未認證');
+  console.log('🚨🚨🚨 [SIMPLE-TEST] 即將返回測試響應');
+
+  res.status(200).json({
+    success: true,
+    message: '測試路由工作正常',
+    debug: {
+      method: req.method,
+      workspaceId: req.params.workspaceId,
+      userUid: req.user?.uid,
+      timestamp: new Date().toISOString()
+    }
+  });
+});
+
+// 🚨 緊急診斷：最終捕獲器 - 如果請求到達這裡，說明沒有路由匹配
+router.use('/:workspaceId/nodes/batch', (req, res, _next) => {
+  console.log('🚨🚨🚨 [FINAL-EMERGENCY] 請求到達了最終捕獲器！！！');
+  console.log('🚨🚨🚨 [FINAL-EMERGENCY] 這表明沒有任何路由匹配這個請求');
+  console.log('🚨🚨🚨 [FINAL-EMERGENCY] 請求方法:', req.method);
+  console.log('🚨🚨🚨 [FINAL-EMERGENCY] 完整路徑:', req.originalUrl);
+  console.log('🚨🚨🚨 [FINAL-EMERGENCY] 即將返回 404 錯誤');
+
+  res.status(404).json({
+    error: 'Not Found',
+    message: `沒有找到匹配的路由: ${req.method} ${req.originalUrl}`,
+    debug: {
+      method: req.method,
+      path: req.originalUrl,
+      workspaceId: req.params.workspaceId,
+      timestamp: new Date().toISOString()
+    }
+  });
+});
 
 export default router;
