@@ -6,7 +6,15 @@ import {
   getWorkspacesController,
   getWorkspaceByIdController,
   deleteWorkspaceController,
-  setActiveWorkspaceController
+  setActiveWorkspaceController,
+  // 🎯 新增：碎片化 Canvas API 控制器
+  getCanvasManifestController,
+  saveCanvasManifestController,
+  updateCanvasViewportController,
+  getNodeController,
+  saveNodeController,
+  batchGetNodesController,
+  batchSaveNodesController
 } from '../controllers/workspace-controller.js';
 import { verifyToken } from '../middleware/auth.js';
 
@@ -29,5 +37,20 @@ router.delete('/:workspaceId', verifyToken, deleteWorkspaceController);
 
 // 設定當前活動工作區
 router.post('/active/:workspaceId', verifyToken, setActiveWorkspaceController);
+
+// 🎯 新增：Canvas 碎片化 API 端點
+
+// Canvas Manifest 操作
+router.get('/:workspaceId/canvas/:canvasId/manifest', verifyToken, getCanvasManifestController);
+router.put('/:workspaceId/canvas/:canvasId/manifest', verifyToken, saveCanvasManifestController);
+router.patch('/:workspaceId/canvas/:canvasId/viewport', verifyToken, updateCanvasViewportController);
+
+// Node 操作
+router.get('/:workspaceId/nodes/:nodeId', verifyToken, getNodeController);
+router.put('/:workspaceId/nodes/:nodeId', verifyToken, saveNodeController);
+
+// 批次 Node 操作
+router.post('/:workspaceId/nodes/batch', verifyToken, batchGetNodesController);
+router.put('/:workspaceId/nodes/batch', verifyToken, batchSaveNodesController);
 
 export default router;

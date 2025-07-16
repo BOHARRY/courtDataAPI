@@ -265,3 +265,311 @@ export async function getActiveWorkspace(userId) {
     throw new Error('獲取當前工作區失敗');
   }
 }
+
+// ===== 🎯 新增：Canvas 碎片化存儲服務 =====
+
+/**
+ * 獲取 Canvas Manifest
+ */
+export async function getCanvasManifest(userId, workspaceId, canvasId) {
+  try {
+    const manifestRef = db
+      .collection('users')
+      .doc(userId)
+      .collection('workspaces')
+      .doc(workspaceId)
+      .collection('canvas_manifests')
+      .doc(canvasId);
+
+    const doc = await manifestRef.get();
+
+    if (!doc.exists) {
+      return null;
+    }
+
+    const data = doc.data();
+    return {
+      ...data,
+      canvasId,
+      // 轉換 Firestore 時間戳為 JavaScript Date
+      updatedAt: data.updatedAt?.toDate?.() || data.updatedAt
+    };
+  } catch (error) {
+    console.error('[WorkspaceService] Error getting canvas manifest:', error);
+    throw new Error('獲取 Canvas Manifest 失敗');
+  }
+}
+
+/**
+ * 保存 Canvas Manifest
+ */
+export async function saveCanvasManifest(userId, workspaceId, canvasId, manifestData) {
+  try {
+    const manifestRef = db
+      .collection('users')
+      .doc(userId)
+      .collection('workspaces')
+      .doc(workspaceId)
+      .collection('canvas_manifests')
+      .doc(canvasId);
+
+    const now = admin.firestore.FieldValue.serverTimestamp();
+
+    const dataToSave = {
+      ...manifestData,
+      canvasId,
+      updatedAt: now,
+      version: 2 // 確保是碎片化版本
+    };
+
+    await manifestRef.set(dataToSave, { merge: true });
+
+    // 更新工作區的 lastAccessedAt
+    await updateWorkspaceAccess(userId, workspaceId);
+
+    console.log(`[WorkspaceService] Canvas manifest saved: ${canvasId}`);
+
+    return {
+      ...dataToSave,
+      updatedAt: new Date() // 返回 JavaScript Date 對象
+    };
+  } catch (error) {
+    console.error('[WorkspaceService] Error saving canvas manifest:', error);
+    throw new Error('保存 Canvas Manifest 失敗');
+  }
+}
+
+/**
+ * 更新 Canvas 視角
+ */
+export async function updateCanvasViewport(userId, workspaceId, canvasId, viewport) {
+  try {
+    const manifestRef = db
+      .collection('users')
+      .doc(userId)
+      .collection('workspaces')
+      .doc(workspaceId)
+      .collection('canvas_manifests')
+      .doc(canvasId);
+
+    const now = admin.firestore.FieldValue.serverTimestamp();
+
+    await manifestRef.update({
+      viewport,
+      updatedAt: now
+    });
+
+    console.log(`[WorkspaceService] Canvas viewport updated: ${canvasId}`);
+
+    // 返回更新後的 manifest
+    return await getCanvasManifest(userId, workspaceId, canvasId);
+  } catch (error) {
+    console.error('[WorkspaceService] Error updating canvas viewport:', error);
+    throw new Error('更新 Canvas 視角失敗');
+  }
+}
+
+/**
+ * 獲取單個 Node
+ */
+export async function getNode(userId, workspaceId, nodeId) {
+  try {
+    const nodeRef = db
+      .collection('users')
+      .doc(userId)
+      .collection('workspaces')
+      .doc(workspaceId)
+      .collection('canvas_nodes')
+      .doc(nodeId);
+
+    const doc = await nodeRef.get();
+
+    if (!doc.exists) {
+      return null;
+    }
+
+    const data = doc.data();
+    return {
+      ...data,
+      // 轉換 Firestore 時間戳為 JavaScript Date
+      updatedAt: data.updatedAt?.toDate?.() || data.updatedAt
+    };
+  } catch (error) {
+    console.error('[WorkspaceService] Error getting node:', error);
+    throw new Error('獲取節點失敗');
+  }
+}
+
+/**
+ * 保存單個 Node
+ */
+export async function saveNode(userId, workspaceId, nodeId, nodeData) {
+  try {
+    const nodeRef = db
+      .collection('users')
+      .doc(userId)
+      .collection('workspaces')
+      .doc(workspaceId)
+      .collection('canvas_nodes')
+      .doc(nodeId);
+
+    const now = admin.firestore.FieldValue.serverTimestamp();
+
+    const dataToSave = {
+      ...nodeData,
+      updatedAt: now
+    };
+
+    await nodeRef.set(dataToSave, { merge: true });
+
+    // 更新工作區的 lastAccessedAt
+    await updateWorkspaceAccess(userId, workspaceId);
+
+    console.log(`[WorkspaceService] Node saved: ${nodeId}`);
+
+    return {
+      ...dataToSave,
+      updatedAt: new Date() // 返回 JavaScript Date 對象
+    };
+  } catch (error) {
+    console.error('[WorkspaceService] Error saving node:', error);
+    throw new Error('保存節點失敗');
+  }
+}
+
+/**
+ * 批次獲取 Nodes
+ */
+export async function batchGetNodes(userId, workspaceId, nodeIds) {
+  try {
+    if (!Array.isArray(nodeIds) || nodeIds.length === 0) {
+      return [];
+    }
+
+    // Firestore 批次讀取限制為 10 個文檔，需要分批處理
+    const batchSize = 10;
+    const batches = [];
+
+    for (let i = 0; i < nodeIds.length; i += batchSize) {
+      const batchNodeIds = nodeIds.slice(i, i + batchSize);
+      batches.push(batchNodeIds);
+    }
+
+    const allNodes = [];
+
+    for (const batchNodeIds of batches) {
+      const batch = db.batch();
+      const nodeRefs = batchNodeIds.map(nodeId =>
+        db.collection('users')
+          .doc(userId)
+          .collection('workspaces')
+          .doc(workspaceId)
+          .collection('canvas_nodes')
+          .doc(nodeId)
+      );
+
+      // 並行獲取這一批的所有節點
+      const docs = await Promise.all(nodeRefs.map(ref => ref.get()));
+
+      docs.forEach((doc, index) => {
+        if (doc.exists) {
+          const data = doc.data();
+          allNodes.push({
+            ...data,
+            // 轉換 Firestore 時間戳為 JavaScript Date
+            updatedAt: data.updatedAt?.toDate?.() || data.updatedAt
+          });
+        } else {
+          // 記錄未找到的節點，但不拋出錯誤
+          console.warn(`[WorkspaceService] Node not found: ${batchNodeIds[index]}`);
+        }
+      });
+    }
+
+    console.log(`[WorkspaceService] Batch get nodes: ${allNodes.length}/${nodeIds.length} found`);
+    return allNodes;
+  } catch (error) {
+    console.error('[WorkspaceService] Error batch getting nodes:', error);
+    throw new Error('批次獲取節點失敗');
+  }
+}
+
+/**
+ * 批次保存 Nodes
+ */
+export async function batchSaveNodes(userId, workspaceId, nodes) {
+  try {
+    if (!Array.isArray(nodes) || nodes.length === 0) {
+      return [];
+    }
+
+    // Firestore 批次寫入限制為 500 個操作，但為了安全起見使用較小的批次
+    const batchSize = 100;
+    const batches = [];
+
+    for (let i = 0; i < nodes.length; i += batchSize) {
+      const batchNodes = nodes.slice(i, i + batchSize);
+      batches.push(batchNodes);
+    }
+
+    const savedNodes = [];
+    const now = admin.firestore.FieldValue.serverTimestamp();
+
+    for (const batchNodes of batches) {
+      const batch = db.batch();
+
+      batchNodes.forEach(node => {
+        const nodeRef = db
+          .collection('users')
+          .doc(userId)
+          .collection('workspaces')
+          .doc(workspaceId)
+          .collection('canvas_nodes')
+          .doc(node.id);
+
+        const dataToSave = {
+          ...node,
+          updatedAt: now
+        };
+
+        batch.set(nodeRef, dataToSave, { merge: true });
+
+        savedNodes.push({
+          ...dataToSave,
+          updatedAt: new Date() // 返回 JavaScript Date 對象
+        });
+      });
+
+      await batch.commit();
+    }
+
+    // 更新工作區的 lastAccessedAt
+    await updateWorkspaceAccess(userId, workspaceId);
+
+    console.log(`[WorkspaceService] Batch save nodes: ${savedNodes.length} saved`);
+    return savedNodes;
+  } catch (error) {
+    console.error('[WorkspaceService] Error batch saving nodes:', error);
+    throw new Error('批次保存節點失敗');
+  }
+}
+
+/**
+ * 輔助函數：更新工作區訪問時間
+ */
+async function updateWorkspaceAccess(userId, workspaceId) {
+  try {
+    const workspaceRef = db
+      .collection('users')
+      .doc(userId)
+      .collection('workspaces')
+      .doc(workspaceId);
+
+    await workspaceRef.update({
+      lastAccessedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+  } catch (error) {
+    // 不拋出錯誤，只記錄日誌
+    console.warn('[WorkspaceService] Failed to update workspace access time:', error);
+  }
+}
