@@ -52,16 +52,13 @@ router.put('/:workspaceId/nodes/:nodeId', verifyToken, saveNodeController);
 // 批次 Node 操作
 router.post('/:workspaceId/nodes/batch', verifyToken, batchGetNodesController);
 
-// 🚨 緊急診斷：添加路由級別的日誌中間件
-router.put('/:workspaceId/nodes/batch', (req, res, next) => {
+// 🚨 緊急診斷：修復路由定義（移除重複的 verifyToken）
+router.put('/:workspaceId/nodes/batch', verifyToken, (req, res, next) => {
   console.log('🚨🚨🚨 [ROUTE-EMERGENCY] PUT /nodes/batch 路由被觸發！！！');
   console.log('🚨🚨🚨 [ROUTE-EMERGENCY] 時間戳:', new Date().toISOString());
   console.log('🚨🚨🚨 [ROUTE-EMERGENCY] 工作區ID:', req.params.workspaceId);
   console.log('🚨🚨🚨 [ROUTE-EMERGENCY] 請求體大小:', JSON.stringify(req.body).length);
-  console.log('🚨🚨🚨 [ROUTE-EMERGENCY] 即將調用 verifyToken 中間件');
-  next();
-}, verifyToken, (req, res, next) => {
-  console.log('🚨🚨🚨 [ROUTE-EMERGENCY] verifyToken 通過，即將調用 batchSaveNodesController');
+  console.log('🚨🚨🚨 [ROUTE-EMERGENCY] verifyToken 已通過，即將調用 batchSaveNodesController');
   next();
 }, batchSaveNodesController);
 
