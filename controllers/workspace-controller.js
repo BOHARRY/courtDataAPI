@@ -773,9 +773,17 @@ export async function updateNodePositionController(req, res, next) {
     const { workspaceId, nodeId } = req.params;
     const { position } = req.body;
 
+    console.log(`[WorkspaceController] 🎯 Stage 3 單節點位置更新請求:`, {
+      userId,
+      workspaceId,
+      nodeId,
+      position
+    });
+
     // 驗證工作區擁有權
     const workspace = await workspaceService.getWorkspaceById(userId, workspaceId);
     if (!workspace) {
+      console.log(`[WorkspaceController] ❌ 工作區不存在: ${workspaceId}`);
       return res.status(404).json({
         error: 'Not Found',
         message: '找不到指定的工作區'
@@ -784,20 +792,32 @@ export async function updateNodePositionController(req, res, next) {
 
     // 驗證位置數據
     if (!position || typeof position.x !== 'number' || typeof position.y !== 'number') {
+      console.log(`[WorkspaceController] ❌ 位置數據格式錯誤:`, position);
       return res.status(400).json({
         error: 'Bad Request',
         message: '位置數據格式不正確'
       });
     }
 
+    console.log(`[WorkspaceController] ✅ 開始更新節點位置: ${nodeId}`);
     const updatedNode = await workspaceService.updateNodePosition(userId, workspaceId, nodeId, position);
 
+    console.log(`[WorkspaceController] ✅ 節點位置更新成功: ${nodeId}`);
     res.status(200).json({
       success: true,
       data: updatedNode
     });
   } catch (error) {
-    console.error('[WorkspaceController] Error in updateNodePositionController:', error);
+    console.error(`[WorkspaceController] ❌ 節點位置更新失敗: ${nodeId}`, error);
+
+    // 根據錯誤類型返回適當的狀態碼
+    if (error.message.includes('不存在')) {
+      return res.status(404).json({
+        error: 'Not Found',
+        message: error.message
+      });
+    }
+
     next(error);
   }
 }

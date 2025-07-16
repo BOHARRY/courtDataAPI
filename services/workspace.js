@@ -581,13 +581,21 @@ async function updateWorkspaceAccess(userId, workspaceId) {
  */
 export async function updateNodePosition(userId, workspaceId, nodeId, position) {
   try {
+    // 🎯 修復：使用正確的集合路徑 canvas_nodes（與批次保存一致）
     const nodeRef = db
       .collection('users')
       .doc(userId)
       .collection('workspaces')
       .doc(workspaceId)
-      .collection('nodes')
+      .collection('canvas_nodes')
       .doc(nodeId);
+
+    // 🎯 新增：檢查文檔是否存在
+    const docSnapshot = await nodeRef.get();
+    if (!docSnapshot.exists) {
+      console.error(`[WorkspaceService] 節點不存在: ${nodeId} 在路徑 users/${userId}/workspaces/${workspaceId}/canvas_nodes/${nodeId}`);
+      throw new Error(`節點 ${nodeId} 不存在，無法更新位置`);
+    }
 
     const now = admin.firestore.FieldValue.serverTimestamp();
 
@@ -617,13 +625,21 @@ export async function updateNodePosition(userId, workspaceId, nodeId, position) 
  */
 export async function updateNodeContent(userId, workspaceId, nodeId, data) {
   try {
+    // 🎯 修復：使用正確的集合路徑 canvas_nodes（與批次保存一致）
     const nodeRef = db
       .collection('users')
       .doc(userId)
       .collection('workspaces')
       .doc(workspaceId)
-      .collection('nodes')
+      .collection('canvas_nodes')
       .doc(nodeId);
+
+    // 🎯 新增：檢查文檔是否存在
+    const docSnapshot = await nodeRef.get();
+    if (!docSnapshot.exists) {
+      console.error(`[WorkspaceService] 節點不存在: ${nodeId} 在路徑 users/${userId}/workspaces/${workspaceId}/canvas_nodes/${nodeId}`);
+      throw new Error(`節點 ${nodeId} 不存在，無法更新內容`);
+    }
 
     const now = admin.firestore.FieldValue.serverTimestamp();
 
