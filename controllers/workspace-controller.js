@@ -417,6 +417,12 @@ export async function batchGetNodesController(req, res, next) {
  * 批次保存 Nodes
  */
 export async function batchSaveNodesController(req, res, next) {
+  // 🚨 緊急診斷：強制輸出日誌
+  console.log('🚨🚨🚨 [EMERGENCY] batchSaveNodesController 被調用了！！！');
+  console.log('🚨🚨🚨 [EMERGENCY] 時間戳:', new Date().toISOString());
+  console.log('🚨🚨🚨 [EMERGENCY] 請求方法:', req.method);
+  console.log('🚨🚨🚨 [EMERGENCY] 請求路徑:', req.originalUrl);
+
   try {
     const userId = req.user.uid;
     const { workspaceId } = req.params;
@@ -529,8 +535,17 @@ export async function batchSaveNodesController(req, res, next) {
       });
     }
 
+    // 🚨 緊急診斷：檢查 nodes 數據
+    console.log('🚨🚨🚨 [EMERGENCY] nodes 數據檢查:');
+    console.log('🚨🚨🚨 [EMERGENCY] nodes 存在:', !!nodes);
+    console.log('🚨🚨🚨 [EMERGENCY] nodes 類型:', typeof nodes);
+    console.log('🚨🚨🚨 [EMERGENCY] nodes 是陣列:', Array.isArray(nodes));
+    console.log('🚨🚨🚨 [EMERGENCY] nodes 長度:', nodes?.length);
+    console.log('🚨🚨🚨 [EMERGENCY] nodes 內容:', JSON.stringify(nodes));
+
     // 驗證 nodes 數據
     if (!Array.isArray(nodes) || nodes.length === 0) {
+      console.log('🚨🚨🚨 [EMERGENCY] nodes 驗證失敗，返回 400');
       console.log(`[WorkspaceController] ❌ nodes 數據無效:`, {
         isArray: Array.isArray(nodes),
         length: nodes?.length,
@@ -541,6 +556,8 @@ export async function batchSaveNodesController(req, res, next) {
         message: 'nodes 必須是非空陣列'
       });
     }
+
+    console.log('🚨🚨🚨 [EMERGENCY] nodes 驗證通過，繼續處理');
 
     // 🎯 詳細的節點格式驗證
     const validationErrors = [];
@@ -707,6 +724,9 @@ export async function batchSaveNodesController(req, res, next) {
     });
 
     if (validationErrors.length > 0) {
+      console.log('🚨🚨🚨 [EMERGENCY] 驗證失敗！！！');
+      console.log('🚨🚨🚨 [EMERGENCY] 錯誤數量:', validationErrors.length);
+      console.log('🚨🚨🚨 [EMERGENCY] 錯誤詳情:', validationErrors);
       console.log(`[WorkspaceController] ❌ 驗證失敗，返回 400 錯誤`);
       console.log(`[WorkspaceController] ❌ 錯誤詳情:`, validationErrors);
 
@@ -721,6 +741,7 @@ export async function batchSaveNodesController(req, res, next) {
         }
       };
 
+      console.log('🚨🚨🚨 [EMERGENCY] 即將返回錯誤響應:', JSON.stringify(errorResponse, null, 2));
       console.log(`[WorkspaceController] ❌ 返回錯誤響應:`, JSON.stringify(errorResponse, null, 2));
 
       return res.status(400).json(errorResponse);
