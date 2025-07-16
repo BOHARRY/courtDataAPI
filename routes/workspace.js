@@ -20,6 +20,16 @@ import { verifyToken } from '../middleware/auth.js';
 
 const router = express.Router();
 
+// 🚨 緊急診斷：捕獲所有 /nodes/batch 請求
+router.use('/:workspaceId/nodes/batch', (req, _res, next) => {
+  console.log('🚨🚨🚨 [GLOBAL-EMERGENCY] /nodes/batch 請求被捕獲！！！');
+  console.log('🚨🚨🚨 [GLOBAL-EMERGENCY] 請求方法:', req.method);
+  console.log('🚨🚨🚨 [GLOBAL-EMERGENCY] 完整路徑:', req.originalUrl);
+  console.log('🚨🚨🚨 [GLOBAL-EMERGENCY] 工作區ID:', req.params.workspaceId);
+  console.log('🚨🚨🚨 [GLOBAL-EMERGENCY] 即將繼續到具體的路由處理器');
+  next();
+});
+
 // 創建新工作區
 router.post('/', verifyToken, createWorkspaceController);
 
@@ -53,7 +63,7 @@ router.put('/:workspaceId/nodes/:nodeId', verifyToken, saveNodeController);
 router.post('/:workspaceId/nodes/batch', verifyToken, batchGetNodesController);
 
 // 🚨 緊急診斷：修復路由定義（移除重複的 verifyToken）
-router.put('/:workspaceId/nodes/batch', verifyToken, (req, res, next) => {
+router.put('/:workspaceId/nodes/batch', verifyToken, (req, _res, next) => {
   console.log('🚨🚨🚨 [ROUTE-EMERGENCY] PUT /nodes/batch 路由被觸發！！！');
   console.log('🚨🚨🚨 [ROUTE-EMERGENCY] 時間戳:', new Date().toISOString());
   console.log('🚨🚨🚨 [ROUTE-EMERGENCY] 工作區ID:', req.params.workspaceId);
