@@ -3,10 +3,39 @@ import esClient from '../config/elasticsearch.js';
 
 const ES_INDEX_NAME = 'search-boooook'; // 與其他服務保持一致
 
-// 案例列表顯示所需的字段（精簡版，用於列表顯示）
+// 案例列表顯示所需的字段（包含所有重要的 AI 分析和元數據字段）
 const CASE_LIST_FIELDS = [
-  'JID', 'JTITLE', 'court', 'verdict_type', 'JYEAR',
-  'summary_ai', 'main_reasons_ai', 'case_type', 'JDATE'
+  // 🎯 基本案例信息
+  'JID', 'JTITLE', 'court', 'verdict_type', 'JYEAR', 'JDATE', 'case_type',
+
+  // 🎯 AI 生成的核心內容
+  'summary_ai', 'main_reasons_ai', 'key_points_ai', 'legal_analysis_ai',
+
+  // 🎯 AI 價值評估字段（重要性指標）
+  'importance', 'priority', 'relevance_score', 'similarity', 'strategic_value',
+
+  // 🎯 AI 立場分析結果（確保字段名稱與 CaseListItem 一致）
+  'positionAnalysis', 'position_based_analysis', 'overall_result',
+  'citizen_perspective', 'agency_perspective', 'plaintiff_perspective', 'defendant_perspective',
+
+  // 🎯 多角度分析（CaseListItem 中使用）
+  'multi_angle_analysis', 'multi_angle_score',
+
+  // 🎯 案例分類和標籤
+  'case_category', 'legal_issues', 'dispute_type', 'case_complexity',
+  'verdictType', // CaseListItem 中使用的字段
+
+  // 🎯 判決結果分析
+  'verdict_analysis', 'success_factors', 'risk_factors', 'precedent_value',
+
+  // 🎯 其他重要元數據
+  'parties', 'judge', 'lawyer_info', 'appeal_status', 'final_verdict',
+
+  // 🎯 AI 生成的洞察和建議
+  'strategic_insights', 'case_strengths', 'case_weaknesses', 'recommendations',
+
+  // 🎯 確保包含 CaseListItem 中使用的所有字段
+  'positionSummary', 'caseData', 'reasonTags'
 ];
 
 /**
@@ -63,7 +92,24 @@ export async function getCaseListDetails(caseIds) {
     });
 
     console.log(`[CaseDetailsService] ✅ 獲取完成: ${foundCount} 個成功, ${notFoundCount} 個未找到`);
-    
+
+    // 🔍 詳細檢查返回的字段
+    if (foundCount > 0) {
+      const firstCase = Object.values(results)[0];
+      const availableFields = Object.keys(firstCase);
+      console.log(`[CaseDetailsService] 🔍 第一個案例的可用字段:`, availableFields);
+
+      // 檢查重要字段是否存在
+      const importantFields = ['importance', 'priority', 'similarity', 'strategic_value', 'positionAnalysis'];
+      const missingFields = importantFields.filter(field => !firstCase.hasOwnProperty(field));
+
+      if (missingFields.length > 0) {
+        console.warn(`[CaseDetailsService] ⚠️ 缺失重要字段:`, missingFields);
+      }
+
+      console.log(`[CaseDetailsService] 🔍 第一個案例完整數據:`, JSON.stringify(firstCase, null, 2));
+    }
+
     // 計算響應數據大小（用於監控）
     const responseSize = JSON.stringify(results).length;
     console.log(`[CaseDetailsService] 響應數據大小: ${(responseSize/1024).toFixed(1)} KB`);
