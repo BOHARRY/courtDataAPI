@@ -63,6 +63,12 @@ app.use('/api/judgment-proxy', judgmentProxyRouter);
 
 // 基本的 404 處理 (如果沒有路由匹配)
 app.use((req, res, next) => {
+  // 🚨 緊急診斷：404 處理器被觸發
+  console.log('🚨🚨🚨 [404-EMERGENCY] 404 處理器被觸發！！！');
+  console.log('🚨🚨🚨 [404-EMERGENCY] 請求路徑:', req.originalUrl);
+  console.log('🚨🚨🚨 [404-EMERGENCY] 請求方法:', req.method);
+  console.log('🚨🚨🚨 [404-EMERGENCY] 這表明沒有路由匹配這個請求');
+
   res.status(404).json({ error: 'Not Found', message: `The requested URL ${req.originalUrl} was not found on this server.` });
 });
 

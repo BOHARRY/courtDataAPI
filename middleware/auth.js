@@ -34,6 +34,9 @@ export async function verifyToken(req, res, next) {
 
     // console.log("verifyToken: Token verified for UID:", req.user.uid); // 開發時調試用
     next(); // Token 驗證通過，繼續處理請求
+
+    // 🚨 緊急診斷：檢查 next() 是否被調用
+    console.log('🚨🚨🚨 [AUTH-EMERGENCY] next() 已被調用，控制權已轉移');
   } catch (error) {
     console.error('Error verifying Firebase ID token:', error.code, error.message);
 
