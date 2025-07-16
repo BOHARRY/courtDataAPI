@@ -14,7 +14,10 @@ import {
   getNodeController,
   saveNodeController,
   batchGetNodesController,
-  batchSaveNodesController
+  batchSaveNodesController,
+  // 🎯 Stage 3 新增：單節點精確更新控制器
+  updateNodePositionController,
+  updateNodeContentController
 } from '../controllers/workspace-controller.js';
 import { verifyToken } from '../middleware/auth.js';
 
@@ -51,6 +54,10 @@ router.patch('/:workspaceId/canvas/:canvasId/viewport', verifyToken, updateCanva
 // Node 操作
 router.get('/:workspaceId/nodes/:nodeId', verifyToken, getNodeController);
 router.put('/:workspaceId/nodes/:nodeId', verifyToken, saveNodeController);
+
+// 🎯 Stage 3 新增：單節點精確更新路由
+router.patch('/:workspaceId/nodes/:nodeId/position', verifyToken, updateNodePositionController);
+router.patch('/:workspaceId/nodes/:nodeId/content', verifyToken, updateNodeContentController);
 
 // 批次 Node 操作
 router.post('/:workspaceId/nodes/batch', verifyToken, batchGetNodesController);

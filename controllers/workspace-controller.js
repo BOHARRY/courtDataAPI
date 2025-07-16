@@ -761,3 +761,81 @@ export async function batchSaveNodesController(req, res, next) {
     next(error);
   }
 }
+
+// ===== 🎯 Stage 3 新增：單節點精確更新控制器 =====
+
+/**
+ * 更新單個節點位置
+ */
+export async function updateNodePositionController(req, res, next) {
+  try {
+    const userId = req.user.uid;
+    const { workspaceId, nodeId } = req.params;
+    const { position } = req.body;
+
+    // 驗證工作區擁有權
+    const workspace = await workspaceService.getWorkspaceById(userId, workspaceId);
+    if (!workspace) {
+      return res.status(404).json({
+        error: 'Not Found',
+        message: '找不到指定的工作區'
+      });
+    }
+
+    // 驗證位置數據
+    if (!position || typeof position.x !== 'number' || typeof position.y !== 'number') {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: '位置數據格式不正確'
+      });
+    }
+
+    const updatedNode = await workspaceService.updateNodePosition(userId, workspaceId, nodeId, position);
+
+    res.status(200).json({
+      success: true,
+      data: updatedNode
+    });
+  } catch (error) {
+    console.error('[WorkspaceController] Error in updateNodePositionController:', error);
+    next(error);
+  }
+}
+
+/**
+ * 更新單個節點內容
+ */
+export async function updateNodeContentController(req, res, next) {
+  try {
+    const userId = req.user.uid;
+    const { workspaceId, nodeId } = req.params;
+    const { data } = req.body;
+
+    // 驗證工作區擁有權
+    const workspace = await workspaceService.getWorkspaceById(userId, workspaceId);
+    if (!workspace) {
+      return res.status(404).json({
+        error: 'Not Found',
+        message: '找不到指定的工作區'
+      });
+    }
+
+    // 驗證內容數據
+    if (!data || typeof data !== 'object') {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: '節點內容數據格式不正確'
+      });
+    }
+
+    const updatedNode = await workspaceService.updateNodeContent(userId, workspaceId, nodeId, data);
+
+    res.status(200).json({
+      success: true,
+      data: updatedNode
+    });
+  } catch (error) {
+    console.error('[WorkspaceController] Error in updateNodeContentController:', error);
+    next(error);
+  }
+}

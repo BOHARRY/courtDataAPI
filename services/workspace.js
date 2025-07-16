@@ -573,3 +573,77 @@ async function updateWorkspaceAccess(userId, workspaceId) {
     console.warn('[WorkspaceService] Failed to update workspace access time:', error);
   }
 }
+
+// ===== 🎯 Stage 3 新增：單節點精確更新服務 =====
+
+/**
+ * 更新單個節點位置
+ */
+export async function updateNodePosition(userId, workspaceId, nodeId, position) {
+  try {
+    const nodeRef = db
+      .collection('users')
+      .doc(userId)
+      .collection('workspaces')
+      .doc(workspaceId)
+      .collection('nodes')
+      .doc(nodeId);
+
+    const now = admin.firestore.FieldValue.serverTimestamp();
+
+    await nodeRef.update({
+      position: position,
+      updatedAt: now
+    });
+
+    // 獲取更新後的節點
+    const updatedDoc = await nodeRef.get();
+    if (!updatedDoc.exists) {
+      throw new Error('節點更新後無法找到');
+    }
+
+    const updatedNode = { id: updatedDoc.id, ...updatedDoc.data() };
+    console.log(`[WorkspaceService] ✅ 節點位置已更新: ${nodeId}`);
+
+    return updatedNode;
+  } catch (error) {
+    console.error('[WorkspaceService] Error updating node position:', error);
+    throw error;
+  }
+}
+
+/**
+ * 更新單個節點內容
+ */
+export async function updateNodeContent(userId, workspaceId, nodeId, data) {
+  try {
+    const nodeRef = db
+      .collection('users')
+      .doc(userId)
+      .collection('workspaces')
+      .doc(workspaceId)
+      .collection('nodes')
+      .doc(nodeId);
+
+    const now = admin.firestore.FieldValue.serverTimestamp();
+
+    await nodeRef.update({
+      data: data,
+      updatedAt: now
+    });
+
+    // 獲取更新後的節點
+    const updatedDoc = await nodeRef.get();
+    if (!updatedDoc.exists) {
+      throw new Error('節點更新後無法找到');
+    }
+
+    const updatedNode = { id: updatedDoc.id, ...updatedDoc.data() };
+    console.log(`[WorkspaceService] ✅ 節點內容已更新: ${nodeId}`);
+
+    return updatedNode;
+  } catch (error) {
+    console.error('[WorkspaceService] Error updating node content:', error);
+    throw error;
+  }
+}
