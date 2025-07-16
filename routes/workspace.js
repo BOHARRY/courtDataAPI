@@ -27,6 +27,14 @@ router.use('/:workspaceId/nodes/batch', (req, _res, next) => {
   console.log('🚨🚨🚨 [GLOBAL-EMERGENCY] 完整路徑:', req.originalUrl);
   console.log('🚨🚨🚨 [GLOBAL-EMERGENCY] 工作區ID:', req.params.workspaceId);
   console.log('🚨🚨🚨 [GLOBAL-EMERGENCY] 即將繼續到具體的路由處理器');
+
+  // 🚨 特別檢查 PUT 請求
+  if (req.method === 'PUT') {
+    console.log('🚨🚨🚨 [GLOBAL-EMERGENCY] 這是一個 PUT 請求，應該匹配到 PUT 路由');
+    console.log('🚨🚨🚨 [GLOBAL-EMERGENCY] 請求體存在:', !!req.body);
+    console.log('🚨🚨🚨 [GLOBAL-EMERGENCY] 請求體類型:', typeof req.body);
+  }
+
   next();
 });
 
@@ -67,6 +75,8 @@ router.post('/:workspaceId/nodes/batch', verifyToken, (req, _res, next) => {
   console.log('🚨🚨🚨 [POST-EMERGENCY] 如果看到這個日誌，說明路由匹配有問題');
   next();
 }, batchGetNodesController);
+
+
 
 // 🚨 緊急診斷：修復路由定義（移除重複的 verifyToken）
 router.put('/:workspaceId/nodes/batch', verifyToken, (req, _res, next) => {
