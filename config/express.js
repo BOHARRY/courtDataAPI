@@ -52,7 +52,7 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // 基本的日誌中間件 (可選, 只是示例)
-app.use((req, res, next) => {
+app.use((req, _res, next) => {
   console.log(`[Request] ${new Date().toISOString()} ${req.method} ${req.originalUrl}`);
   next();
 });
@@ -62,26 +62,13 @@ app.use('/api', mainRouter); // 所有 API 路由都有 /api 前綴
 app.use('/api/judgment-proxy', judgmentProxyRouter);
 
 // 基本的 404 處理 (如果沒有路由匹配)
-app.use((req, res, next) => {
-  // 🚨 緊急診斷：404 處理器被觸發
-  console.log('🚨🚨🚨 [404-EMERGENCY] 404 處理器被觸發！！！');
-  console.log('🚨🚨🚨 [404-EMERGENCY] 請求路徑:', req.originalUrl);
-  console.log('🚨🚨🚨 [404-EMERGENCY] 請求方法:', req.method);
-  console.log('🚨🚨🚨 [404-EMERGENCY] 這表明沒有路由匹配這個請求');
-
+app.use((req, res, _next) => {
   res.status(404).json({ error: 'Not Found', message: `The requested URL ${req.originalUrl} was not found on this server.` });
 });
 
 // 基本的錯誤處理中間件 (應該放在所有路由和中間件之後)
 // eslint-disable-next-line no-unused-vars
-app.use((err, req, res, next) => {
-  // 🚨 緊急診斷：錯誤處理中間件被觸發
-  console.log('🚨🚨🚨 [ERROR-EMERGENCY] 錯誤處理中間件被觸發！！！');
-  console.log('🚨🚨🚨 [ERROR-EMERGENCY] 請求路徑:', req.originalUrl);
-  console.log('🚨🚨🚨 [ERROR-EMERGENCY] 請求方法:', req.method);
-  console.log('🚨🚨🚨 [ERROR-EMERGENCY] 錯誤信息:', err.message);
-  console.log('🚨🚨🚨 [ERROR-EMERGENCY] 錯誤堆疊:', err.stack);
-
+app.use((err, _req, res, _next) => {
   console.error("Unhandled error:", err.stack || err.message || err);
   // 避免在生產環境洩露堆疊追蹤
   const statusCode = err.statusCode || 500;

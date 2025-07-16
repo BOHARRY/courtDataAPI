@@ -20,11 +20,8 @@ import { verifyToken } from '../middleware/auth.js';
 
 const router = express.Router();
 
-// 🚨 緊急測試：最簡單的路由測試
-router.put('/:workspaceId/nodes/batch', (req, res) => {
-  console.log('🚨🚨🚨 [ULTRA-SIMPLE] 超簡單路由被觸發！！！');
-  res.json({ message: 'PUT 路由工作了！', method: req.method, workspaceId: req.params.workspaceId });
-});
+// 批次保存 Nodes - 修復後的版本
+router.put('/:workspaceId/nodes/batch', verifyToken, batchSaveNodesController);
 
 // 創建新工作區
 router.post('/', verifyToken, createWorkspaceController);
