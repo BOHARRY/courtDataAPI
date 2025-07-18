@@ -17,7 +17,10 @@ import {
   batchSaveNodesController,
   // 🎯 Stage 3 新增：單節點精確更新控制器
   updateNodePositionController,
-  updateNodeContentController
+  updateNodeContentController,
+  // 🎯 新增：Edges 批次操作控制器
+  batchGetEdgesController,
+  batchSaveEdgesController
 } from '../controllers/workspace-controller.js';
 import { verifyToken } from '../middleware/auth.js';
 
@@ -25,6 +28,10 @@ const router = express.Router();
 
 // 批次保存 Nodes - 修復後的版本
 router.put('/:workspaceId/nodes/batch', verifyToken, batchSaveNodesController);
+
+// 🎯 新增：Edges 批次操作
+router.post('/:workspaceId/edges/batch', verifyToken, batchGetEdgesController);
+router.put('/:workspaceId/edges/batch', verifyToken, batchSaveEdgesController);
 
 // 創建新工作區
 router.post('/', verifyToken, createWorkspaceController);

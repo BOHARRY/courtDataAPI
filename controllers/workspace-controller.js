@@ -859,3 +859,117 @@ export async function updateNodeContentController(req, res, next) {
     next(error);
   }
 }
+
+// ===== 🎯 新增：Edges 批次操作控制器 =====
+
+/**
+ * 批次獲取 Edges
+ */
+export async function batchGetEdgesController(req, res, next) {
+  try {
+    const userId = req.user.uid;
+    const { workspaceId } = req.params;
+    const { edgeIds } = req.body;
+
+    console.log('[WorkspaceController] 🔗 批次獲取連接線請求:', {
+      userId,
+      workspaceId,
+      edgeCount: edgeIds?.length || 0
+    });
+
+    // 驗證工作區擁有權
+    const workspace = await workspaceService.getWorkspaceById(userId, workspaceId);
+    if (!workspace) {
+      return res.status(404).json({
+        error: 'Not Found',
+        message: '找不到指定的工作區'
+      });
+    }
+
+    // 驗證請求數據
+    if (!edgeIds || !Array.isArray(edgeIds)) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'edgeIds 必須是數組'
+      });
+    }
+
+    if (edgeIds.length === 0) {
+      return res.status(200).json({
+        success: true,
+        data: []
+      });
+    }
+
+    const edges = await workspaceService.batchGetEdges(userId, workspaceId, edgeIds);
+
+    console.log('[WorkspaceController] ✅ 批次獲取連接線成功:', {
+      requestedCount: edgeIds.length,
+      returnedCount: edges.length
+    });
+
+    res.status(200).json({
+      success: true,
+      data: edges
+    });
+  } catch (error) {
+    console.error('[WorkspaceController] Error in batchGetEdgesController:', error);
+    next(error);
+  }
+}
+
+/**
+ * 批次保存 Edges
+ */
+export async function batchSaveEdgesController(req, res, next) {
+  try {
+    const userId = req.user.uid;
+    const { workspaceId } = req.params;
+    const { edges } = req.body;
+
+    console.log('[WorkspaceController] 🔗 批次保存連接線請求:', {
+      userId,
+      workspaceId,
+      edgeCount: edges?.length || 0
+    });
+
+    // 驗證工作區擁有權
+    const workspace = await workspaceService.getWorkspaceById(userId, workspaceId);
+    if (!workspace) {
+      return res.status(404).json({
+        error: 'Not Found',
+        message: '找不到指定的工作區'
+      });
+    }
+
+    // 驗證請求數據
+    if (!edges || !Array.isArray(edges)) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'edges 必須是數組'
+      });
+    }
+
+    if (edges.length === 0) {
+      return res.status(200).json({
+        success: true,
+        data: []
+      });
+    }
+
+    const savedEdges = await workspaceService.batchSaveEdges(userId, workspaceId, edges);
+
+    console.log('[WorkspaceController] ✅ 批次保存連接線成功:', {
+      requestedCount: edges.length,
+      savedCount: savedEdges.length
+    });
+
+    res.status(200).json({
+      success: true,
+      data: savedEdges
+    });
+  } catch (error) {
+    console.error('[WorkspaceController] Error in batchSaveEdgesController:', error);
+    next(error);
+  }
+}

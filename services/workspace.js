@@ -663,3 +663,122 @@ export async function updateNodeContent(userId, workspaceId, nodeId, data) {
     throw error;
   }
 }
+
+// ===== 🎯 新增：Edges 批次操作 =====
+
+/**
+ * 批次獲取 Edges
+ */
+export async function batchGetEdges(userId, workspaceId, edgeIds) {
+  try {
+    if (!Array.isArray(edgeIds) || edgeIds.length === 0) {
+      return [];
+    }
+
+    // Firestore 批次讀取限制為 10 個操作，但為了安全起見使用較小的批次
+    const batchSize = 10;
+    const batches = [];
+
+    for (let i = 0; i < edgeIds.length; i += batchSize) {
+      const batchEdgeIds = edgeIds.slice(i, i + batchSize);
+      batches.push(batchEdgeIds);
+    }
+
+    const allEdges = [];
+
+    for (const batchEdgeIds of batches) {
+      const edgePromises = batchEdgeIds.map(async (edgeId) => {
+        try {
+          const edgeRef = db
+            .collection('users')
+            .doc(userId)
+            .collection('workspaces')
+            .doc(workspaceId)
+            .collection('canvas_edges')
+            .doc(edgeId);
+
+          const doc = await edgeRef.get();
+          if (doc.exists) {
+            return { id: doc.id, ...doc.data() };
+          }
+          return null;
+        } catch (error) {
+          console.error(`[WorkspaceService] Error getting edge ${edgeId}:`, error);
+          return null;
+        }
+      });
+
+      const batchResults = await Promise.all(edgePromises);
+      allEdges.push(...batchResults.filter(Boolean));
+    }
+
+    console.log(`[WorkspaceService] Batch get edges: ${allEdges.length}/${edgeIds.length} found`);
+    return allEdges;
+  } catch (error) {
+    console.error('[WorkspaceService] Error batch getting edges:', error);
+    throw new Error('批次獲取連接線失敗');
+  }
+}
+
+/**
+ * 批次保存 Edges
+ */
+export async function batchSaveEdges(userId, workspaceId, edges) {
+  try {
+    if (!Array.isArray(edges) || edges.length === 0) {
+      return [];
+    }
+
+    // Firestore 批次寫入限制為 500 個操作，但為了安全起見使用較小的批次
+    const batchSize = 100;
+    const batches = [];
+
+    for (let i = 0; i < edges.length; i += batchSize) {
+      const batchEdges = edges.slice(i, i + batchSize);
+      batches.push(batchEdges);
+    }
+
+    const allSavedEdges = [];
+
+    for (const batchEdges of batches) {
+      const batch = db.batch();
+      const now = admin.firestore.FieldValue.serverTimestamp();
+
+      for (const edge of batchEdges) {
+        const edgeRef = db
+          .collection('users')
+          .doc(userId)
+          .collection('workspaces')
+          .doc(workspaceId)
+          .collection('canvas_edges')
+          .doc(edge.id);
+
+        const edgeData = {
+          ...edge,
+          updatedAt: now
+        };
+
+        batch.set(edgeRef, edgeData, { merge: true });
+      }
+
+      await batch.commit();
+
+      // 添加到結果數組
+      const savedBatchEdges = batchEdges.map(edge => ({
+        ...edge,
+        updatedAt: new Date() // 返回 JavaScript Date 對象
+      }));
+
+      allSavedEdges.push(...savedBatchEdges);
+    }
+
+    // 更新工作區的 lastAccessedAt
+    await updateWorkspaceAccess(userId, workspaceId);
+
+    console.log(`[WorkspaceService] Batch save edges: ${allSavedEdges.length} saved`);
+    return allSavedEdges;
+  } catch (error) {
+    console.error('[WorkspaceService] Error batch saving edges:', error);
+    throw new Error('批次保存連接線失敗');
+  }
+}
