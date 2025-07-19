@@ -121,6 +121,45 @@ export async function getWorkspaceByIdController(req, res, next) {
 }
 
 /**
+ * 檢查並修復節點狀態不一致問題
+ */
+export async function checkNodeConsistencyController(req, res, next) {
+  try {
+    const userId = req.user.uid;
+    const { workspaceId } = req.params;
+    const { nodeIds } = req.body;
+
+    // 驗證工作區擁有權
+    const workspace = await workspaceService.getWorkspaceById(userId, workspaceId);
+    if (!workspace) {
+      return res.status(404).json({
+        error: 'Not Found',
+        message: '找不到指定的工作區'
+      });
+    }
+
+    // 驗證節點ID列表
+    if (!Array.isArray(nodeIds)) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: '節點ID列表格式不正確'
+      });
+    }
+
+    const result = await workspaceService.checkAndRepairNodeConsistency(userId, workspaceId, nodeIds);
+
+    res.status(200).json({
+      success: true,
+      data: result,
+      message: `檢查完成：${result.createdNodes.length} 個節點已修復`
+    });
+  } catch (error) {
+    console.error('[WorkspaceController] Error in checkNodeConsistencyController:', error);
+    next(error);
+  }
+}
+
+/**
  * 刪除工作區
  */
 export async function deleteWorkspaceController(req, res, next) {

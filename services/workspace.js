@@ -4,6 +4,50 @@ import admin from 'firebase-admin';
 const db = admin.firestore();
 
 /**
+ * 從節點ID推斷節點類型
+ * @param {string} nodeId - 節點ID
+ * @returns {string} 節點類型
+ */
+function inferNodeTypeFromId(nodeId) {
+  // 根據節點ID的前綴推斷類型
+  if (nodeId.startsWith('citation-analysis-')) return 'citationAnalysisNode';
+  if (nodeId.startsWith('writing-assistant-')) return 'writingAssistantNode';
+  if (nodeId.startsWith('analysis_')) return 'analysisNode';
+  if (nodeId.startsWith('law_')) return 'lawNode';
+  if (nodeId.startsWith('note_')) return 'noteNode';
+  if (nodeId.startsWith('dispute_')) return 'disputeNode';
+  if (nodeId.startsWith('evidence_')) return 'evidenceNode';
+  if (nodeId.startsWith('claim_')) return 'claimNode';
+  if (nodeId.startsWith('case_')) return 'caseNode';
+  if (nodeId.startsWith('judgement_')) return 'judgementNode';
+  if (nodeId.startsWith('result_')) return 'resultNode';
+  if (nodeId.startsWith('reference_')) return 'referenceNode';
+  if (nodeId.startsWith('text_')) return 'textNode';
+  if (nodeId.startsWith('insight_')) return 'insightNode';
+
+  // 如果無法從ID推斷，檢查ID中的關鍵字
+  const lowerCaseId = nodeId.toLowerCase();
+  if (lowerCaseId.includes('citation')) return 'citationAnalysisNode';
+  if (lowerCaseId.includes('writing')) return 'writingAssistantNode';
+  if (lowerCaseId.includes('analysis')) return 'analysisNode';
+  if (lowerCaseId.includes('law')) return 'lawNode';
+  if (lowerCaseId.includes('note')) return 'noteNode';
+  if (lowerCaseId.includes('dispute')) return 'disputeNode';
+  if (lowerCaseId.includes('evidence')) return 'evidenceNode';
+  if (lowerCaseId.includes('claim')) return 'claimNode';
+  if (lowerCaseId.includes('case')) return 'caseNode';
+  if (lowerCaseId.includes('judgement')) return 'judgementNode';
+  if (lowerCaseId.includes('result')) return 'resultNode';
+  if (lowerCaseId.includes('reference')) return 'referenceNode';
+  if (lowerCaseId.includes('text')) return 'textNode';
+  if (lowerCaseId.includes('insight')) return 'insightNode';
+
+  // 默認返回通用節點類型
+  console.warn(`[WorkspaceService] 無法推斷節點類型，使用默認類型: ${nodeId}`);
+  return 'noteNode'; // 使用最簡單的節點類型作為默認
+}
+
+/**
  * 創建新工作區
  */
 export async function createWorkspace(userId, workspaceData) {
@@ -191,6 +235,95 @@ export async function getWorkspaceById(userId, workspaceId) {
   } catch (error) {
     console.error('[WorkspaceService] Error getting workspace:', error);
     throw new Error('獲取工作區失敗');
+  }
+}
+
+/**
+ * 檢查並修復節點狀態不一致問題
+ * @param {string} userId - 用戶ID
+ * @param {string} workspaceId - 工作區ID
+ * @param {Array} frontendNodeIds - 前端節點ID列表
+ * @returns {Object} 修復結果
+ */
+export async function checkAndRepairNodeConsistency(userId, workspaceId, frontendNodeIds) {
+  try {
+    console.log(`[WorkspaceService] 開始檢查節點一致性: ${frontendNodeIds.length} 個前端節點`);
+
+    const result = {
+      totalFrontendNodes: frontendNodeIds.length,
+      existingNodes: [],
+      missingNodes: [],
+      createdNodes: [],
+      errors: []
+    };
+
+    // 批次檢查節點是否存在
+    const nodeRefs = frontendNodeIds.map(nodeId =>
+      db.collection('users')
+        .doc(userId)
+        .collection('workspaces')
+        .doc(workspaceId)
+        .collection('canvas_nodes')
+        .doc(nodeId)
+    );
+
+    const docs = await Promise.all(nodeRefs.map(ref => ref.get()));
+
+    for (let i = 0; i < frontendNodeIds.length; i++) {
+      const nodeId = frontendNodeIds[i];
+      const doc = docs[i];
+
+      if (doc.exists) {
+        result.existingNodes.push(nodeId);
+      } else {
+        result.missingNodes.push(nodeId);
+
+        try {
+          // 自動創建缺失的節點
+          const nodeType = inferNodeTypeFromId(nodeId);
+          const now = admin.firestore.FieldValue.serverTimestamp();
+
+          const newNodeData = {
+            id: nodeId,
+            type: nodeType,
+            position: { x: 0, y: 0 }, // 默認位置
+            data: {}, // 空數據
+            createdAt: now,
+            updatedAt: now,
+            autoCreated: true,
+            autoCreatedReason: 'consistency_repair'
+          };
+
+          await nodeRefs[i].set(newNodeData);
+          result.createdNodes.push(nodeId);
+
+          console.log(`[WorkspaceService] 自動創建缺失節點: ${nodeId}, 類型: ${nodeType}`);
+        } catch (error) {
+          console.error(`[WorkspaceService] 創建節點失敗: ${nodeId}`, error);
+          result.errors.push({
+            nodeId,
+            error: error.message
+          });
+        }
+      }
+    }
+
+    // 更新工作區的 lastAccessedAt
+    if (result.createdNodes.length > 0) {
+      await updateWorkspaceAccess(userId, workspaceId);
+    }
+
+    console.log(`[WorkspaceService] 節點一致性檢查完成:`, {
+      existing: result.existingNodes.length,
+      missing: result.missingNodes.length,
+      created: result.createdNodes.length,
+      errors: result.errors.length
+    });
+
+    return result;
+  } catch (error) {
+    console.error('[WorkspaceService] 節點一致性檢查失敗:', error);
+    throw new Error('節點一致性檢查失敗');
   }
 }
 
@@ -593,8 +726,34 @@ export async function updateNodePosition(userId, workspaceId, nodeId, position) 
     // 🎯 新增：檢查文檔是否存在
     const docSnapshot = await nodeRef.get();
     if (!docSnapshot.exists) {
-      console.error(`[WorkspaceService] 節點不存在: ${nodeId} 在路徑 users/${userId}/workspaces/${workspaceId}/canvas_nodes/${nodeId}`);
-      throw new Error(`節點 ${nodeId} 不存在，無法更新位置`);
+      console.warn(`[WorkspaceService] 節點不存在，嘗試自動創建: ${nodeId}`);
+
+      // 🚀 自動創建節點：從節點ID推斷節點類型和基本信息
+      const nodeType = inferNodeTypeFromId(nodeId);
+      const now = admin.firestore.FieldValue.serverTimestamp();
+
+      const newNodeData = {
+        id: nodeId,
+        type: nodeType,
+        position: position,
+        data: {}, // 空數據，後續會更新
+        createdAt: now,
+        updatedAt: now,
+        autoCreated: true, // 標記為自動創建
+        autoCreatedReason: 'position_update_missing_node'
+      };
+
+      console.log(`[WorkspaceService] 自動創建節點: ${nodeId}, 類型: ${nodeType}`);
+      await nodeRef.set(newNodeData);
+
+      // 更新工作區的 lastAccessedAt
+      await updateWorkspaceAccess(userId, workspaceId);
+
+      return {
+        ...newNodeData,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
     }
 
     const now = admin.firestore.FieldValue.serverTimestamp();
@@ -637,8 +796,34 @@ export async function updateNodeContent(userId, workspaceId, nodeId, data) {
     // 🎯 新增：檢查文檔是否存在
     const docSnapshot = await nodeRef.get();
     if (!docSnapshot.exists) {
-      console.error(`[WorkspaceService] 節點不存在: ${nodeId} 在路徑 users/${userId}/workspaces/${workspaceId}/canvas_nodes/${nodeId}`);
-      throw new Error(`節點 ${nodeId} 不存在，無法更新內容`);
+      console.warn(`[WorkspaceService] 節點不存在，嘗試自動創建: ${nodeId}`);
+
+      // 🚀 自動創建節點：從節點ID推斷節點類型和基本信息
+      const nodeType = inferNodeTypeFromId(nodeId);
+      const now = admin.firestore.FieldValue.serverTimestamp();
+
+      const newNodeData = {
+        id: nodeId,
+        type: nodeType,
+        position: { x: 0, y: 0 }, // 默認位置，前端會更新
+        data: data,
+        createdAt: now,
+        updatedAt: now,
+        autoCreated: true, // 標記為自動創建
+        autoCreatedReason: 'content_update_missing_node'
+      };
+
+      console.log(`[WorkspaceService] 自動創建節點: ${nodeId}, 類型: ${nodeType}`);
+      await nodeRef.set(newNodeData);
+
+      // 更新工作區的 lastAccessedAt
+      await updateWorkspaceAccess(userId, workspaceId);
+
+      return {
+        ...newNodeData,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
     }
 
     const now = admin.firestore.FieldValue.serverTimestamp();

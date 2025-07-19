@@ -18,6 +18,8 @@ import {
   // 🎯 Stage 3 新增：單節點精確更新控制器
   updateNodePositionController,
   updateNodeContentController,
+  // 🚀 新增：節點一致性檢查控制器
+  checkNodeConsistencyController,
   // 🎯 新增：Edges 批次操作控制器
   batchGetEdgesController,
   batchSaveEdgesController
@@ -65,6 +67,9 @@ router.put('/:workspaceId/nodes/:nodeId', verifyToken, saveNodeController);
 // 🎯 Stage 3 新增：單節點精確更新路由
 router.patch('/:workspaceId/nodes/:nodeId/position', verifyToken, updateNodePositionController);
 router.patch('/:workspaceId/nodes/:nodeId/content', verifyToken, updateNodeContentController);
+
+// 🚀 新增：節點一致性檢查和修復
+router.post('/:workspaceId/nodes/check-consistency', verifyToken, checkNodeConsistencyController);
 
 // 批次 Node 操作
 router.post('/:workspaceId/nodes/batch', verifyToken, batchGetNodesController);
