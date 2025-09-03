@@ -57,6 +57,30 @@ app.use((req, _res, next) => {
   next();
 });
 
+// 根路徑處理器 - 提供服務狀態信息
+app.get('/', (req, res) => {
+  res.json({
+    service: 'LawSowl Court Data API',
+    status: 'running',
+    version: '3.0',
+    timestamp: new Date().toISOString(),
+    endpoints: {
+      api: '/api',
+      health: '/api',
+      docs: 'https://github.com/BOHARRY/courtDataAPI'
+    }
+  });
+});
+
+// 健康檢查端點
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime()
+  });
+});
+
 // 掛載路由
 app.use('/api', mainRouter); // 所有 API 路由都有 /api 前綴
 app.use('/api/judgment-proxy', judgmentProxyRouter);
