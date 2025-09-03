@@ -17,6 +17,10 @@ export const OPENAI_MODEL_NAME_NANO = process.env.OPENAI_MODEL_NAME_NANO || 'gpt
 export const XAI_API_KEY = process.env.XAI_API_KEY;
 export const XAI_MODEL_VERIFICATION = process.env.XAI_MODEL_VERIFICATION || 'grok-4-latest';
 export const XAI_MODEL_ANALYSIS = process.env.XAI_MODEL_ANALYSIS || 'grok-4-latest';
+
+// Claude 配置
+export const CLAUDE_API_KEY = process.env.CLAUDE_API_KEY;
+export const CLAUDE_MODEL_PLEADING = process.env.CLAUDE_MODEL_PLEADING || 'claude-opus-4-1';
 export const GMAIL_APP_USER = process.env.GMAIL_APP_USER;
 export const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD;
 export const CONTACT_FORM_RECIPIENT_EMAIL = process.env.CONTACT_FORM_RECIPIENT_EMAIL;
@@ -51,6 +55,9 @@ if (!OPENAI_API_KEY) {
 if (!XAI_API_KEY) {
   console.error("FATAL ERROR: XAI_API_KEY environment variable is not set.");
   process.exit(1);
+}
+if (!CLAUDE_API_KEY) {
+  console.warn("WARNING: CLAUDE_API_KEY environment variable is not set. Pleading generation will fallback to GPT-4.1.");
 }
 
 // 記得檢查 OPENAI_MODEL_NAME_CHAT 是否也需要

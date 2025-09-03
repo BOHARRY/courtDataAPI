@@ -2,10 +2,17 @@
 
 import admin from 'firebase-admin';
 import OpenAI from 'openai';
+import Anthropic from '@anthropic-ai/sdk';
+import { OPENAI_API_KEY, CLAUDE_API_KEY, CLAUDE_MODEL_PLEADING } from '../config/environment.js';
 
-// 初始化 OpenAI
+// 初始化 OpenAI（保留作為備用）
 const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY
+    apiKey: OPENAI_API_KEY
+});
+
+// 🚀 新增：初始化 Claude Opus 4
+const anthropic = new Anthropic({
+    apiKey: CLAUDE_API_KEY
 });
 
 /**
@@ -177,7 +184,147 @@ function createTemplateStructure(documentConfig) {
 }
 
 /**
- * 創建訴狀生成 Prompt
+ * 🎯 為 Claude Opus 4 創建優化的訴狀生成 Prompt
+ * Claude 在法律文件理解和生成方面表現更佳
+ */
+function createClaudeOptimizedPrompt(pleadingData) {
+    const { litigationStage, caseInfo, claims, laws, evidence, disputes } = pleadingData;
+
+    // 🔥 改進：提取實際當事人立場
+    const actualStance = caseInfo?.stance;
+
+    // 🔥 改進：使用新的書狀配置系統，包含立場驗證
+    const documentConfig = determineDocumentConfig(litigationStage, actualStance);
+    const documentType = documentConfig.type;
+    const documentTone = documentConfig.tone;
+
+    // 🔥 改進：檢查可用資訊，避免瞎掰
+    const availableInfo = validateAvailableData(pleadingData);
+
+    // 🔥 改進：法條白名單機制
+    const lawWhitelist = laws && laws.length > 0
+        ? laws.map(law => law.articleNumber || law.title || law.content?.substring(0, 20)).join('、')
+        : '無提供法條';
+
+    // 組裝案件資料文本
+    let caseDataText = '';
+
+    // 案件基本信息
+    if (caseInfo) {
+        caseDataText += `【案件基本資訊】\n`;
+        caseDataText += `案由：${caseInfo.caseType || '未指定'}\n`;
+        caseDataText += `法院層級：${caseInfo.courtLevel || '未指定'}\n`;
+        caseDataText += `案件性質：${caseInfo.caseNature || '未指定'}\n`;
+        caseDataText += `當事人立場：${caseInfo.stance || '未指定'}\n`;
+        caseDataText += `案件描述：${caseInfo.description || '未提供'}\n\n`;
+    }
+
+    // 法律主張
+    if (claims && claims.length > 0) {
+        caseDataText += `【法律主張】\n`;
+        claims.forEach((claim, index) => {
+            caseDataText += `${index + 1}. ${claim.content || claim.claimContent || '無內容'}\n`;
+            if (claim.legalBasis) {
+                caseDataText += `   法律依據：${claim.legalBasis}\n`;
+            }
+            if (claim.factualBasis) {
+                caseDataText += `   事實依據：${claim.factualBasis}\n`;
+            }
+        });
+        caseDataText += '\n';
+    }
+
+    // 法條依據
+    if (laws && laws.length > 0) {
+        caseDataText += `【法條依據】\n`;
+        laws.forEach((law, index) => {
+            caseDataText += `${index + 1}. ${law.title || '法條'}\n`;
+            caseDataText += `   內容：${law.content || '無內容'}\n`;
+        });
+        caseDataText += '\n';
+    }
+
+    // 證據材料
+    if (evidence && evidence.length > 0) {
+        caseDataText += `【證據材料】\n`;
+        evidence.forEach((item, index) => {
+            caseDataText += `${index + 1}. ${item.content || '無內容'}\n`;
+            if (item.evidenceType) {
+                caseDataText += `   證據類型：${item.evidenceType}\n`;
+            }
+        });
+        caseDataText += '\n';
+    }
+
+    // 爭點內容（如果有）
+    if (disputes && disputes.length > 0) {
+        caseDataText += `【爭點內容】\n`;
+        disputes.forEach((dispute, index) => {
+            caseDataText += `${index + 1}. ${dispute.content || dispute.disputeContent || '無內容'}\n`;
+        });
+        caseDataText += '\n';
+    }
+
+    // 🔥 改進：創建資訊限制說明
+    const infoLimitations = createInfoLimitationText(availableInfo);
+
+    // 🔥 改進：根據實際立場和書狀類型調整語氣指導
+    const stanceInstruction = getStanceInstruction(actualStance, documentTone, litigationStage);
+
+    // 🔥 改進：創建專門的模板結構
+    const templateStructure = createTemplateStructure(documentConfig);
+
+    // 🔥 新增：立場一致性要求
+    const stanceConsistencyRequirement = actualStance ?
+        `\n【立場一致性要求 - 極其重要】\n當事人立場：${actualStance === 'plaintiff' ? '原告' : '被告'}\n書狀類型：${documentType}\n請確保整份文書的語氣、論述角度、法律主張都完全符合${actualStance === 'plaintiff' ? '原告' : '被告'}立場。絕對不可出現立場錯配的內容。\n` : '';
+
+    // 🎯 Claude 專用：更結構化的提示詞格式
+    return `你是台灣資深律師，專精各類法律文書撰寫。請根據以下資料，${stanceInstruction}，生成專業的${documentType}草稿。
+
+## 📋 案件資料
+${stanceConsistencyRequirement}
+${caseDataText}
+
+## ⚠️ 絕對禁止事項
+1. **嚴禁編造**：不得編造任何未提供的事實、金額、日期、人名、地址
+2. **嚴禁假設**：不得假設任何法院案號、判決內容、當事人詳細資料
+3. **標準留空**：對於不清楚的資訊，必須使用標準留空用語：
+   - 金額不明：「新臺幣○○元」
+   - 日期不明：「○年○月○日」
+   - 地址不明：「（送達地址略）」
+   - 案號不明：「（案號：尚未立案）」
+   - 法院不明：「○○地方法院」
+   - 當事人資料不全：「（身分證字號略）」
+   - 其他不明：「（詳如附件）」或「（略）」
+
+## 📊 可用資訊限制
+${infoLimitations}
+
+## ⚖️ 法條使用限制
+**僅得引用以下法條**：${lawWhitelist}
+- 不得新增清單外法條
+- 如認為清單內條文不適合，請在文末「（法律評註）」說明不引用理由
+
+## 📝 文書結構要求
+**必須嚴格按照以下模板生成，不得省略任何章節**：
+${templateStructure}
+
+## 🎯 特殊注意事項
+${documentConfig.specialRequirements.map(req => `- ${req}`).join('\n')}
+${documentConfig.stanceValidation && !documentConfig.stanceValidation.isValid ?
+    `\n⚠️ **立場驗證警告**\n檢測到立場與書狀類型可能不匹配，請特別注意確保內容符合實際當事人立場。` : ''}
+
+## 📋 ${documentConfig.claimFormat}範例格式
+${documentConfig.claimExample}
+
+## 📅 日期一致性要求
+如有交貨日期，請統一以交貨後30日為利息起算日，並在文中明載計算基礎。所有利息起算日期必須一致。
+
+請使用正式的法律文書語言，符合台灣法院實務慣例，生成可以直接使用的專業${documentType}。**寧可留空也絕不編造未提供的資訊**。`;
+}
+
+/**
+ * 創建訴狀生成 Prompt（GPT 版本）
  * 🔥 使用固定模板化策略，確保專業格式和法條白名單控制
  */
 function createPleadingPrompt(pleadingData) {
@@ -378,8 +525,8 @@ async function executePleadingGenerationInBackground(taskId, pleadingData, userI
             processingStartedAt: admin.firestore.FieldValue.serverTimestamp()
         });
 
-        // 生成訴狀內容
-        const result = await generatePleadingContent(pleadingData);
+        // 🚀 智能 AI 模型選擇：優先 Claude，備用 GPT
+        const result = await generatePleadingContentWithFallback(pleadingData);
 
         // 保存結果
         await taskRef.update({
@@ -402,10 +549,112 @@ async function executePleadingGenerationInBackground(taskId, pleadingData, userI
 }
 
 /**
- * 生成訴狀內容
- * 調用GPT-4.1進行AI生成
+ * 🎯 智能 AI 模型選擇：優先 Claude，備用 GPT
+ * 提供最佳的法律文件生成體驗
  */
-async function generatePleadingContent(pleadingData) {
+async function generatePleadingContentWithFallback(pleadingData) {
+    try {
+        // 🚀 優先使用 Claude Opus 4（法律文件判別能力更強）
+        console.log('[PleadingGeneration] 🎯 嘗試使用 Claude Opus 4 生成訴狀');
+        return await generatePleadingContentWithClaude(pleadingData);
+
+    } catch (claudeError) {
+        console.warn('[PleadingGeneration] ⚠️ Claude Opus 4 生成失敗，切換到 GPT-4.1 備用方案');
+        console.warn('[PleadingGeneration] Claude 錯誤:', claudeError.message);
+
+        try {
+            // 🔄 備用方案：使用 GPT-4.1
+            const result = await generatePleadingContentWithGPT(pleadingData);
+
+            // 在結果中標記使用了備用模型
+            result.metadata.model = "gpt-4.1 (fallback)";
+            result.metadata.fallbackReason = claudeError.message;
+
+            return result;
+
+        } catch (gptError) {
+            console.error('[PleadingGeneration] ❌ 所有 AI 模型都失敗');
+            console.error('[PleadingGeneration] GPT 錯誤:', gptError.message);
+            throw new Error(`AI 訴狀生成完全失敗 - Claude: ${claudeError.message}, GPT: ${gptError.message}`);
+        }
+    }
+}
+
+/**
+ * 🚀 使用 Claude Opus 4 生成訴狀內容
+ * 經測試 Claude 在法律文件判別能力上明顯優於 GPT-4.1
+ */
+async function generatePleadingContentWithClaude(pleadingData) {
+    try {
+        console.log('[PleadingGeneration] 🎯 使用 Claude Opus 4 生成訴狀內容');
+        console.log('[PleadingGeneration] 立場資訊:', {
+            stance: pleadingData.caseInfo?.stance,
+            litigationStage: pleadingData.litigationStage,
+            documentType: pleadingData.litigationStage
+        });
+
+        // 🎯 為 Claude 創建優化的提示詞
+        const prompt = createClaudeOptimizedPrompt(pleadingData);
+
+        console.log('[PleadingGeneration] 提示詞長度:', prompt.length);
+
+        // 🚀 調用 Claude Opus 4
+        const response = await anthropic.messages.create({
+            model: CLAUDE_MODEL_PLEADING,
+            max_tokens: 4000, // Claude 支援更長的輸出
+            temperature: 0.1, // 較低的溫度確保一致性
+            messages: [
+                {
+                    role: "user",
+                    content: prompt
+                }
+            ]
+        });
+
+        const pleadingContent = response.content[0].text;
+
+        console.log('[PleadingGeneration] Claude Opus 4 生成完成，內容長度:', pleadingContent.length);
+
+        // 組裝結果
+        const result = {
+            pleadingContent: pleadingContent,
+            generatedAt: new Date().toISOString(),
+            litigationStage: pleadingData.litigationStage,
+            metadata: {
+                model: CLAUDE_MODEL_PLEADING,
+                totalTokens: response.usage?.input_tokens + response.usage?.output_tokens || 0,
+                inputTokens: response.usage?.input_tokens || 0,
+                outputTokens: response.usage?.output_tokens || 0,
+                inputDataSummary: {
+                    caseInfoProvided: !!pleadingData.caseInfo,
+                    claimsCount: pleadingData.claims?.length || 0,
+                    lawsCount: pleadingData.laws?.length || 0,
+                    evidenceCount: pleadingData.evidence?.length || 0,
+                    disputesCount: pleadingData.disputes?.length || 0
+                }
+            },
+            // 添加原始輸入數據的摘要（用於結果節點顯示）
+            inputSummary: {
+                litigationStage: pleadingData.litigationStage,
+                caseType: pleadingData.caseInfo?.caseType,
+                claimsCount: pleadingData.claims?.length || 0,
+                lawsCount: pleadingData.laws?.length || 0,
+                evidenceCount: pleadingData.evidence?.length || 0
+            }
+        };
+
+        return result;
+
+    } catch (error) {
+        console.error('[PleadingGeneration] Claude Opus 4 生成失敗:', error);
+        throw new Error(`Claude 訴狀生成失敗: ${error.message}`);
+    }
+}
+
+/**
+ * 🔄 備用：GPT-4.1 生成訴狀內容（保留作為備用方案）
+ */
+async function generatePleadingContentWithGPT(pleadingData) {
     try {
         console.log('[PleadingGeneration] 開始AI生成訴狀內容');
         console.log('[PleadingGeneration] 立場資訊:', {
@@ -414,7 +663,7 @@ async function generatePleadingContent(pleadingData) {
             documentType: pleadingData.litigationStage
         });
 
-        // 創建提示詞
+        // 🔄 為 GPT 創建提示詞
         const prompt = createPleadingPrompt(pleadingData);
 
         console.log('[PleadingGeneration] 提示詞長度:', prompt.length);
@@ -478,5 +727,7 @@ async function generatePleadingContent(pleadingData) {
 
 export {
     startPleadingGenerationTask,
-    generatePleadingContent
+    generatePleadingContentWithFallback as generatePleadingContent,
+    generatePleadingContentWithClaude,
+    generatePleadingContentWithGPT
 };
