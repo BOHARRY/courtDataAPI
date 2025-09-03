@@ -4,6 +4,7 @@ import { startCommonPointsAnalysis, getAnalysisResult } from '../services/summar
 import { startCasePrecedentAnalysis, startMainstreamAnalysis } from '../services/casePrecedentAnalysisService.js';
 import { startCitationAnalysis, cancelCitationAnalysisTask } from '../services/citationAnalysisService.js';
 import { startWritingAssistantTask } from '../services/writingAssistantService.js';
+import { startPleadingGenerationTask } from '../services/pleadingGenerationService.js';
 
 // 現有的 Controller
 export const analyzeSuccessFactorsController = async (req, res, next) => {
@@ -187,6 +188,63 @@ export const cancelCitationAnalysisController = async (req, res, next) => {
 
     } catch (error) {
         console.error('[CancelCitationAnalysisController] 中止任務失敗:', error);
+        next(error);
+    }
+};
+
+/**
+ * 🎯 訴狀生成控制器
+ * 啟動AI訴狀生成任務
+ */
+export const pleadingGenerationController = async (req, res, next) => {
+    try {
+        const { caseInfo, claims, laws, evidence, disputes, litigationStage } = req.body;
+        const userId = req.user.uid;
+
+        console.log('[PleadingGenerationController] 收到訴狀生成請求');
+        console.log('[PleadingGenerationController] 用戶:', userId);
+        console.log('[PleadingGenerationController] 訴訟階段:', litigationStage);
+
+        // 驗證必要參數
+        if (!caseInfo || !claims || !laws || !evidence) {
+            return res.status(400).json({
+                message: '缺少必要的訴狀生成數據。需要：案件信息、法律主張、法條依據、證據材料。'
+            });
+        }
+
+        // 驗證數據格式
+        if (!Array.isArray(claims) || !Array.isArray(laws) || !Array.isArray(evidence)) {
+            return res.status(400).json({
+                message: '法律主張、法條依據、證據材料必須是陣列格式。'
+            });
+        }
+
+        // 組裝訴狀生成數據
+        const pleadingData = {
+            caseInfo,
+            claims,
+            laws,
+            evidence,
+            disputes: disputes || [],
+            litigationStage: litigationStage || 'complaint',
+            language: 'traditional_chinese',
+            format: 'standard'
+        };
+
+        console.log('[PleadingGenerationController] 數據驗證通過，啟動AI任務');
+
+        // 啟動訴狀生成任務
+        const result = await startPleadingGenerationTask(pleadingData, userId);
+
+        console.log('[PleadingGenerationController] AI任務啟動成功:', result.taskId);
+
+        res.status(202).json({
+            message: '訴狀生成任務已啟動',
+            taskId: result.taskId
+        });
+
+    } catch (error) {
+        console.error('[PleadingGenerationController] 訴狀生成失敗:', error);
         next(error);
     }
 };

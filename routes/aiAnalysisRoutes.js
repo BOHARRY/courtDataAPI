@@ -1,6 +1,6 @@
 // routes/aiAnalysisRoutes.js
 import express from 'express';
-import { analyzeSuccessFactorsController, summarizeCommonPointsController, getAnalysisResultController, casePrecedentAnalysisController, mainstreamAnalysisController, citationAnalysisController, writingAssistantController, cancelCitationAnalysisController } from '../controllers/aiAnalysisController.js';
+import { analyzeSuccessFactorsController, summarizeCommonPointsController, getAnalysisResultController, casePrecedentAnalysisController, mainstreamAnalysisController, citationAnalysisController, writingAssistantController, cancelCitationAnalysisController, pleadingGenerationController } from '../controllers/aiAnalysisController.js';
 import { verifyToken } from '../middleware/auth.js';
 import { checkAndDeductCredits } from '../middleware/credit.js';
 import { CREDIT_COSTS, CREDIT_PURPOSES } from '../config/creditCosts.js';
@@ -104,6 +104,21 @@ router.delete(
     '/citation-analysis/:taskId',
     verifyToken,
     cancelCitationAnalysisController
+);
+
+// 🎯 POST /api/ai/pleading-generation - 訴狀生成
+router.post(
+    '/pleading-generation',
+    verifyToken,
+    checkAndDeductCredits(
+        CREDIT_COSTS.PLEADING_GENERATION, // 使用專用點數成本（6點）
+        CREDIT_PURPOSES.PLEADING_GENERATION,
+        {
+            description: 'AI訴狀生成',
+            requiresActiveSubscription: true
+        }
+    ),
+    pleadingGenerationController
 );
 
 export default router;
