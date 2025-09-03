@@ -278,8 +278,22 @@ function createClaudeOptimizedPrompt(pleadingData) {
     const stanceConsistencyRequirement = actualStance ?
         `\n【立場一致性要求 - 極其重要】\n當事人立場：${actualStance === 'plaintiff' ? '原告' : '被告'}\n書狀類型：${documentType}\n請確保整份文書的語氣、論述角度、法律主張都完全符合${actualStance === 'plaintiff' ? '原告' : '被告'}立場。絕對不可出現立場錯配的內容。\n` : '';
 
-    // 🎯 Claude 專用：更結構化的提示詞格式
+    // 🎯 Claude 專用：更結構化的提示詞格式 + AI 內容標記
     return `你是台灣資深律師，專精各類法律文書撰寫。請根據以下資料，${stanceInstruction}，生成專業的${documentType}草稿。
+
+## 🏷️ AI 內容標記要求（重要）
+為確保透明度，請在生成內容結束後，在文檔最末使用以下標記格式補充所有非原始資料的內容：
+
+- **【AI補充-法條】**：自行引用的法條條文（未在法條清單中的）
+- **【AI補充-事實】**：基於邏輯推論補充的事實描述
+- **【AI補充-論述】**：專業法律分析和論述
+- **【AI補充-程序】**：為符合法院格式要求添加的程序性內容
+- **【AI補充-計算】**：利息、金額等計算邏輯
+
+**標記範例**：
+"依據【AI補充-法條】民法第184條第1項前段規定【/AI補充-法條】，被告應負損害賠償責任。"
+
+這樣律師就能清楚識別哪些內容需要額外驗證。
 
 ## 📋 案件資料
 ${stanceConsistencyRequirement}
@@ -549,6 +563,145 @@ async function executePleadingGenerationInBackground(taskId, pleadingData, userI
 }
 
 /**
+ * 🔍 解析 AI 標記內容，生成透明度報告
+ */
+function parseAIMarkedContent(pleadingContent) {
+    const aiAdditions = {
+        legalArticles: [],      // AI補充的法條
+        facts: [],              // AI補充的事實
+        arguments: [],          // AI補充的論述
+        procedures: [],         // AI補充的程序性內容
+        calculations: [],       // AI補充的計算
+        other: []              // 其他AI補充內容
+    };
+
+    // 定義標記模式
+    const patterns = {
+        legalArticles: /【AI補充-法條】(.*?)【\/AI補充-法條】/g,
+        facts: /【AI補充-事實】(.*?)【\/AI補充-事實】/g,
+        arguments: /【AI補充-論述】(.*?)【\/AI補充-論述】/g,
+        procedures: /【AI補充-程序】(.*?)【\/AI補充-程序】/g,
+        calculations: /【AI補充-計算】(.*?)【\/AI補充-計算】/g
+    };
+
+    // 解析各類標記內容
+    Object.keys(patterns).forEach(category => {
+        const matches = [...pleadingContent.matchAll(patterns[category])];
+        matches.forEach(match => {
+            if (match[1] && match[1].trim()) {
+                aiAdditions[category].push({
+                    content: match[1].trim(),
+                    position: match.index,
+                    fullMatch: match[0]
+                });
+            }
+        });
+    });
+
+    // 計算風險等級
+    const riskLevel = calculateRiskLevel(aiAdditions);
+
+    // 生成律師檢查清單
+    const lawyerChecklist = generateLawyerChecklist(aiAdditions);
+
+    return {
+        aiAdditions,
+        riskLevel,
+        lawyerChecklist,
+        summary: {
+            totalAdditions: Object.values(aiAdditions).reduce((sum, arr) => sum + arr.length, 0),
+            hasLegalArticles: aiAdditions.legalArticles.length > 0,
+            hasFacts: aiAdditions.facts.length > 0,
+            hasArguments: aiAdditions.arguments.length > 0
+        }
+    };
+}
+
+/**
+ * 🎯 計算 AI 補充內容的風險等級
+ */
+function calculateRiskLevel(aiAdditions) {
+    let riskScore = 0;
+
+    // 法條補充風險最高
+    riskScore += aiAdditions.legalArticles.length * 3;
+
+    // 事實補充風險中等
+    riskScore += aiAdditions.facts.length * 2;
+
+    // 論述補充風險較低
+    riskScore += aiAdditions.arguments.length * 1;
+
+    // 程序和計算風險最低
+    riskScore += (aiAdditions.procedures.length + aiAdditions.calculations.length) * 0.5;
+
+    if (riskScore === 0) return 'LOW';
+    if (riskScore <= 3) return 'MEDIUM';
+    if (riskScore <= 6) return 'HIGH';
+    return 'CRITICAL';
+}
+
+/**
+ * 🧹 清理 AI 標記，返回乾淨的訴狀內容
+ */
+function cleanAIMarkers(pleadingContent) {
+    // 移除所有 AI 標記，保留內容
+    const patterns = [
+        /【AI補充-法條】(.*?)【\/AI補充-法條】/g,
+        /【AI補充-事實】(.*?)【\/AI補充-事實】/g,
+        /【AI補充-論述】(.*?)【\/AI補充-論述】/g,
+        /【AI補充-程序】(.*?)【\/AI補充-程序】/g,
+        /【AI補充-計算】(.*?)【\/AI補充-計算】/g
+    ];
+
+    let cleanContent = pleadingContent;
+    patterns.forEach(pattern => {
+        cleanContent = cleanContent.replace(pattern, '$1');
+    });
+
+    return cleanContent;
+}
+
+/**
+ * 🎯 生成律師檢查清單
+ */
+function generateLawyerChecklist(aiAdditions) {
+    const checklist = [];
+
+    if (aiAdditions.legalArticles.length > 0) {
+        checklist.push({
+            priority: 'HIGH',
+            category: '法條驗證',
+            items: aiAdditions.legalArticles.map(item =>
+                `請驗證法條引用：${item.content.substring(0, 50)}...`
+            )
+        });
+    }
+
+    if (aiAdditions.facts.length > 0) {
+        checklist.push({
+            priority: 'MEDIUM',
+            category: '事實查核',
+            items: aiAdditions.facts.map(item =>
+                `請確認事實描述：${item.content.substring(0, 50)}...`
+            )
+        });
+    }
+
+    if (aiAdditions.arguments.length > 0) {
+        checklist.push({
+            priority: 'LOW',
+            category: '論述檢查',
+            items: aiAdditions.arguments.map(item =>
+                `請檢查論述邏輯：${item.content.substring(0, 50)}...`
+            )
+        });
+    }
+
+    return checklist;
+}
+
+/**
  * 🎯 智能 AI 模型選擇：優先 Claude，備用 GPT
  * 提供最佳的法律文件生成體驗
  */
@@ -569,6 +722,20 @@ async function generatePleadingContentWithFallback(pleadingData) {
             // 在結果中標記使用了備用模型
             result.metadata.model = "gpt-4.1 (fallback)";
             result.metadata.fallbackReason = claudeError.message;
+
+            // 🔍 為 GPT 備用方案添加基本透明度報告
+            result.transparencyReport = {
+                aiAdditions: { legalArticles: [], facts: [], arguments: [], procedures: [], calculations: [], other: [] },
+                riskLevel: 'UNKNOWN',
+                lawyerChecklist: [{
+                    priority: 'HIGH',
+                    category: '全面檢查',
+                    items: ['GPT 備用方案生成，建議全面檢查所有內容的準確性']
+                }],
+                summary: { totalAdditions: 0, hasLegalArticles: false, hasFacts: false, hasArguments: false },
+                auditedAt: new Date().toISOString(),
+                auditMethod: 'fallback_basic'
+            };
 
             return result;
 
@@ -615,9 +782,21 @@ async function generatePleadingContentWithClaude(pleadingData) {
 
         console.log('[PleadingGeneration] Claude Opus 4 生成完成，內容長度:', pleadingContent.length);
 
+        // 🔍 解析 AI 標記內容，生成透明度報告
+        const transparencyReport = parseAIMarkedContent(pleadingContent);
+        console.log('[PleadingGeneration] 🔍 AI 內容審查完成:', {
+            totalAdditions: transparencyReport.summary.totalAdditions,
+            riskLevel: transparencyReport.riskLevel,
+            hasLegalArticles: transparencyReport.summary.hasLegalArticles
+        });
+
+        // 🧹 生成乾淨版本（移除標記）
+        const cleanContent = cleanAIMarkers(pleadingContent);
+
         // 組裝結果
         const result = {
-            pleadingContent: pleadingContent,
+            pleadingContent: cleanContent,              // 乾淨版本（供律師使用）
+            pleadingContentWithMarkers: pleadingContent, // 標記版本（供審查使用）
             generatedAt: new Date().toISOString(),
             litigationStage: pleadingData.litigationStage,
             metadata: {
@@ -640,6 +819,15 @@ async function generatePleadingContentWithClaude(pleadingData) {
                 claimsCount: pleadingData.claims?.length || 0,
                 lawsCount: pleadingData.laws?.length || 0,
                 evidenceCount: pleadingData.evidence?.length || 0
+            },
+            // 🔍 新增：AI 內容透明度報告
+            transparencyReport: {
+                aiAdditions: transparencyReport.aiAdditions,
+                riskLevel: transparencyReport.riskLevel,
+                lawyerChecklist: transparencyReport.lawyerChecklist,
+                summary: transparencyReport.summary,
+                auditedAt: new Date().toISOString(),
+                auditMethod: 'structured_marking'
             }
         };
 
