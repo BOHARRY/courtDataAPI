@@ -14,21 +14,43 @@ const openai = new OpenAI({
  */
 
 /**
+ * 🔥 改進：確定文書類型和語氣
+ * 解決當事人立場與文書類型混淆問題
+ */
+function determineDocumentTypeAndTone(litigationStage, stance) {
+    if (litigationStage === 'complaint') {
+        return { type: '起訴狀', tone: 'plaintiff' }; // 起訴狀固定為原告立場
+    }
+    if (litigationStage === 'answer') {
+        return { type: '答辯狀', tone: stance || 'defendant' };
+    }
+    if (litigationStage === 'appeal') {
+        return { type: '上訴狀', tone: stance || 'appellant' };
+    }
+    if (litigationStage === 'brief') {
+        return { type: '準備書狀', tone: stance || 'plaintiff' };
+    }
+
+    // 預設為起訴狀
+    return { type: '起訴狀', tone: 'plaintiff' };
+}
+
+/**
  * 創建訴狀生成 Prompt
- * 使用簡化的提示詞策略，讓AI自由發揮
+ * 🔥 使用固定模板化策略，確保專業格式和法條白名單控制
  */
 function createPleadingPrompt(pleadingData) {
     const { litigationStage, caseInfo, claims, laws, evidence, disputes } = pleadingData;
-    
-    // 訴訟階段標籤
-    const stageLabels = {
-        complaint: '起訴狀',
-        answer: '答辯狀', 
-        appeal: '上訴狀',
-        brief: '準備書狀'
-    };
-    
-    const documentType = stageLabels[litigationStage] || '起訴狀';
+
+    // 🔥 改進：當事人立場與文書類型解耦
+    const documentConfig = determineDocumentTypeAndTone(litigationStage, caseInfo?.stance);
+    const documentType = documentConfig.type;
+    const documentTone = documentConfig.tone;
+
+    // 🔥 改進：法條白名單機制
+    const lawWhitelist = laws && laws.length > 0
+        ? laws.map(law => law.articleNumber || law.title || law.content?.substring(0, 20)).join('、')
+        : '無提供法條';
     
     // 組裝案件資料文本
     let caseDataText = '';
@@ -89,18 +111,41 @@ function createPleadingPrompt(pleadingData) {
         caseDataText += '\n';
     }
     
-    return `作為資深台灣律師，你精通各種法律文書的編寫，請根據這些資料，生成一份專業的${documentType}草稿。
+    // 🔥 改進：固定模板化 Prompt
+    const stanceInstruction = documentTone === 'plaintiff' ? '以原告立場撰寫' :
+                             documentTone === 'defendant' ? '以被告立場撰寫' :
+                             '以當事人立場撰寫';
+
+    return `作為資深台灣律師，你精通各種法律文書的編寫，請根據這些資料，${stanceInstruction}，生成一份專業的${documentType}草稿。
 
 ${caseDataText}
 
-請生成完整的${documentType}內容，包含：
-1. 標準格式的文書標題
-2. 當事人資訊欄位
-3. 請求事項
-4. 事實與理由
-5. 法條依據
-6. 證據清單
-7. 結語和署名欄位
+【重要限制】
+僅得引用以下法條：${lawWhitelist}
+不得新增清單外法條。如認為清單內條文不適合，請在文末「（法律評註）」說明不引用理由，不得另引他條。
+
+【必須嚴格按照以下模板生成，不得省略任何章節】
+
+1. ${documentType}（置中抬頭）
+2. 當事人資料（含送達地址、代理人資訊）
+3. 訴之聲明（編號列點，使用'一、二、三、'格式）
+4. 事實（分段，使用'(一)(二)(三)'格式）
+5. 理由（分段，僅評述提供之法條清單內容）
+6. 法條依據（僅列清單內條文之條名）
+7. 證據清單（證一、證二...格式，附出處/日期）
+8. 此致 ○○地方法院
+9. 具狀人、日期
+
+【格式要求】
+- 第一行：${documentType}（置中）
+- 當事人欄位包含：姓名、身分證字號、住所、送達地址
+- 訴之聲明使用：'一、被告應給付...' '二、訴訟費用由被告負擔'
+- 事實與理由分開撰寫，不要混合
+- 結尾必須包含：'此致 ○○地方法院' + 具狀人 + 日期
+- 證據清單使用：'證一：...' '證二：...' 格式
+
+【日期一致性要求】
+如有交貨日期，請統一以交貨後30日為利息起算日，並在文中明載計算基礎。所有利息起算日期必須一致。
 
 請使用正式的法律文書語言，符合台灣法院實務慣例，生成可以直接使用的專業${documentType}。`;
 }
@@ -209,7 +254,7 @@ async function generatePleadingContent(pleadingData) {
 
         // 調用GPT-4.1
         const response = await openai.chat.completions.create({
-            model: "gpt-4-turbo-preview", // 使用GPT-4.1
+            model: "gpt-4.1",//注意：GPT-4-turbo-preview為舊模型
             messages: [
                 {
                     role: "system",
