@@ -80,10 +80,36 @@ function validateAvailableData(pleadingData) {
 }
 
 /**
- * 🔥 改進：確定文書類型和配置
+ * 🔥 改進：確定文書類型和配置，並驗證立場一致性
  */
-function determineDocumentConfig(litigationStage) {
-    return PLEADING_TEMPLATES[litigationStage] || PLEADING_TEMPLATES.complaint;
+function determineDocumentConfig(litigationStage, actualStance) {
+    const config = PLEADING_TEMPLATES[litigationStage] || PLEADING_TEMPLATES.complaint;
+
+    // 🔥 新增：立場與書狀類型的一致性驗證
+    const validCombinations = {
+        complaint: ['plaintiff'],           // 起訴狀只能是原告
+        answer: ['defendant'],              // 答辯狀只能是被告
+        appeal: ['plaintiff', 'defendant'], // 上訴狀原告被告都可以
+        brief: ['plaintiff', 'defendant']   // 準備書狀原告被告都可以
+    };
+
+    const validStances = validCombinations[litigationStage] || [];
+
+    if (actualStance && !validStances.includes(actualStance)) {
+        console.warn(`[PleadingGeneration] ⚠️ 立場與書狀類型不匹配: ${actualStance} + ${litigationStage}`);
+        // 記錄警告但不阻止生成，讓AI自行判斷
+    }
+
+    return {
+        ...config,
+        // 添加驗證結果到配置中
+        stanceValidation: {
+            isValid: !actualStance || validStances.includes(actualStance),
+            actualStance,
+            validStances,
+            litigationStage
+        }
+    };
 }
 
 /**
@@ -106,9 +132,31 @@ function createInfoLimitationText(availableInfo) {
 }
 
 /**
- * 🔥 改進：根據書狀類型獲取語氣指導
+ * 🔥 改進：根據實際當事人立場和書狀類型獲取語氣指導
  */
-function getStanceInstruction(documentTone) {
+function getStanceInstruction(actualStance, documentTone, litigationStage) {
+    // 優先使用實際當事人立場
+    if (actualStance) {
+        const stanceInstructions = {
+            plaintiff: '以原告立場撰寫，語氣主動積極，強調權利主張',
+            defendant: '以被告立場撰寫，強調駁斥和抗辯，反駁原告主張'
+        };
+
+        // 根據訴訟階段調整語氣細節
+        const stageModifiers = {
+            complaint: actualStance === 'plaintiff' ? '，完整敘述事實和請求' : '',
+            answer: actualStance === 'defendant' ? '，逐項回應並提出抗辯' : '',
+            appeal: '，針對原審判決提出具體錯誤指摘',
+            brief: '，簡潔重點式表達立場'
+        };
+
+        const baseInstruction = stanceInstructions[actualStance] || '以當事人立場撰寫';
+        const stageModifier = stageModifiers[litigationStage] || '';
+
+        return baseInstruction + stageModifier;
+    }
+
+    // 備用：使用書狀類型的語氣（向後兼容）
     const toneInstructions = {
         plaintiff: '以原告立場撰寫，語氣主動積極',
         defendant: '以被告立場撰寫，強調駁斥和抗辯',
@@ -135,8 +183,11 @@ function createTemplateStructure(documentConfig) {
 function createPleadingPrompt(pleadingData) {
     const { litigationStage, caseInfo, claims, laws, evidence, disputes } = pleadingData;
 
-    // 🔥 改進：使用新的書狀配置系統
-    const documentConfig = determineDocumentConfig(litigationStage);
+    // 🔥 改進：提取實際當事人立場
+    const actualStance = caseInfo?.stance;
+
+    // 🔥 改進：使用新的書狀配置系統，包含立場驗證
+    const documentConfig = determineDocumentConfig(litigationStage, actualStance);
     const documentType = documentConfig.type;
     const documentTone = documentConfig.tone;
 
@@ -210,14 +261,18 @@ function createPleadingPrompt(pleadingData) {
     // 🔥 改進：創建資訊限制說明
     const infoLimitations = createInfoLimitationText(availableInfo);
 
-    // 🔥 改進：根據書狀類型調整語氣指導
-    const stanceInstruction = getStanceInstruction(documentTone);
+    // 🔥 改進：根據實際立場和書狀類型調整語氣指導
+    const stanceInstruction = getStanceInstruction(actualStance, documentTone, litigationStage);
 
     // 🔥 改進：創建專門的模板結構
     const templateStructure = createTemplateStructure(documentConfig);
 
-    return `作為資深台灣律師，你精通各種法律文書的編寫，請根據這些資料，${stanceInstruction}，生成一份專業的${documentType}草稿。
+    // 🔥 新增：立場一致性要求
+    const stanceConsistencyRequirement = actualStance ?
+        `\n【立場一致性要求 - 極其重要】\n當事人立場：${actualStance === 'plaintiff' ? '原告' : '被告'}\n書狀類型：${documentType}\n請確保整份文書的語氣、論述角度、法律主張都完全符合${actualStance === 'plaintiff' ? '原告' : '被告'}立場。絕對不可出現立場錯配的內容。\n` : '';
 
+    return `作為資深台灣律師，你精通各種法律文書的編寫，請根據這些資料，${stanceInstruction}，生成一份專業的${documentType}草稿。
+${stanceConsistencyRequirement}
 ${caseDataText}
 
 【絕對禁止事項 - 嚴禁瞎掰】
@@ -244,6 +299,8 @@ ${templateStructure}
 
 【特殊注意事項】
 ${documentConfig.specialRequirements.map(req => `- ${req}`).join('\n')}
+${documentConfig.stanceValidation && !documentConfig.stanceValidation.isValid ?
+    `\n⚠️ 【立場驗證警告】\n檢測到立場與書狀類型可能不匹配，請特別注意確保內容符合實際當事人立場。` : ''}
 
 【${documentConfig.claimFormat}範例格式】
 ${documentConfig.claimExample}
@@ -266,6 +323,7 @@ async function startPleadingGenerationTask(pleadingData, userId) {
         console.log(`[PleadingGeneration] 啟動訴狀生成任務: ${taskId}`);
         console.log(`[PleadingGeneration] 用戶: ${userId}`);
         console.log(`[PleadingGeneration] 訴訟階段: ${pleadingData.litigationStage}`);
+        console.log(`[PleadingGeneration] 當事人立場: ${pleadingData.caseInfo?.stance || '未指定'}`);
 
         // 創建任務記錄
         const taskData = {
@@ -350,6 +408,11 @@ async function executePleadingGenerationInBackground(taskId, pleadingData, userI
 async function generatePleadingContent(pleadingData) {
     try {
         console.log('[PleadingGeneration] 開始AI生成訴狀內容');
+        console.log('[PleadingGeneration] 立場資訊:', {
+            stance: pleadingData.caseInfo?.stance,
+            litigationStage: pleadingData.litigationStage,
+            documentType: pleadingData.litigationStage
+        });
 
         // 創建提示詞
         const prompt = createPleadingPrompt(pleadingData);
