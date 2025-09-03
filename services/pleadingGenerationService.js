@@ -14,25 +14,118 @@ const openai = new OpenAI({
  */
 
 /**
- * 🔥 改進：確定文書類型和語氣
- * 解決當事人立場與文書類型混淆問題
+ * 🔥 改進：四種書狀類型的精確配置
+ * 每種書狀都有專門的模板結構和注意事項
  */
-function determineDocumentTypeAndTone(litigationStage, stance) {
-    if (litigationStage === 'complaint') {
-        return { type: '起訴狀', tone: 'plaintiff' }; // 起訴狀固定為原告立場
+const PLEADING_TEMPLATES = {
+    complaint: {
+        type: '民事起訴狀',
+        tone: 'plaintiff',
+        sections: ['標題', '當事人', '訴之聲明', '事實', '理由', '法條依據', '證據清單', '此致法院、具狀人、日期', '附件與副本數'],
+        specialRequirements: ['利息起算日要明確', '管轄依據要寫清楚', '語氣主動積極，完整敘事'],
+        claimFormat: '訴之聲明',
+        claimExample: '一、被告應給付原告新臺幣○○元及自○年○月○日起至清償日止按年息○%計算之利息。\n二、訴訟費用由被告負擔。'
+    },
+    answer: {
+        type: '民事答辯狀',
+        tone: 'defendant',
+        sections: ['標題', '當事人', '答辯聲明', '逐項答辯事實', '抗辯理由', '法條依據', '證據清單', '此致法院、具狀人、日期'],
+        specialRequirements: ['強調駁斥原告事實、證據', '可加入反訴或備位抗辯', '逐項回應原告主張'],
+        claimFormat: '答辯聲明',
+        claimExample: '一、原告之請求均應駁回。\n二、訴訟費用由原告負擔。'
+    },
+    appeal: {
+        type: '民事上訴狀',
+        tone: 'appellant',
+        sections: ['標題', '當事人', '上訴聲明', '上訴理由', '法條依據', '證據清單', '此致法院、具狀人、日期'],
+        specialRequirements: ['必須註明原審案號', '限期內提出', '針對原審判決的具體錯誤'],
+        claimFormat: '上訴聲明',
+        claimExample: '一、撤銷原判決。\n二、被上訴人應給付上訴人新臺幣○○元及利息。\n三、訴訟費用由被上訴人負擔。'
+    },
+    brief: {
+        type: '民事準備書狀',
+        tone: 'neutral',
+        sections: ['標題', '當事人', '目的', '爭點整理、補充事實', '法條依據', '證據清單', '此致法院、具狀人、日期'],
+        specialRequirements: ['通常簡短重點式', '可用條列式格式', '配合法官要求格式'],
+        claimFormat: '目的',
+        claimExample: '一、補充事實及理由。\n二、整理爭點事項。'
     }
-    if (litigationStage === 'answer') {
-        return { type: '答辯狀', tone: stance || 'defendant' };
-    }
-    if (litigationStage === 'appeal') {
-        return { type: '上訴狀', tone: stance || 'appellant' };
-    }
-    if (litigationStage === 'brief') {
-        return { type: '準備書狀', tone: stance || 'plaintiff' };
-    }
+};
 
-    // 預設為起訴狀
-    return { type: '起訴狀', tone: 'plaintiff' };
+/**
+ * 🔥 改進：檢查可用資訊，避免瞎掰
+ */
+function validateAvailableData(pleadingData) {
+    const { caseInfo, claims, laws, evidence } = pleadingData;
+
+    return {
+        // 基本資訊檢查
+        hasBasicInfo: !!(caseInfo?.caseType && caseInfo?.description),
+        hasAmount: !!(caseInfo?.amount || claims?.some(c => c.amount)),
+        hasSpecificDates: !!(caseInfo?.keyDates || caseInfo?.contractDate),
+        hasCompleteParties: !!(caseInfo?.plaintiff && caseInfo?.defendant),
+        hasCaseNumber: !!(caseInfo?.caseNumber),
+        hasCourtInfo: !!(caseInfo?.court || caseInfo?.courtLevel),
+
+        // 內容檢查
+        hasClaims: !!(claims && claims.length > 0),
+        hasLaws: !!(laws && laws.length > 0),
+        hasEvidence: !!(evidence && evidence.length > 0),
+
+        // 詳細計數
+        claimsCount: claims?.length || 0,
+        lawsCount: laws?.length || 0,
+        evidenceCount: evidence?.length || 0
+    };
+}
+
+/**
+ * 🔥 改進：確定文書類型和配置
+ */
+function determineDocumentConfig(litigationStage) {
+    return PLEADING_TEMPLATES[litigationStage] || PLEADING_TEMPLATES.complaint;
+}
+
+/**
+ * 🔥 改進：創建資訊限制說明文本
+ */
+function createInfoLimitationText(availableInfo) {
+    const limitations = [];
+
+    limitations.push(`- 案件基本資訊：${availableInfo.hasBasicInfo ? '已提供' : '部分缺失'}`);
+    limitations.push(`- 具體金額：${availableInfo.hasAmount ? '已提供' : '未提供，請用○○元'}`);
+    limitations.push(`- 關鍵日期：${availableInfo.hasSpecificDates ? '已提供' : '未提供，請用○年○月○日'}`);
+    limitations.push(`- 當事人完整資料：${availableInfo.hasCompleteParties ? '已提供' : '部分缺失，請適當略過'}`);
+    limitations.push(`- 法院案號：${availableInfo.hasCaseNumber ? '已提供' : '未提供，請用（案號：尚未立案）'}`);
+    limitations.push(`- 法院資訊：${availableInfo.hasCourtInfo ? '已提供' : '未提供，請用○○地方法院'}`);
+    limitations.push(`- 法律主張：${availableInfo.hasClaims ? `已提供${availableInfo.claimsCount}項` : '未提供'}`);
+    limitations.push(`- 法條依據：${availableInfo.hasLaws ? `已提供${availableInfo.lawsCount}條` : '未提供'}`);
+    limitations.push(`- 證據材料：${availableInfo.hasEvidence ? `已提供${availableInfo.evidenceCount}項` : '未提供'}`);
+
+    return limitations.join('\n');
+}
+
+/**
+ * 🔥 改進：根據書狀類型獲取語氣指導
+ */
+function getStanceInstruction(documentTone) {
+    const toneInstructions = {
+        plaintiff: '以原告立場撰寫，語氣主動積極',
+        defendant: '以被告立場撰寫，強調駁斥和抗辯',
+        appellant: '以上訴人立場撰寫，針對原審錯誤',
+        neutral: '以當事人立場撰寫，簡短重點式'
+    };
+
+    return toneInstructions[documentTone] || '以當事人立場撰寫';
+}
+
+/**
+ * 🔥 改進：創建專門的模板結構文本
+ */
+function createTemplateStructure(documentConfig) {
+    return documentConfig.sections.map((section, index) =>
+        `${index + 1}. ${section}`
+    ).join('\n');
 }
 
 /**
@@ -42,10 +135,13 @@ function determineDocumentTypeAndTone(litigationStage, stance) {
 function createPleadingPrompt(pleadingData) {
     const { litigationStage, caseInfo, claims, laws, evidence, disputes } = pleadingData;
 
-    // 🔥 改進：當事人立場與文書類型解耦
-    const documentConfig = determineDocumentTypeAndTone(litigationStage, caseInfo?.stance);
+    // 🔥 改進：使用新的書狀配置系統
+    const documentConfig = determineDocumentConfig(litigationStage);
     const documentType = documentConfig.type;
     const documentTone = documentConfig.tone;
+
+    // 🔥 改進：檢查可用資訊，避免瞎掰
+    const availableInfo = validateAvailableData(pleadingData);
 
     // 🔥 改進：法條白名單機制
     const lawWhitelist = laws && laws.length > 0
@@ -111,43 +207,51 @@ function createPleadingPrompt(pleadingData) {
         caseDataText += '\n';
     }
     
-    // 🔥 改進：固定模板化 Prompt
-    const stanceInstruction = documentTone === 'plaintiff' ? '以原告立場撰寫' :
-                             documentTone === 'defendant' ? '以被告立場撰寫' :
-                             '以當事人立場撰寫';
+    // 🔥 改進：創建資訊限制說明
+    const infoLimitations = createInfoLimitationText(availableInfo);
+
+    // 🔥 改進：根據書狀類型調整語氣指導
+    const stanceInstruction = getStanceInstruction(documentTone);
+
+    // 🔥 改進：創建專門的模板結構
+    const templateStructure = createTemplateStructure(documentConfig);
 
     return `作為資深台灣律師，你精通各種法律文書的編寫，請根據這些資料，${stanceInstruction}，生成一份專業的${documentType}草稿。
 
 ${caseDataText}
+
+【絕對禁止事項 - 嚴禁瞎掰】
+1. 不得編造任何未提供的事實、金額、日期、人名、地址
+2. 不得假設任何法院案號、判決內容、當事人詳細資料
+3. 對於不清楚的資訊，必須使用標準留空用語：
+   - 金額不明：「新臺幣○○元」
+   - 日期不明：「○年○月○日」
+   - 地址不明：「（送達地址略）」
+   - 案號不明：「（案號：尚未立案）」
+   - 法院不明：「○○地方法院」
+   - 當事人資料不全：「（身分證字號略）」
+   - 其他不明：「（詳如附件）」或「（略）」
+
+【可用資訊限制】
+${infoLimitations}
 
 【重要限制】
 僅得引用以下法條：${lawWhitelist}
 不得新增清單外法條。如認為清單內條文不適合，請在文末「（法律評註）」說明不引用理由，不得另引他條。
 
 【必須嚴格按照以下模板生成，不得省略任何章節】
+${templateStructure}
 
-1. ${documentType}（置中抬頭）
-2. 當事人資料（含送達地址、代理人資訊）
-3. 訴之聲明（編號列點，使用'一、二、三、'格式）
-4. 事實（分段，使用'(一)(二)(三)'格式）
-5. 理由（分段，僅評述提供之法條清單內容）
-6. 法條依據（僅列清單內條文之條名）
-7. 證據清單（證一、證二...格式，附出處/日期）
-8. 此致 ○○地方法院
-9. 具狀人、日期
+【特殊注意事項】
+${documentConfig.specialRequirements.map(req => `- ${req}`).join('\n')}
 
-【格式要求】
-- 第一行：${documentType}（置中）
-- 當事人欄位包含：姓名、身分證字號、住所、送達地址
-- 訴之聲明使用：'一、被告應給付...' '二、訴訟費用由被告負擔'
-- 事實與理由分開撰寫，不要混合
-- 結尾必須包含：'此致 ○○地方法院' + 具狀人 + 日期
-- 證據清單使用：'證一：...' '證二：...' 格式
+【${documentConfig.claimFormat}範例格式】
+${documentConfig.claimExample}
 
 【日期一致性要求】
 如有交貨日期，請統一以交貨後30日為利息起算日，並在文中明載計算基礎。所有利息起算日期必須一致。
 
-請使用正式的法律文書語言，符合台灣法院實務慣例，生成可以直接使用的專業${documentType}。`;
+請使用正式的法律文書語言，符合台灣法院實務慣例，生成可以直接使用的專業${documentType}。寧可留空也絕不編造未提供的資訊。`;
 }
 
 /**
