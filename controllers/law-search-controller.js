@@ -91,25 +91,33 @@ export async function searchLawBySemanticController(req, res, next) {
 
     } catch (error) {
         console.error('[LawSearchController] 法條語意搜索失敗:', error);
-        
-        // 根據錯誤類型返回適當的狀態碼
-        if (error.message.includes('向量化失敗')) {
+
+        // 🔧 改善錯誤處理：提供更詳細的錯誤信息，但不中斷服務
+        if (error.message.includes('向量化失敗') || error.message.includes('查詢優化失敗')) {
+            // 這些錯誤應該已經在 service 層被處理並降級，如果到這裡說明降級也失敗了
             return res.status(502).json({
                 success: false,
                 error: 'Service Error',
-                message: '文字向量化服務暫時無法使用，請稍後再試'
-            });
-        }
-        
-        if (error.message.includes('查詢優化失敗')) {
-            return res.status(502).json({
-                success: false,
-                error: 'Service Error',
-                message: 'AI 查詢優化服務暫時無法使用，請稍後再試'
+                message: '搜索服務暫時無法使用，請稍後再試',
+                details: error.message
             });
         }
 
-        next(error);
+        if (error.message.includes('查詢內容至少需要')) {
+            return res.status(400).json({
+                success: false,
+                error: 'Validation Error',
+                message: error.message
+            });
+        }
+
+        // 其他未預期的錯誤
+        console.error('[LawSearchController] 未預期的錯誤:', error);
+        return res.status(500).json({
+            success: false,
+            error: 'Internal Server Error',
+            message: '搜索過程中發生未預期的錯誤，請稍後再試'
+        });
     }
 }
 

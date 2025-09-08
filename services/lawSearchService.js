@@ -77,13 +77,33 @@ ${context ? `額外上下文：「${context}」` : ''}
             }]
         });
 
-        const enhanced = JSON.parse(response.content[0].text);
-        // console.log(`[LawSearch] Claude Opus 4 查詢優化結果:`, enhanced);
+        // 🔧 修復：處理 Claude 返回的 markdown 格式響應
+        let responseText = response.content[0].text.trim();
+
+        // 移除可能的 markdown 代碼塊標記
+        if (responseText.startsWith('```json')) {
+            responseText = responseText.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+        } else if (responseText.startsWith('```')) {
+            responseText = responseText.replace(/^```\s*/, '').replace(/\s*```$/, '');
+        }
+
+        console.log(`[LawSearch] Claude 原始響應:`, response.content[0].text);
+        console.log(`[LawSearch] 清理後的響應:`, responseText);
+
+        const enhanced = JSON.parse(responseText);
+        console.log(`[LawSearch] Claude Opus 4 查詢優化結果:`, enhanced);
         return enhanced;
-        
+
     } catch (error) {
         console.error('[LawSearch] Claude 優化查詢失敗:', error);
-        throw new Error(`查詢優化失敗: ${error.message}`);
+
+        // 🎯 降級機制：返回基本的查詢結構，不中斷搜索流程
+        console.log(`[LawSearch] 使用降級機制，返回基本查詢結構`);
+        return {
+            recommended_articles: [],
+            backup_keywords: [userQuery.trim()],
+            enhanced: userQuery.trim()
+        };
     }
 }
 
@@ -237,7 +257,7 @@ export async function searchLawArticles({ query, code_name, article_number, sear
 }
 
 /**
- * 法條語意搜索
+ * 法條語意搜索 - 包含降級機制
  */
 export async function performSemanticLawSearch(userQuery, context, page, pageSize) {
     const startTime = Date.now();
@@ -248,78 +268,183 @@ export async function performSemanticLawSearch(userQuery, context, page, pageSiz
             throw new Error('查詢內容至少需要 5 個字');
         }
 
-        // 步驟 2: GPT 優化查詢
-        const enhancedData = await enhanceLawQuery(userQuery, context);
+        let enhancedData;
+        let queryVector;
+        let useBasicSearch = false;
 
-        // 步驟 3: 向量化
-        const queryVector = await getEmbedding(enhancedData.enhanced || userQuery);
-
-        // 步驟 4: 構建混合查詢
-        const hybridQuery = buildSemanticLawQuery(queryVector, enhancedData);
-
-        // 步驟 5: 執行搜尋
-        console.log(`[LawSearch] 執行語意搜尋...`);
-
-        const from = (page - 1) * pageSize;
-
-        const searchBody = {
-            knn: hybridQuery.knn,
-            from,
-            size: pageSize,
-            _source: {
-                includes: [
-                    "code_name", "volume", "chapter", "section", "subsection",
-                    "article_number", "article_number_str", "text_original",
-                    "plain_explanation", "typical_scenarios", "synonyms",
-                    "upload_timestamp"
-                ]
-            },
-            highlight: {
-                fields: {
-                    "text_original": {
-                        fragment_size: 200,
-                        number_of_fragments: 2
-                    },
-                    "plain_explanation": {
-                        fragment_size: 150,
-                        number_of_fragments: 1
-                    },
-                    "typical_scenarios": {
-                        fragment_size: 100,
-                        number_of_fragments: 1
-                    }
-                }
-            }
-        };
-
-        if (hybridQuery.query) {
-            searchBody.query = hybridQuery.query;
+        try {
+            // 步驟 2: Claude 優化查詢（可能失敗）
+            enhancedData = await enhanceLawQuery(userQuery, context);
+            console.log(`[LawSearch] Claude 優化成功:`, enhancedData);
+        } catch (optimizationError) {
+            console.warn(`[LawSearch] Claude 優化失敗，使用基本查詢:`, optimizationError.message);
+            enhancedData = {
+                recommended_articles: [],
+                backup_keywords: [userQuery.trim()],
+                enhanced: userQuery.trim()
+            };
         }
 
-        const esResult = await esClient.search({
-            index: ES_INDEX_NAME,
-            body: searchBody
-        });
+        try {
+            // 步驟 3: 向量化（可能失敗）
+            queryVector = await getEmbedding(enhancedData.enhanced || userQuery);
+            console.log(`[LawSearch] 向量化成功，維度: ${queryVector.length}`);
+        } catch (embeddingError) {
+            console.warn(`[LawSearch] 向量化失敗，使用基本文字搜索:`, embeddingError.message);
+            useBasicSearch = true;
+        }
 
-        const articles = esResult.hits.hits.map(hit => formatLawArticle(hit));
+        let searchResult;
+
+        if (useBasicSearch) {
+            // 🎯 降級機制：使用基本文字搜索
+            console.log(`[LawSearch] 執行降級文字搜尋...`);
+            searchResult = await performBasicLawSearch(userQuery, page, pageSize);
+        } else {
+            // 步驟 4: 構建混合查詢
+            const hybridQuery = buildSemanticLawQuery(queryVector, enhancedData);
+
+            // 步驟 5: 執行語意搜尋
+            console.log(`[LawSearch] 執行語意搜尋...`);
+
+            const from = (page - 1) * pageSize;
+
+            const searchBody = {
+                knn: hybridQuery.knn,
+                from,
+                size: pageSize,
+                _source: {
+                    includes: [
+                        "code_name", "volume", "chapter", "section", "subsection",
+                        "article_number", "article_number_str", "text_original",
+                        "plain_explanation", "typical_scenarios", "synonyms",
+                        "upload_timestamp"
+                    ]
+                },
+                highlight: {
+                    fields: {
+                        "text_original": {
+                            fragment_size: 200,
+                            number_of_fragments: 2
+                        },
+                        "plain_explanation": {
+                            fragment_size: 150,
+                            number_of_fragments: 1
+                        },
+                        "typical_scenarios": {
+                            fragment_size: 100,
+                            number_of_fragments: 1
+                        }
+                    }
+                }
+            };
+
+            if (hybridQuery.query) {
+                searchBody.query = hybridQuery.query;
+            }
+
+            const esResult = await esClient.search({
+                index: ES_INDEX_NAME,
+                body: searchBody
+            });
+
+            const articles = esResult.hits.hits.map(hit => formatLawArticle(hit));
+
+            searchResult = {
+                articles,
+                total: esResult.hits.hits.length, // KNN 搜索的總數
+                page,
+                pageSize,
+                enhancedQuery: enhancedData,
+                searchTime: esResult.took,
+                searchType: 'semantic'
+            };
+        }
 
         const processingTime = Date.now() - startTime;
-        console.log(`[LawSearch] 語意搜尋完成，耗時 ${processingTime}ms，找到 ${articles.length} 條結果`);
+        console.log(`[LawSearch] 搜尋完成，耗時 ${processingTime}ms，找到 ${searchResult.articles.length} 條結果`);
 
         return {
-            articles,
-            total: esResult.hits.hits.length, // KNN 搜索的總數
-            page,
-            pageSize,
-            enhancedQuery: enhancedData,
-            searchTime: esResult.took,
+            ...searchResult,
             processingTime
         };
 
     } catch (error) {
         console.error('[LawSearch] 語意搜尋失敗:', error);
-        throw error;
+
+        // 🎯 最終降級機制：如果所有方法都失敗，嘗試基本搜索
+        try {
+            console.log(`[LawSearch] 嘗試最終降級搜索...`);
+            const fallbackResult = await performBasicLawSearch(userQuery, page, pageSize);
+            const processingTime = Date.now() - startTime;
+
+            return {
+                ...fallbackResult,
+                processingTime,
+                searchType: 'fallback',
+                warning: '部分搜索功能暫時無法使用，已使用基本搜索'
+            };
+        } catch (fallbackError) {
+            console.error('[LawSearch] 最終降級搜索也失敗:', fallbackError);
+            throw new Error('搜索服務暫時無法使用，請稍後再試');
+        }
     }
+}
+
+/**
+ * 基本法條搜索（降級機制）
+ */
+async function performBasicLawSearch(query, page, pageSize) {
+    const from = (page - 1) * pageSize;
+
+    const searchBody = {
+        query: {
+            multi_match: {
+                query: query,
+                fields: ["text_original^3", "plain_explanation^2", "typical_scenarios^1.5"],
+                type: "best_fields",
+                fuzziness: "AUTO"
+            }
+        },
+        from,
+        size: pageSize,
+        _source: {
+            includes: [
+                "code_name", "volume", "chapter", "section", "subsection",
+                "article_number", "article_number_str", "text_original",
+                "plain_explanation", "typical_scenarios", "synonyms",
+                "upload_timestamp"
+            ]
+        },
+        highlight: {
+            fields: {
+                "text_original": {
+                    fragment_size: 200,
+                    number_of_fragments: 2
+                },
+                "plain_explanation": {
+                    fragment_size: 150,
+                    number_of_fragments: 1
+                }
+            }
+        }
+    };
+
+    const esResult = await esClient.search({
+        index: ES_INDEX_NAME,
+        body: searchBody
+    });
+
+    const articles = esResult.hits.hits.map(hit => formatLawArticle(hit));
+
+    return {
+        articles,
+        total: esResult.hits.total.value,
+        page,
+        pageSize,
+        searchTime: esResult.took,
+        searchType: 'basic'
+    };
 }
 
 /**
