@@ -64,6 +64,15 @@ export function aggregateJudgeCaseData(esHits, judgeName) {
     const now = new Date();
     const threeYearsAgoDate = new Date(now.getFullYear() - 3, now.getMonth(), now.getDate());
 
+    // 為了調試，也計算 5 年前的日期
+    const fiveYearsAgoDate = new Date(now.getFullYear() - 5, now.getMonth(), now.getDate());
+
+    // 臨時調試：記錄日期計算和所有案件的日期
+    console.log(`[DEBUG] 當前日期: ${now.toISOString().split('T')[0]}`);
+    console.log(`[DEBUG] 三年前: ${threeYearsAgoDate.toISOString().split('T')[0]}`);
+    console.log(`[DEBUG] 五年前: ${fiveYearsAgoDate.toISOString().split('T')[0]}`);
+    console.log(`[DEBUG] 處理法官 ${judgeName} 的 ${esHits.length} 個案件`);
+
     const caseTypeCounter = {};
     const verdictCounter = {};
     const legalBasisCounter = {};
@@ -76,9 +85,12 @@ export function aggregateJudgeCaseData(esHits, judgeName) {
     let latestValidDate = '00000000'; // YYYYMMDD 格式，用於比較
     let courtForLatestDate = analytics.latestCourtName; // 使用預設值初始化
 
-    esHits.forEach(hit => {
+    esHits.forEach((hit, index) => {
         const source = hit._source;
         if (!source) return;
+
+        // 臨時調試：記錄每個案件的基本信息
+        console.log(`[DEBUG] 案件 ${index + 1}: JID=${source.JID}, JDATE=${source.JDATE}, JTITLE=${source.JTITLE?.substring(0, 30)}...`);
 
         // 1. 近三年案件數 (使用 JDATE)
         if (source.JDATE && typeof source.JDATE === 'string' && source.JDATE.length === 8) {
@@ -93,8 +105,15 @@ export function aggregateJudgeCaseData(esHits, judgeName) {
                 const month = parseInt(source.JDATE.substring(4, 6), 10) - 1; // JS 月份 0-11
                 const day = parseInt(source.JDATE.substring(6, 8), 10);
                 const caseDate = new Date(year, month, day);
-                if (!isNaN(caseDate.getTime()) && caseDate >= threeYearsAgoDate) {
+                const isRecent = !isNaN(caseDate.getTime()) && caseDate >= threeYearsAgoDate;
+
+                // 臨時調試：記錄日期分析
+                const isFiveYearRecent = !isNaN(caseDate.getTime()) && caseDate >= fiveYearsAgoDate;
+                console.log(`[DEBUG] JDATE=${source.JDATE} -> ${caseDate.toISOString().split('T')[0]}, 近三年=${isRecent}, 近五年=${isFiveYearRecent}`);
+
+                if (isRecent) {
                     analytics.caseStats.recentCases++;
+                    console.log(`[DEBUG] 近三年案件數累加至: ${analytics.caseStats.recentCases}`);
                 }
             } catch (e) {
                 console.warn(`[aggregateJudgeCaseData] Error parsing JDATE: ${source.JDATE} for JID ${source.JID || 'N/A'}`, e);
@@ -298,6 +317,7 @@ export function aggregateJudgeCaseData(esHits, judgeName) {
         });
 
     console.log(`[aggregateJudgeCaseData] 法官 ${judgeName} 最新服務法院: ${analytics.latestCourtName}`);
+    console.log(`[DEBUG] 最終統計 - 總案件數: ${analytics.caseStats.totalCases}, 近三年案件數: ${analytics.caseStats.recentCases}`);
     // console.log("[aggregateJudgeCaseData] Final civil analysis entry:", JSON.stringify(analytics.caseTypeAnalysis.civil, null, 2));
     return analytics;
 }
