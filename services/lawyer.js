@@ -170,9 +170,27 @@ function analyzeAndStructureLawyerData(esHits, lawyerName, esAggregations) {
 
     const { neutralOutcomeCode, description } = getDetailedResult(perfVerdictText, mainType, source, lawyerPerfObject); // utils/case-analyzer
 
-    // JDATE_num 用於統計近三年案件
-    if (source.JDATE_num && parseInt(source.JDATE_num, 10) >= threeYearsAgoNum) {
+    // 修正日期格式處理 - 支持多種格式
+    let caseDate = null;
+    if (source.JDATE_num && typeof source.JDATE_num === 'string' && source.JDATE_num.length === 8) {
+      // 如果有 JDATE_num 且格式正確 (YYYYMMDD)
+      caseDate = parseInt(source.JDATE_num, 10);
+    } else if (source.JDATE && typeof source.JDATE === 'string') {
+      // 處理 JDATE 字段的不同格式
+      if (source.JDATE.length === 8) {
+        // YYYYMMDD 格式
+        caseDate = parseInt(source.JDATE, 10);
+      } else if (source.JDATE.length === 10) {
+        // YYYY-MM-DD 格式，轉換為 YYYYMMDD
+        const dateStr = source.JDATE.replace(/-/g, '');
+        caseDate = parseInt(dateStr, 10);
+      }
+    }
+
+    // 統計近三年案件
+    if (caseDate && !isNaN(caseDate) && caseDate >= threeYearsAgoNum) {
       resultData.stats.totalCasesLast3Years++;
+      console.log(`[Lawyer Service] 計入近三年案件: ${source.JID}, 日期: ${caseDate}, 閾值: ${threeYearsAgoNum}`);
     }
 
     if (source.case_type) {
@@ -186,7 +204,7 @@ function analyzeAndStructureLawyerData(esHits, lawyerName, esAggregations) {
       court: source.court,
       jcase: source.JCASE,
       date: source.JDATE, // YYYY/MM/DD 格式
-      dateNum: source.JDATE_num, // YYYYMMDD 數字格式
+      dateNum: caseDate, // 統一的 YYYYMMDD 數字格式
       cause: source.cause || '未指定',
       result: description, // 來自 getDetailedResult 的描述
       // originalVerdict: source.verdict, // 可選，用於調試或前端顯示
