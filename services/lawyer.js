@@ -28,15 +28,7 @@ export async function searchLawyerData(lawyerName) {
         bool: {
           should: [
             { term: { "lawyers.exact": lawyerNameExact } },      // 查主要律師 (精確)
-            { term: { "lawyersdef.exact": lawyerNameExact } },   // 查辯護律師 (精確)
-            {
-              nested: {                                       // 查參與案件的律師
-                path: "lawyerperformance",
-                query: {
-                  term: { "lawyerperformance.lawyer.exact": lawyerNameExact }
-                }
-              }
-            }
+            { term: { "lawyersdef.exact": lawyerNameExact } }    // 查辯護律師 (精確)
           ],
           minimum_should_match: 1
         }
@@ -50,8 +42,8 @@ export async function searchLawyerData(lawyerName) {
       body: esQueryBody, // 將 query 放在 body 下
       size: 300,
       _source: [ // 明確指定需要的欄位，減少數據傳輸
-        "JID", "court", "JTITLE", "JDATE", "JDATE_num", "case_type", "verdict", "verdict_type",
-        "cause", "lawyers", "lawyersdef", "JCASE", "lawyerperformance", "is_ruling"
+        "JID", "court", "JTITLE", "JDATE", "JDATE_num", "case_type", "verdict_type",
+        "cause", "lawyers", "lawyersdef", "JCASE", "is_ruling", "lawyer_assessment", "position_based_analysis"
         // 確保所有 analyzeLawyerData 和其輔助函數需要的欄位都在這裡
       ]
     });
@@ -112,22 +104,7 @@ function analyzeAndStructureLawyerData(esHits, lawyerName, esAggregations) {
     `${now.getFullYear() - 3}${("0" + (now.getMonth() + 1)).slice(-2)}${("0" + now.getDate()).slice(-2)}`,
     10
   );
-  resultData.cases.forEach(caseItem => {
-    // 確保使用正確的日期欄位和格式
-    let caseDate;
-    if (caseItem.dateNum) {
-      caseDate = parseInt(caseItem.dateNum, 10);
-    } else if (caseItem.date) {
-      // 嘗試從不同格式轉換（包括 YYYY/MM/DD）
-      const dateStr = caseItem.date.replace(/\//g, '');
-      caseDate = parseInt(dateStr, 10);
-    }
-
-    if (caseDate && !isNaN(caseDate) && caseDate >= threeYearsAgoNum) {
-      resultData.stats.totalCasesLast3Years++;
-      console.log(`計入近三年案件: ${caseItem.id}, 日期: ${caseDate}, 閾值: ${threeYearsAgoNum}`);
-    }
-  });
+  // 這個循環會在後面的 map 操作中處理，這裡先移除避免重複
   const allCaseTypesCounter = {}; // 用於統計案件類型數量
 
   resultData.cases = esHits.map(hit => {
@@ -138,15 +115,57 @@ function analyzeAndStructureLawyerData(esHits, lawyerName, esAggregations) {
     let perfVerdictText = null;
     let lawyerPerfObject = null;
 
-    const performances = source.lawyerperformance;
-    if (performances && Array.isArray(performances)) {
-      // 精確匹配律師名稱，或包含該律師 (如果 lawyerperformance.lawyer 欄位可能有多個律師名)
-      const perf = performances.find(p => p.lawyer && p.lawyer.includes(lawyerName)); // 假設 lawyerperformance.lawyer 是字串
-      if (perf) {
-        lawyerPerfObject = perf;
-        sideFromPerf = getSideFromPerformance(perf); // utils/case-analyzer
-        perfVerdictText = perf.verdict;
+    // 根據律師在 lawyers 或 lawyersdef 字段中的位置判斷立場
+    if (source.lawyers && Array.isArray(source.lawyers) && source.lawyers.includes(lawyerName)) {
+      sideFromPerf = 'plaintiff'; // 原告方律師
+
+      // 構建律師表現對象，包含多種評估信息
+      lawyerPerfObject = {
+        side: 'plaintiff',
+        verdict: source.verdict_type
+      };
+
+      // 如果有律師評估，使用原告方的評估
+      if (source.lawyer_assessment && source.lawyer_assessment.plaintiff_side_comment) {
+        perfVerdictText = source.lawyer_assessment.plaintiff_side_comment;
+        lawyerPerfObject.assessment = source.lawyer_assessment.plaintiff_side_comment;
       }
+
+      // 如果有立場分析，使用原告方的結果
+      if (source.position_based_analysis && source.position_based_analysis.plaintiff_perspective) {
+        lawyerPerfObject.overall_result = source.position_based_analysis.plaintiff_perspective.overall_result;
+        if (!perfVerdictText) {
+          perfVerdictText = source.position_based_analysis.plaintiff_perspective.overall_result;
+        }
+      }
+
+    } else if (source.lawyersdef && Array.isArray(source.lawyersdef) && source.lawyersdef.includes(lawyerName)) {
+      sideFromPerf = 'defendant'; // 被告方律師
+
+      // 構建律師表現對象，包含多種評估信息
+      lawyerPerfObject = {
+        side: 'defendant',
+        verdict: source.verdict_type
+      };
+
+      // 如果有律師評估，使用被告方的評估
+      if (source.lawyer_assessment && source.lawyer_assessment.defendant_side_comment) {
+        perfVerdictText = source.lawyer_assessment.defendant_side_comment;
+        lawyerPerfObject.assessment = source.lawyer_assessment.defendant_side_comment;
+      }
+
+      // 如果有立場分析，使用被告方的結果
+      if (source.position_based_analysis && source.position_based_analysis.defendant_perspective) {
+        lawyerPerfObject.overall_result = source.position_based_analysis.defendant_perspective.overall_result;
+        if (!perfVerdictText) {
+          perfVerdictText = source.position_based_analysis.defendant_perspective.overall_result;
+        }
+      }
+    }
+
+    // 如果沒有具體的律師評估，使用案件的整體判決作為參考
+    if (!perfVerdictText) {
+      perfVerdictText = source.verdict_type || '結果未明';
     }
 
     const { neutralOutcomeCode, description } = getDetailedResult(perfVerdictText, mainType, source, lawyerPerfObject); // utils/case-analyzer
