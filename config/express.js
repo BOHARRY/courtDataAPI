@@ -8,7 +8,7 @@ const app = express();
 
 // CORS 配置
 // 定義允許的來源白名單
-const allowedOrigins = [
+const baseAllowedOrigins = [
   'http://localhost:3000', // 開發環境
   'http://localhost:3001', // 另一個開發環境
   'http://localhost:3002', // 另一個開發環境
@@ -19,8 +19,19 @@ const allowedOrigins = [
   'http://127.0.0.1:3002', // 本地 IP
   'http://127.0.0.1:5000', // 本地 IP
   'http://127.0.0.1:5173', // 本地 IP
-  'https://frontend-court-search-web.vercel.app', // 生產環境 (假設)
+  'https://frontend-court-search-web.vercel.app', // 正式環境前端
 ];
+
+const envAllowedOrigins = [
+  process.env.APP_BASE_URL,
+  process.env.STABLE_APP_BASE_URL,
+  process.env.CORS_ADDITIONAL_ORIGINS
+]
+  .filter(Boolean)
+  .flatMap((value) => value.split(',').map(origin => origin.trim()))
+  .filter(Boolean);
+
+const allowedOrigins = Array.from(new Set([...baseAllowedOrigins, ...envAllowedOrigins]));
 
 app.use(cors({
   origin: function (origin, callback) {
@@ -34,7 +45,7 @@ app.use(cors({
       }
     }
 
-    if (allowedOrigins.indexOf(origin) === -1) {
+    if (!allowedOrigins.includes(origin)) {
       const msg = '此來源的 CORS 政策不允許存取: ' + origin;
       console.log(`CORS 錯誤: ${msg}`);
       return callback(new Error(msg), false);
@@ -45,7 +56,6 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Restore-Mode'],
   credentials: true // 允許帶有憑證的請求
 }));
-
 // 解析 JSON body，並增加大小限制
 app.use(express.json({ limit: '50mb' }));
 // 解析 URL-encoded body，並增加大小限制
