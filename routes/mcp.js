@@ -11,6 +11,78 @@ const openai = new OpenAI({
 });
 
 /**
+ * POST /api/mcp/parse-intent
+ * 使用 OpenAI 識別用戶意圖
+ */
+router.post('/parse-intent', verifyToken, async (req, res) => {
+    try {
+        const { question, currentJudge } = req.body;
+
+        if (!question) {
+            return res.status(400).json({
+                error: '缺少問題內容'
+            });
+        }
+
+        const prompt = `你是法律 AI 助手的意圖識別器。請分析用戶問題並提取結構化參數。
+
+當前上下文:
+- 已分析法官: ${currentJudge?.name || '無'}
+
+用戶問題: "${question}"
+
+請以 JSON 格式返回:
+{
+  "intent": "search_cases" | "analyze_judge" | "compare_judges" | "unknown",
+  "judge_name": "法官姓名 (如果問題中沒有提到,使用當前法官)",
+  "case_type": "案由關鍵字 (如: 交通、侵權、債務)",
+  "limit": 數量 (預設20),
+  "additional_filters": {}
+}
+
+案由關鍵字提取規則:
+- "交通事故"、"車禍"、"交通" → "交通"
+- "侵權行為"、"侵權" → "侵權"
+- "債務"、"清償債務" → "債務"
+- "詐欺"、"詐騙" → "詐欺"
+- "損害賠償" → "損害賠償"
+- 如果沒有明確案由,返回 null
+
+意圖判斷規則:
+- 如果問題是要搜尋/查看/顯示判決書 → "search_cases"
+- 如果問題是要分析新的法官 → "analyze_judge"
+- 如果問題是要比較多位法官 → "compare_judges"
+- 其他 → "unknown"
+
+只返回 JSON,不要其他文字。`;
+
+        console.log('[MCP] 調用 OpenAI 識別意圖:', question);
+
+        const completion = await openai.chat.completions.create({
+            model: 'gpt-4o-mini',
+            messages: [{ role: 'user', content: prompt }],
+            temperature: 0.1,
+            response_format: { type: "json_object" }
+        });
+
+        const intent = JSON.parse(completion.choices[0].message.content);
+
+        console.log('[MCP] 意圖識別結果:', intent);
+
+        res.json({
+            success: true,
+            intent
+        });
+    } catch (error) {
+        console.error('[MCP] 意圖識別失敗:', error);
+        res.status(500).json({
+            error: '意圖識別失敗',
+            details: error.message
+        });
+    }
+});
+
+/**
  * POST /api/mcp/judge-insights
  * 使用 OpenAI 生成法官分析的訴訟建議
  */
