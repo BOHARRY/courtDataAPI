@@ -1,0 +1,1436 @@
+{
+  "mappings": {
+    "properties": {
+      "CourtInsightsEND": {
+        "type": "keyword",
+        "index": false
+      },
+      "CourtInsightsStart": {
+        "type": "keyword",
+        "index": false
+      },
+      "JCASE": {
+        "type": "keyword"
+      },
+      "JDATE": {
+        "type": "date"
+      },
+      "JFULL": {
+        "type": "text",
+        "fields": {
+          "legal": {
+            "type": "text",
+            "analyzer": "legal_search_analyzer"
+          }
+        },
+        "analyzer": "chinese_combined_analyzer"
+      },
+      "JID": {
+        "type": "keyword"
+      },
+      "JNO": {
+        "type": "keyword"
+      },
+      "JPDF": {
+        "type": "keyword"
+      },
+      "JTITLE": {
+        "type": "text",
+        "fields": {
+          "edge_ngram": {
+            "type": "text",
+            "analyzer": "edge_ngram_analyzer"
+          },
+          "exact": {
+            "type": "keyword"
+          },
+          "legal": {
+            "type": "text",
+            "analyzer": "legal_search_analyzer"
+          }
+        },
+        "analyzer": "chinese_combined_analyzer"
+      },
+      "JYEAR": {
+        "type": "keyword"
+      },
+      "SCORE": {
+        "type": "integer"
+      },
+      "appeal_party_lawyers": {
+        "type": "nested",
+        "properties": {
+          "appeal_role": {
+            "type": "keyword"
+          },
+          "lawyers": {
+            "type": "text",
+            "fields": {
+              "exact": {
+                "type": "keyword"
+              }
+            },
+            "analyzer": "edge_ngram_analyzer"
+          },
+          "party": {
+            "type": "text",
+            "fields": {
+              "exact": {
+                "type": "keyword"
+              }
+            },
+            "analyzer": "edge_ngram_analyzer"
+          },
+          "party_type": {
+            "type": "keyword"
+          }
+        }
+      },
+      "appellant": {
+        "type": "text",
+        "fields": {
+          "exact": {
+            "type": "keyword"
+          }
+        },
+        "analyzer": "edge_ngram_analyzer"
+      },
+      "appellant_lawyers": {
+        "type": "text",
+        "fields": {
+          "exact": {
+            "type": "keyword"
+          }
+        },
+        "analyzer": "edge_ngram_analyzer"
+      },
+      "appellee": {
+        "type": "text",
+        "fields": {
+          "exact": {
+            "type": "keyword"
+          }
+        },
+        "analyzer": "edge_ngram_analyzer"
+      },
+      "appellee_lawyers": {
+        "type": "text",
+        "fields": {
+          "exact": {
+            "type": "keyword"
+          }
+        },
+        "analyzer": "edge_ngram_analyzer"
+      },
+      "case_type": {
+        "type": "keyword"
+      },
+      "challenged_administrative_action": {
+        "type": "text",
+        "fields": {
+          "legal": {
+            "type": "text",
+            "analyzer": "legal_search_analyzer"
+          }
+        },
+        "analyzer": "chinese_combined_analyzer"
+      },
+      "charges": {
+        "type": "keyword"
+      },
+      "citable_paragraphs": {
+        "type": "nested",
+        "properties": {
+          "para_id": {
+            "type": "keyword"
+          },
+          "paragraph_text": {
+            "type": "text",
+            "fields": {
+              "legal": {
+                "type": "text",
+                "analyzer": "legal_search_analyzer"
+              }
+            },
+            "analyzer": "chinese_combined_analyzer"
+          }
+        }
+      },
+      "citation_analysis": {
+        "type": "nested",
+        "properties": {
+          "citation": {
+            "type": "keyword"
+          },
+          "location": {
+            "type": "text",
+            "fields": {
+              "keyword": {
+                "type": "keyword",
+                "ignore_above": 256
+              }
+            }
+          },
+          "occurrences": {
+            "type": "nested",
+            "properties": {
+              "location": {
+                "type": "keyword"
+              },
+              "occurrences": {
+                "properties": {
+                  "location": {
+                    "type": "text",
+                    "fields": {
+                      "keyword": {
+                        "type": "keyword",
+                        "ignore_above": 256
+                      }
+                    }
+                  },
+                  "paragraph": {
+                    "type": "text",
+                    "fields": {
+                      "keyword": {
+                        "type": "keyword",
+                        "ignore_above": 256
+                      }
+                    }
+                  },
+                  "reason": {
+                    "type": "text",
+                    "fields": {
+                      "keyword": {
+                        "type": "keyword",
+                        "ignore_above": 256
+                      }
+                    }
+                  }
+                }
+              },
+              "paragraph": {
+                "type": "text",
+                "analyzer": "chinese_combined_analyzer"
+              },
+              "reason": {
+                "type": "text",
+                "analyzer": "chinese_combined_analyzer"
+              }
+            }
+          },
+          "reason": {
+            "type": "text",
+            "fields": {
+              "keyword": {
+                "type": "keyword",
+                "ignore_above": 256
+              }
+            }
+          },
+          "最高法院106年度台上字第2054號": {
+            "properties": {
+              "location": {
+                "type": "text",
+                "fields": {
+                  "keyword": {
+                    "type": "keyword",
+                    "ignore_above": 256
+                  }
+                }
+              },
+              "paragraph": {
+                "type": "text",
+                "fields": {
+                  "keyword": {
+                    "type": "keyword",
+                    "ignore_above": 256
+                  }
+                }
+              },
+              "reason": {
+                "type": "text",
+                "fields": {
+                  "keyword": {
+                    "type": "keyword",
+                    "ignore_above": 256
+                  }
+                }
+              }
+            }
+          },
+          "最高法院107年度台上字第2467號": {
+            "properties": {
+              "location": {
+                "type": "text",
+                "fields": {
+                  "keyword": {
+                    "type": "keyword",
+                    "ignore_above": 256
+                  }
+                }
+              },
+              "paragraph": {
+                "type": "text",
+                "fields": {
+                  "keyword": {
+                    "type": "keyword",
+                    "ignore_above": 256
+                  }
+                }
+              },
+              "reason": {
+                "type": "text",
+                "fields": {
+                  "keyword": {
+                    "type": "keyword",
+                    "ignore_above": 256
+                  }
+                }
+              }
+            }
+          },
+          "最高法院109年度台上字第1944號": {
+            "properties": {
+              "location": {
+                "type": "text",
+                "fields": {
+                  "keyword": {
+                    "type": "keyword",
+                    "ignore_above": 256
+                  }
+                }
+              },
+              "paragraph": {
+                "type": "text",
+                "fields": {
+                  "keyword": {
+                    "type": "keyword",
+                    "ignore_above": 256
+                  }
+                }
+              },
+              "reason": {
+                "type": "text",
+                "fields": {
+                  "keyword": {
+                    "type": "keyword",
+                    "ignore_above": 256
+                  }
+                }
+              }
+            }
+          },
+          "最高法院111年度台上字第2619號": {
+            "properties": {
+              "location": {
+                "type": "text",
+                "fields": {
+                  "keyword": {
+                    "type": "keyword",
+                    "ignore_above": 256
+                  }
+                }
+              },
+              "paragraph": {
+                "type": "text",
+                "fields": {
+                  "keyword": {
+                    "type": "keyword",
+                    "ignore_above": 256
+                  }
+                }
+              },
+              "reason": {
+                "type": "text",
+                "fields": {
+                  "keyword": {
+                    "type": "keyword",
+                    "ignore_above": 256
+                  }
+                }
+              }
+            }
+          },
+          "最高法院114年度台上字第471號": {
+            "properties": {
+              "location": {
+                "type": "text",
+                "fields": {
+                  "keyword": {
+                    "type": "keyword",
+                    "ignore_above": 256
+                  }
+                }
+              },
+              "paragraph": {
+                "type": "text",
+                "fields": {
+                  "keyword": {
+                    "type": "keyword",
+                    "ignore_above": 256
+                  }
+                }
+              },
+              "reason": {
+                "type": "text",
+                "fields": {
+                  "keyword": {
+                    "type": "keyword",
+                    "ignore_above": 256
+                  }
+                }
+              }
+            }
+          },
+          "最高法院61年台上字第1695號判例": {
+            "properties": {
+              "location": {
+                "type": "text",
+                "fields": {
+                  "keyword": {
+                    "type": "keyword",
+                    "ignore_above": 256
+                  }
+                }
+              },
+              "paragraph": {
+                "type": "text",
+                "fields": {
+                  "keyword": {
+                    "type": "keyword",
+                    "ignore_above": 256
+                  }
+                }
+              },
+              "reason": {
+                "type": "text",
+                "fields": {
+                  "keyword": {
+                    "type": "keyword",
+                    "ignore_above": 256
+                  }
+                }
+              }
+            }
+          },
+          "最高法院94年度台上字第1094號": {
+            "properties": {
+              "location": {
+                "type": "text",
+                "fields": {
+                  "keyword": {
+                    "type": "keyword",
+                    "ignore_above": 256
+                  }
+                }
+              },
+              "paragraph": {
+                "type": "text",
+                "fields": {
+                  "keyword": {
+                    "type": "keyword",
+                    "ignore_above": 256
+                  }
+                }
+              },
+              "reason": {
+                "type": "text",
+                "fields": {
+                  "keyword": {
+                    "type": "keyword",
+                    "ignore_above": 256
+                  }
+                }
+              }
+            }
+          },
+          "最高法院98年度台上字第2014號判決": {
+            "properties": {
+              "occurrences": {
+                "properties": {
+                  "location": {
+                    "type": "text",
+                    "fields": {
+                      "keyword": {
+                        "type": "keyword",
+                        "ignore_above": 256
+                      }
+                    }
+                  },
+                  "paragraph": {
+                    "type": "text",
+                    "fields": {
+                      "keyword": {
+                        "type": "keyword",
+                        "ignore_above": 256
+                      }
+                    }
+                  },
+                  "reason": {
+                    "type": "text",
+                    "fields": {
+                      "keyword": {
+                        "type": "keyword",
+                        "ignore_above": 256
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "最高法院98年度台上字第2469號判決": {
+            "properties": {
+              "occurrences": {
+                "properties": {
+                  "location": {
+                    "type": "text",
+                    "fields": {
+                      "keyword": {
+                        "type": "keyword",
+                        "ignore_above": 256
+                      }
+                    }
+                  },
+                  "paragraph": {
+                    "type": "text",
+                    "fields": {
+                      "keyword": {
+                        "type": "keyword",
+                        "ignore_above": 256
+                      }
+                    }
+                  },
+                  "reason": {
+                    "type": "text",
+                    "fields": {
+                      "keyword": {
+                        "type": "keyword",
+                        "ignore_above": 256
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "最高法院98年度台上字第2496號": {
+            "properties": {
+              "location": {
+                "type": "text",
+                "fields": {
+                  "keyword": {
+                    "type": "keyword",
+                    "ignore_above": 256
+                  }
+                }
+              },
+              "paragraph": {
+                "type": "text",
+                "fields": {
+                  "keyword": {
+                    "type": "keyword",
+                    "ignore_above": 256
+                  }
+                }
+              },
+              "reason": {
+                "type": "text",
+                "fields": {
+                  "keyword": {
+                    "type": "keyword",
+                    "ignore_above": 256
+                  }
+                }
+              }
+            }
+          },
+          "最高法院99年度台上字第2255號": {
+            "properties": {
+              "location": {
+                "type": "text",
+                "fields": {
+                  "keyword": {
+                    "type": "keyword",
+                    "ignore_above": 256
+                  }
+                }
+              },
+              "paragraph": {
+                "type": "text",
+                "fields": {
+                  "keyword": {
+                    "type": "keyword",
+                    "ignore_above": 256
+                  }
+                }
+              },
+              "reason": {
+                "type": "text",
+                "fields": {
+                  "keyword": {
+                    "type": "keyword",
+                    "ignore_above": 256
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "citation_analysis_date": {
+        "type": "date"
+      },
+      "citations": {
+        "type": "keyword"
+      },
+      "court": {
+        "type": "text",
+        "fields": {
+          "exact": {
+            "type": "keyword"
+          }
+        },
+        "analyzer": "chinese_combined_analyzer"
+      },
+      "court_level": {
+        "type": "keyword"
+      },
+      "data_quality_score": {
+        "type": "float"
+      },
+      "defendant": {
+        "type": "text",
+        "fields": {
+          "exact": {
+            "type": "keyword"
+          }
+        },
+        "analyzer": "edge_ngram_analyzer"
+      },
+      "defendant_combined_text": {
+        "type": "text",
+        "fields": {
+          "legal": {
+            "type": "text",
+            "analyzer": "legal_search_analyzer"
+          }
+        },
+        "analyzer": "chinese_combined_analyzer"
+      },
+      "defendant_combined_vector": {
+        "type": "dense_vector",
+        "dims": 1536,
+        "index": true,
+        "similarity": "cosine",
+        "index_options": {
+          "type": "int8_hnsw",
+          "m": 32,
+          "ef_construction": 128
+        }
+      },
+      "defendant_defenses_summary": {
+        "type": "text",
+        "analyzer": "chinese_combined_analyzer"
+      },
+      "disposition": {
+        "properties": {
+          "class": {
+            "type": "keyword"
+          },
+          "is_procedural": {
+            "type": "boolean"
+          },
+          "raw_verdict_type": {
+            "type": "keyword"
+          }
+        }
+      },
+      "indexed_at": {
+        "type": "date"
+      },
+      "is_complex_case": {
+        "type": "boolean"
+      },
+      "is_procedural": {
+        "type": "boolean"
+      },
+      "is_ruling": {
+        "type": "boolean"
+      },
+      "issue_tilt_by_party": {
+        "type": "nested",
+        "properties": {
+          "basis_para": {
+            "type": "keyword"
+          },
+          "confidence": {
+            "type": "keyword"
+          },
+          "favored_party": {
+            "type": "text",
+            "fields": {
+              "exact": {
+                "type": "keyword"
+              }
+            },
+            "analyzer": "edge_ngram_analyzer"
+          },
+          "issue_id": {
+            "type": "keyword"
+          },
+          "topic": {
+            "type": "text",
+            "analyzer": "chinese_combined_analyzer"
+          }
+        }
+      },
+      "judges": {
+        "type": "text",
+        "fields": {
+          "exact": {
+            "type": "keyword"
+          }
+        },
+        "analyzer": "edge_ngram_analyzer"
+      },
+      "key_metrics": {
+        "properties": {
+          "administrative_metrics": {
+            "properties": {
+              "action_revoked": {
+                "type": "keyword"
+              }
+            }
+          },
+          "civil_metrics": {
+            "properties": {
+              "claim_amount": {
+                "type": "float"
+              },
+              "granted_amount": {
+                "type": "float"
+              }
+            }
+          },
+          "criminal_metrics": {
+            "properties": {
+              "final_verdict_raw": {
+                "type": "text",
+                "index": false
+              },
+              "prosecutor_demand_raw": {
+                "type": "text",
+                "index": false
+              }
+            }
+          }
+        }
+      },
+      "law_domain": {
+        "type": "keyword"
+      },
+      "lawyer_assessment": {
+        "properties": {
+          "defendant_side_comment": {
+            "type": "text",
+            "analyzer": "ai_analysis_analyzer"
+          },
+          "plaintiff_side_comment": {
+            "type": "text",
+            "analyzer": "ai_analysis_analyzer"
+          }
+        }
+      },
+      "lawyer_performance": {
+        "type": "nested",
+        "properties": {
+          "justification": {
+            "type": "text",
+            "analyzer": "chinese_combined_analyzer"
+          },
+          "lawyer": {
+            "type": "text",
+            "fields": {
+              "exact": {
+                "type": "keyword"
+              }
+            },
+            "analyzer": "edge_ngram_analyzer"
+          },
+          "outcome": {
+            "type": "text",
+            "analyzer": "chinese_combined_analyzer"
+          },
+          "performance": {
+            "type": "keyword"
+          }
+        }
+      },
+      "lawyers": {
+        "type": "text",
+        "fields": {
+          "exact": {
+            "type": "keyword"
+          }
+        },
+        "analyzer": "edge_ngram_analyzer"
+      },
+      "lawyersdef": {
+        "type": "text",
+        "fields": {
+          "exact": {
+            "type": "keyword"
+          }
+        },
+        "analyzer": "edge_ngram_analyzer"
+      },
+      "legal_basis": {
+        "type": "keyword"
+      },
+      "legal_claim_basis": {
+        "type": "text",
+        "fields": {
+          "exact": {
+            "type": "keyword"
+          },
+          "legal": {
+            "type": "text",
+            "analyzer": "legal_search_analyzer"
+          }
+        },
+        "analyzer": "chinese_combined_analyzer"
+      },
+      "legal_issues": {
+        "type": "nested",
+        "properties": {
+          "answer": {
+            "type": "text",
+            "fields": {
+              "legal": {
+                "type": "text",
+                "analyzer": "legal_search_analyzer"
+              }
+            },
+            "analyzer": "chinese_combined_analyzer"
+          },
+          "cited_para_id": {
+            "type": "keyword"
+          },
+          "question": {
+            "type": "text",
+            "fields": {
+              "exact": {
+                "type": "keyword"
+              },
+              "legal": {
+                "type": "text",
+                "analyzer": "legal_search_analyzer"
+              }
+            },
+            "analyzer": "chinese_combined_analyzer"
+          }
+        }
+      },
+      "legal_issues_count": {
+        "type": "integer"
+      },
+      "legal_issues_vector": {
+        "type": "dense_vector",
+        "dims": 1536,
+        "index": true,
+        "similarity": "cosine",
+        "index_options": {
+          "type": "int8_hnsw",
+          "m": 32,
+          "ef_construction": 128
+        }
+      },
+      "main_reasons_ai": {
+        "type": "keyword"
+      },
+      "main_reasons_ai_vector": {
+        "type": "dense_vector",
+        "dims": 1536,
+        "index": true,
+        "similarity": "cosine",
+        "index_options": {
+          "type": "int8_hnsw",
+          "m": 32,
+          "ef_construction": 128
+        }
+      },
+      "party_level_signals": {
+        "type": "nested",
+        "properties": {
+          "dismiss_penalty": {
+            "type": "keyword"
+          },
+          "party": {
+            "type": "text",
+            "fields": {
+              "exact": {
+                "type": "keyword"
+              }
+            },
+            "analyzer": "edge_ngram_analyzer"
+          },
+          "remand_support": {
+            "type": "keyword"
+          }
+        }
+      },
+      "plaintiff": {
+        "type": "text",
+        "fields": {
+          "exact": {
+            "type": "keyword"
+          }
+        },
+        "analyzer": "edge_ngram_analyzer"
+      },
+      "plaintiff_claims_summary": {
+        "type": "text",
+        "analyzer": "chinese_combined_analyzer"
+      },
+      "plaintiff_combined_text": {
+        "type": "text",
+        "fields": {
+          "legal": {
+            "type": "text",
+            "analyzer": "legal_search_analyzer"
+          }
+        },
+        "analyzer": "chinese_combined_analyzer"
+      },
+      "plaintiff_combined_vector": {
+        "type": "dense_vector",
+        "dims": 1536,
+        "index": true,
+        "similarity": "cosine",
+        "index_options": {
+          "type": "int8_hnsw",
+          "m": 32,
+          "ef_construction": 128
+        }
+      },
+      "position_based_analysis": {
+        "properties": {
+          "agency_perspective": {
+            "properties": {
+              "case_value": {
+                "type": "keyword"
+              },
+              "failed_strategies": {
+                "type": "text",
+                "fields": {
+                  "keyword": {
+                    "type": "keyword"
+                  }
+                },
+                "analyzer": "chinese_combined_analyzer"
+              },
+              "overall_result": {
+                "type": "keyword"
+              },
+              "replication_potential": {
+                "type": "keyword"
+              },
+              "successful_strategies": {
+                "type": "text",
+                "fields": {
+                  "keyword": {
+                    "type": "keyword"
+                  }
+                },
+                "analyzer": "chinese_combined_analyzer"
+              },
+              "winning_formula": {
+                "type": "text",
+                "fields": {
+                  "keyword": {
+                    "type": "keyword"
+                  }
+                },
+                "analyzer": "chinese_combined_analyzer"
+              }
+            }
+          },
+          "citizen_perspective": {
+            "properties": {
+              "case_value": {
+                "type": "keyword"
+              },
+              "critical_failures": {
+                "type": "text",
+                "fields": {
+                  "keyword": {
+                    "type": "keyword"
+                  }
+                },
+                "analyzer": "chinese_combined_analyzer"
+              },
+              "key_lessons": {
+                "type": "text",
+                "fields": {
+                  "keyword": {
+                    "type": "keyword"
+                  }
+                },
+                "analyzer": "chinese_combined_analyzer"
+              },
+              "overall_result": {
+                "type": "keyword"
+              },
+              "risk_warning": {
+                "type": "text",
+                "analyzer": "chinese_combined_analyzer"
+              },
+              "successful_elements": {
+                "type": "text",
+                "fields": {
+                  "keyword": {
+                    "type": "keyword"
+                  }
+                },
+                "analyzer": "chinese_combined_analyzer"
+              }
+            }
+          },
+          "defendant_perspective": {
+            "properties": {
+              "case_value": {
+                "type": "keyword"
+              },
+              "failed_strategies": {
+                "type": "text",
+                "fields": {
+                  "keyword": {
+                    "type": "keyword"
+                  }
+                },
+                "analyzer": "chinese_combined_analyzer"
+              },
+              "overall_result": {
+                "type": "keyword"
+              },
+              "replication_potential": {
+                "type": "keyword"
+              },
+              "successful_strategies": {
+                "type": "text",
+                "fields": {
+                  "keyword": {
+                    "type": "keyword"
+                  }
+                },
+                "analyzer": "chinese_combined_analyzer"
+              },
+              "winning_formula": {
+                "type": "text",
+                "fields": {
+                  "keyword": {
+                    "type": "keyword"
+                  }
+                },
+                "analyzer": "chinese_combined_analyzer"
+              }
+            }
+          },
+          "defense_perspective": {
+            "properties": {
+              "case_value": {
+                "type": "keyword"
+              },
+              "failed_strategies": {
+                "type": "text",
+                "fields": {
+                  "keyword": {
+                    "type": "keyword"
+                  }
+                },
+                "analyzer": "chinese_combined_analyzer"
+              },
+              "overall_result": {
+                "type": "keyword"
+              },
+              "replication_potential": {
+                "type": "keyword"
+              },
+              "successful_strategies": {
+                "type": "text",
+                "fields": {
+                  "keyword": {
+                    "type": "keyword"
+                  }
+                },
+                "analyzer": "chinese_combined_analyzer"
+              },
+              "winning_formula": {
+                "type": "text",
+                "fields": {
+                  "keyword": {
+                    "type": "keyword"
+                  }
+                },
+                "analyzer": "chinese_combined_analyzer"
+              }
+            }
+          },
+          "plaintiff_perspective": {
+            "properties": {
+              "case_value": {
+                "type": "keyword"
+              },
+              "critical_failures": {
+                "type": "text",
+                "fields": {
+                  "keyword": {
+                    "type": "keyword"
+                  }
+                },
+                "analyzer": "chinese_combined_analyzer"
+              },
+              "key_lessons": {
+                "type": "text",
+                "fields": {
+                  "keyword": {
+                    "type": "keyword"
+                  }
+                },
+                "analyzer": "chinese_combined_analyzer"
+              },
+              "overall_result": {
+                "type": "keyword"
+              },
+              "risk_warning": {
+                "type": "text",
+                "analyzer": "chinese_combined_analyzer"
+              },
+              "successful_elements": {
+                "type": "text",
+                "fields": {
+                  "keyword": {
+                    "type": "keyword"
+                  }
+                },
+                "analyzer": "chinese_combined_analyzer"
+              }
+            }
+          },
+          "prosecutor_perspective": {
+            "properties": {
+              "case_value": {
+                "type": "keyword"
+              },
+              "critical_failures": {
+                "type": "text",
+                "fields": {
+                  "keyword": {
+                    "type": "keyword"
+                  }
+                },
+                "analyzer": "chinese_combined_analyzer"
+              },
+              "key_lessons": {
+                "type": "text",
+                "fields": {
+                  "keyword": {
+                    "type": "keyword"
+                  }
+                },
+                "analyzer": "chinese_combined_analyzer"
+              },
+              "overall_result": {
+                "type": "keyword"
+              },
+              "risk_warning": {
+                "type": "text",
+                "analyzer": "chinese_combined_analyzer"
+              },
+              "successful_elements": {
+                "type": "text",
+                "fields": {
+                  "keyword": {
+                    "type": "keyword"
+                  }
+                },
+                "analyzer": "chinese_combined_analyzer"
+              }
+            }
+          },
+          "replicable_strategies": {
+            "type": "text",
+            "fields": {
+              "keyword": {
+                "type": "keyword"
+              }
+            },
+            "analyzer": "chinese_combined_analyzer"
+          },
+          "strategic_value": {
+            "properties": {
+              "agency_side": {
+                "properties": {
+                  "case_value": {
+                    "type": "keyword"
+                  },
+                  "reasoning": {
+                    "type": "text",
+                    "analyzer": "chinese_combined_analyzer"
+                  }
+                }
+              },
+              "citizen_side": {
+                "properties": {
+                  "case_value": {
+                    "type": "keyword"
+                  },
+                  "reasoning": {
+                    "type": "text",
+                    "analyzer": "chinese_combined_analyzer"
+                  }
+                }
+              },
+              "defendant_side": {
+                "properties": {
+                  "case_value": {
+                    "type": "keyword"
+                  },
+                  "reasoning": {
+                    "type": "text",
+                    "analyzer": "chinese_combined_analyzer"
+                  }
+                }
+              },
+              "defense_side": {
+                "properties": {
+                  "case_value": {
+                    "type": "keyword"
+                  },
+                  "reasoning": {
+                    "type": "text",
+                    "analyzer": "chinese_combined_analyzer"
+                  }
+                }
+              },
+              "plaintiff_side": {
+                "properties": {
+                  "case_value": {
+                    "type": "keyword"
+                  },
+                  "reasoning": {
+                    "type": "text",
+                    "analyzer": "chinese_combined_analyzer"
+                  }
+                }
+              },
+              "prosecutor_side": {
+                "properties": {
+                  "case_value": {
+                    "type": "keyword"
+                  },
+                  "reasoning": {
+                    "type": "text",
+                    "analyzer": "chinese_combined_analyzer"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "procedural_focus": {
+        "type": "keyword"
+      },
+      "proceeding": {
+        "properties": {
+          "level": {
+            "type": "keyword"
+          }
+        }
+      },
+      "prosecutor": {
+        "type": "text",
+        "fields": {
+          "exact": {
+            "type": "keyword"
+          }
+        },
+        "analyzer": "edge_ngram_analyzer"
+      },
+      "replicable_strategies_text": {
+        "type": "text",
+        "fields": {
+          "legal": {
+            "type": "text",
+            "analyzer": "legal_search_analyzer"
+          }
+        },
+        "analyzer": "chinese_combined_analyzer"
+      },
+      "replicable_strategies_vector": {
+        "type": "dense_vector",
+        "dims": 1536,
+        "index": true,
+        "similarity": "cosine",
+        "index_options": {
+          "type": "int8_hnsw",
+          "m": 32,
+          "ef_construction": 128
+        }
+      },
+      "representations": {
+        "type": "nested",
+        "properties": {
+          "lawyer": {
+            "type": "text",
+            "fields": {
+              "exact": {
+                "type": "keyword"
+              }
+            },
+            "analyzer": "edge_ngram_analyzer"
+          },
+          "party": {
+            "type": "text",
+            "fields": {
+              "exact": {
+                "type": "keyword"
+              }
+            },
+            "analyzer": "edge_ngram_analyzer"
+          },
+          "side_role": {
+            "type": "keyword"
+          }
+        }
+      },
+      "role_links": {
+        "type": "nested",
+        "properties": {
+          "confidence": {
+            "type": "keyword"
+          },
+          "lawyer": {
+            "type": "text",
+            "fields": {
+              "exact": {
+                "type": "keyword"
+              }
+            },
+            "analyzer": "edge_ngram_analyzer"
+          },
+          "level": {
+            "type": "keyword"
+          },
+          "party": {
+            "type": "text",
+            "fields": {
+              "exact": {
+                "type": "keyword"
+              }
+            },
+            "analyzer": "edge_ngram_analyzer"
+          },
+          "party_type": {
+            "type": "keyword"
+          },
+          "role": {
+            "type": "keyword"
+          },
+          "side": {
+            "type": "keyword"
+          },
+          "source": {
+            "type": "keyword"
+          }
+        }
+      },
+      "schema_version": {
+        "type": "keyword"
+      },
+      "stage0_case_type": {
+        "type": "keyword"
+      },
+      "stage0_chars_used": {
+        "type": "integer"
+      },
+      "stage0_confidence": {
+        "type": "keyword"
+      },
+      "stage0_proceeding_level": {
+        "type": "keyword"
+      },
+      "stage0_processed_at": {
+        "type": "date"
+      },
+      "summary_ai": {
+        "type": "text",
+        "fields": {
+          "legal": {
+            "type": "text",
+            "analyzer": "legal_search_analyzer"
+          }
+        },
+        "analyzer": "chinese_combined_analyzer"
+      },
+      "summary_ai_full": {
+        "type": "text",
+        "fields": {
+          "legal": {
+            "type": "text",
+            "analyzer": "legal_search_analyzer"
+          }
+        },
+        "analyzer": "chinese_combined_analyzer"
+      },
+      "summary_ai_vector": {
+        "type": "dense_vector",
+        "dims": 1536,
+        "index": true,
+        "similarity": "cosine",
+        "index_options": {
+          "type": "int8_hnsw",
+          "m": 32,
+          "ef_construction": 128
+        }
+      },
+      "tags": {
+        "type": "keyword"
+      },
+      "trial_party_lawyers": {
+        "type": "nested",
+        "properties": {
+          "lawyers": {
+            "type": "text",
+            "fields": {
+              "exact": {
+                "type": "keyword"
+              }
+            },
+            "analyzer": "edge_ngram_analyzer"
+          },
+          "party": {
+            "type": "text",
+            "fields": {
+              "exact": {
+                "type": "keyword"
+              }
+            },
+            "analyzer": "edge_ngram_analyzer"
+          },
+          "party_type": {
+            "type": "keyword"
+          },
+          "side": {
+            "type": "keyword"
+          }
+        }
+      },
+      "verdict_type": {
+        "type": "keyword"
+      }
+    }
+  }
+}

@@ -70,7 +70,8 @@ export async function getJudgeAnalytics(judgeName) {
                 "JID", "JYEAR", "JCASE", "JNO", "JDATE", "JDATE_num", "JTITLE", "court",
                 "case_type", "verdict", "verdict_type", "summary_ai", "judges", "main_reasons_ai",
                 "legal_basis", "outcome_reasoning_strength", "SCORE", "JFULL",
-                "lawyerperformance" // JFULL 給 AI 用
+                "key_metrics", // 新版金額數據結構 (包含 civil_metrics, criminal_metrics, administrative_metrics)
+                "lawyerperformance" // 向下兼容舊數據
             ],
             // 可以加入聚合，如果某些統計可以直接從 ES 聚合得到
         });
