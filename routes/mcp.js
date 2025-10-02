@@ -36,6 +36,7 @@ router.post('/parse-intent', verifyToken, async (req, res) => {
   "intent": "search_cases" | "analyze_judge" | "compare_judges" | "unknown",
   "judge_name": "法官姓名 (如果問題中沒有提到,使用當前法官)",
   "case_type": "案由關鍵字 (如: 交通、侵權、債務)",
+  "verdict_type": "判決結果類型 (如: 原告勝訴、原告敗訴、部分勝訴部分敗訴)",
   "limit": 數量 (預設20),
   "additional_filters": {}
 }
@@ -47,6 +48,14 @@ router.post('/parse-intent', verifyToken, async (req, res) => {
 - "詐欺"、"詐騙" → "詐欺"
 - "損害賠償" → "損害賠償"
 - 如果沒有明確案由,返回 null
+
+判決結果類型提取規則:
+- "原告勝訴"、"勝訴" → "原告勝訴"
+- "原告敗訴"、"敗訴" → "原告敗訴"
+- "部分勝訴"、"部分敗訴" → "部分勝訴部分敗訴"
+- "上訴駁回" → "上訴駁回"
+- "原判決廢棄" → "原判決廢棄改判"
+- 如果沒有明確判決結果,返回 null
 
 意圖判斷規則:
 - 如果問題是要搜尋/查看/顯示判決書 → "search_cases"
