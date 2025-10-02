@@ -169,15 +169,36 @@ export function aggregateJudgeCaseData(esHits, judgeName) {
         }
 
         if (mainType === 'civil') {
-            if (source.lawyerperformance && Array.isArray(source.lawyerperformance) && source.lawyerperformance.length > 0) {
+            // 優先使用新版 key_metrics.civil_metrics 結構
+            if (source.key_metrics && source.key_metrics.civil_metrics) {
+                const civilMetrics = source.key_metrics.civil_metrics;
+
+                // 提取請求金額
+                if (typeof civilMetrics.claim_amount === 'number' && !isNaN(civilMetrics.claim_amount) && civilMetrics.claim_amount > 0) {
+                    analysisEntry.totalClaimAmount += civilMetrics.claim_amount;
+                    analysisEntry.claimCount++;
+                    console.log(`[aggregateJudgeCaseData] ✅ 民事案件 ${source.JID} - 新版欄位 - 請求金額: ${civilMetrics.claim_amount}`);
+                }
+
+                // 提取判准金額
+                if (typeof civilMetrics.granted_amount === 'number' && !isNaN(civilMetrics.granted_amount) && civilMetrics.granted_amount > 0) {
+                    analysisEntry.totalGrantedAmount += civilMetrics.granted_amount;
+                    analysisEntry.grantedCount++;
+                    console.log(`[aggregateJudgeCaseData] ✅ 民事案件 ${source.JID} - 新版欄位 - 判准金額: ${civilMetrics.granted_amount}`);
+                }
+            }
+            // 向下兼容: 如果新欄位不存在,嘗試讀取舊版 lawyerperformance 欄位
+            else if (source.lawyerperformance && Array.isArray(source.lawyerperformance) && source.lawyerperformance.length > 0) {
                 const firstLawyerPerf = source.lawyerperformance[0];
                 if (firstLawyerPerf && typeof firstLawyerPerf.claim_amount === 'number' && !isNaN(firstLawyerPerf.claim_amount)) {
                     analysisEntry.totalClaimAmount += firstLawyerPerf.claim_amount;
                     analysisEntry.claimCount++;
+                    console.log(`[aggregateJudgeCaseData] ⚠️ 民事案件 ${source.JID} - 舊版欄位 - 請求金額: ${firstLawyerPerf.claim_amount}`);
                 }
                 if (firstLawyerPerf && typeof firstLawyerPerf.granted_amount === 'number' && !isNaN(firstLawyerPerf.granted_amount)) {
                     analysisEntry.totalGrantedAmount += firstLawyerPerf.granted_amount;
                     analysisEntry.grantedCount++;
+                    console.log(`[aggregateJudgeCaseData] ⚠️ 民事案件 ${source.JID} - 舊版欄位 - 判准金額: ${firstLawyerPerf.granted_amount}`);
                 }
             }
         }
@@ -227,18 +248,28 @@ export function aggregateJudgeCaseData(esHits, judgeName) {
             entry.withdrawalRate = calculateRate(entry.outcomes[JUDGE_CENTRIC_OUTCOMES.CIVIL_PLAINTIFF_WITHDRAWAL], entry.count);
             entry.proceduralDismissalRate = calculateRate(entry.outcomes[JUDGE_CENTRIC_OUTCOMES.CIVIL_PROCEDURAL_DISMISSAL], entry.count);
 
+            // 計算平均請求金額
             if (entry.claimCount > 0) {
                 entry.averageClaimAmount = Math.round(entry.totalClaimAmount / entry.claimCount);
+                console.log(`[aggregateJudgeCaseData] 📊 民事金額統計 - 平均請求金額: ${entry.averageClaimAmount} (總額: ${entry.totalClaimAmount}, 案件數: ${entry.claimCount})`);
             } else {
                 entry.averageClaimAmount = 0;
+                console.log(`[aggregateJudgeCaseData] ⚠️ 民事金額統計 - 無請求金額數據 (claimCount = 0)`);
             }
+
+            // 計算平均判准金額
             if (entry.grantedCount > 0) {
                 entry.averageGrantedAmount = Math.round(entry.totalGrantedAmount / entry.grantedCount);
+                console.log(`[aggregateJudgeCaseData] 📊 民事金額統計 - 平均判准金額: ${entry.averageGrantedAmount} (總額: ${entry.totalGrantedAmount}, 案件數: ${entry.grantedCount})`);
             } else {
                 entry.averageGrantedAmount = 0;
+                console.log(`[aggregateJudgeCaseData] ⚠️ 民事金額統計 - 無判准金額數據 (grantedCount = 0)`);
             }
+
+            // 計算判准比例
             if (entry.totalClaimAmount > 0) { // 使用 totalClaimAmount 避免除以0
                 entry.overallGrantedToClaimRatio = parseFloat(((entry.totalGrantedAmount / entry.totalClaimAmount) * 100).toFixed(1)) || 0;
+                console.log(`[aggregateJudgeCaseData] 📊 民事金額統計 - 判准比例: ${entry.overallGrantedToClaimRatio}%`);
             } else {
                 entry.overallGrantedToClaimRatio = (entry.totalGrantedAmount > 0 ? 100.0 : 0); // 如果無請求但有判准，視為100% (需商榷)
             }
