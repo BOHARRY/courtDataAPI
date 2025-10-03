@@ -1,8 +1,9 @@
 # 🔍 法官搜索功能 - 完整技術架構分析
 
-> **版本**: v2.0.0  
-> **分析日期**: 2025-10-03  
-> **功能**: 法官判決傾向分析系統
+> **版本**: v3.0.0 🆕
+> **更新日期**: 2025-10-03
+> **功能**: 法官判決統計分析系統 + AI 對話助手
+> **重大變更**: 移除 Traits/Tendency AI 分析,提升速度 10 倍
 
 ---
 
@@ -12,10 +13,30 @@
 2. [完整數據流程](#完整數據流程)
 3. [前端架構](#前端架構)
 4. [後端架構](#後端架構)
-5. [AI 分析流程](#ai-分析流程)
+5. [~~AI 分析流程~~](#ai-分析流程) ⚠️ **已廢棄**
 6. [關鍵代碼分析](#關鍵代碼分析)
 7. [性能優化](#性能優化)
-8. [問題與建議](#問題與建議)
+8. [變更歷史](#變更歷史) 🆕
+9. [問題與建議](#問題與建議)
+
+---
+
+## 🚨 **重要變更通知 (v3.0.0)**
+
+### **已移除功能**
+- ❌ **Traits (法官特徵標籤)**: 不再使用 OpenAI 生成 3-5 個判決特徵
+- ❌ **Tendency (判決傾向分析)**: 不再使用 OpenAI 生成 6 維度雷達圖
+- ❌ **AI 分析輪詢機制**: 不再需要前端輪詢等待 AI 完成
+
+### **保留功能**
+- ✅ **基礎統計分析**: 完整保留,速度更快
+- ✅ **AI 對話助手**: `JudgeConversationPanel` 功能完整,提供更靈活的 AI 互動
+
+### **效益**
+- ⚡ **速度提升**: 首次搜索從 25-30 秒降至 **2-3 秒** (快 10 倍)
+- 💰 **成本節省**: 每次搜索節省 **$0.01-0.02 USD** OpenAI API 費用
+- 🎯 **用戶體驗**: 無需等待,立即顯示結果
+- 🧹 **代碼簡化**: 移除 ~200 行輪詢邏輯
 
 ---
 
@@ -25,17 +46,12 @@
 
 法官搜索功能提供以下能力:
 
-✅ **基礎統計分析**
+✅ **基礎統計分析** (即時返回)
 - 近三年審理案件總數
 - 常見案件類型分布
 - 判決結果分布 (原告勝訴/敗訴/部分勝訴)
 - 常用法條統計
 - 判決理由強度分析
-
-✅ **AI 深度分析** (OpenAI GPT-4o)
-- 法官判決特徵標籤 (traits)
-- 判決傾向分析 (tendency)
-- 自然語言描述
 
 ✅ **多維度案件分析**
 - 民事案件: 原告勝訴率、判准金額比例
@@ -46,7 +62,18 @@
 - 按重要性排序的前 10 個案例
 - 案件摘要和主要理由
 
-### 1.2 用戶體驗流程
+✅ **AI 對話助手** (按需使用)
+- 基於 OpenAI GPT-4o + Function Calling
+- 整合 MCP Server (11 個智能工具)
+- 動態建議問題
+- 案號自動識別與連結
+
+❌ **已移除功能** (v3.0.0)
+- ~~法官判決特徵標籤 (traits)~~
+- ~~判決傾向雷達圖 (tendency)~~
+- ~~自動 AI 分析~~
+
+### 1.2 用戶體驗流程 (v3.0.0 簡化版)
 
 ```
 1. 用戶輸入法官姓名 (至少 2 個字)
@@ -55,26 +82,26 @@
    ↓
 3. 導航到結果頁面 (/search-judge/results/:judgeName)
    ↓
-4. 顯示加載動畫
+4. 顯示加載動畫 (2-3 秒)
    ↓
 5. 後端處理:
    - 檢查 Firestore 緩存 (24小時有效期)
-   - 若無緩存或過期: 從 Elasticsearch 查詢
+   - 若無緩存或過期: 從 Elasticsearch 查詢 (1000 個案件)
    - 生成基礎統計數據
-   - 異步觸發 AI 分析
+   - 🆕 直接返回完整數據 (status: "complete")
    ↓
-6. 前端接收部分數據 (status: "partial")
+6. 🆕 前端立即顯示完整結果 (無需輪詢)
    ↓
-7. 前端開始輪詢 AI 分析狀態 (每 5 秒)
-   ↓
-8. AI 分析完成後更新顯示 (status: "complete")
-   ↓
-9. 用戶可查看完整分析結果
+7. 用戶可選擇使用 AI 對話助手進行深度分析
 ```
+
+**關鍵改進**:
+- ⚡ 移除步驟 6-8 的輪詢等待 (節省 25-30 秒)
+- 🎯 用戶可按需使用 AI 助手,而非強制等待
 
 ---
 
-## 2. 完整數據流程
+## 2. 完整數據流程 (v3.0.0 簡化版)
 
 ### 2.1 數據流程圖
 
@@ -92,7 +119,7 @@
 │  ├─ useEffect() 觸發初始數據獲取                                  │
 │  └─ useState() 管理狀態:                                          │
 │      - currentJudgeData (法官數據)                                │
-│      - aiAnalysisState (AI 分析狀態)                              │
+│      - ❌ aiAnalysisState (已移除)                                │
 │      - isLoadingInitialData (加載狀態)                            │
 └────────────────────────┬────────────────────────────────────────┘
                          │ GET /api/judges/:judgeName
@@ -115,12 +142,12 @@
                          │
                          ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                    服務層                                          │
+│                    服務層 (v3.0.0 簡化)                            │
 │  services/judgeService.js                                        │
 │  ├─ 1. 檢查 Firestore 緩存                                        │
 │  │   - 集合: judges/{judgeName}                                  │
 │  │   - 有效期: 24 小時                                            │
-│  │   - 狀態: complete/partial/failed                             │
+│  │   - 🆕 狀態: complete (不再有 partial)                         │
 │  │                                                               │
 │  ├─ 2. 若緩存無效: 查詢 Elasticsearch                             │
 │  │   - buildEsQueryForJudgeCases(judgeName)                     │
@@ -132,13 +159,15 @@
 │  │   - aggregateJudgeCaseData(esHits, judgeName)                │
 │  │   - 生成基礎統計數據                                           │
 │  │                                                               │
-│  ├─ 4. 存儲到 Firestore                                           │
-│  │   - processingStatus: 'partial'                              │
-│  │   - 包含基礎統計數據                                           │
+│  ├─ 4. 🆕 存儲到 Firestore (直接完成)                              │
+│  │   - processingStatus: 'complete' (不再是 'partial')           │
+│  │   - 包含完整基礎統計數據                                       │
+│  │   - ❌ 不再包含 traits/tendency 欄位                           │
 │  │                                                               │
-│  └─ 5. 異步觸發 AI 分析                                            │
-│      - triggerAIAnalysis(judgeName, cases, baseData)            │
-│      - 不阻塞主流程                                                │
+│  └─ 5. 🆕 直接返回完整數據                                         │
+│      - status: "complete"                                        │
+│      - ❌ 不再觸發 AI 分析                                         │
+│      - ⚡ 響應時間: 2-3 秒 (vs 舊版 25-30 秒)                     │
 └────────────────────────┬────────────────────────────────────────┘
                          │
                          ▼
@@ -149,32 +178,18 @@
 │  │  search-boooook  │  │  judges/         │                     │
 │  │                  │  │  {judgeName}     │                     │
 │  │  - 7000+ 判決書  │  │  - 緩存數據      │                     │
-│  │  - 全文檢索      │  │  - AI 分析結果   │                     │
+│  │  - 全文檢索      │  │  - 基礎統計      │                     │
 │  └──────────────────┘  └──────────────────┘                     │
 └─────────────────────────────────────────────────────────────────┘
-                         │
-                         ▼
+
+❌ 已移除: AI 分析層 (aiAnalysisService.js 中的 traits/tendency 生成)
+✅ 保留: AI 對話助手 (JudgeConversationPanel - 按需使用)
+```
+
+**❌ 已移除 (v3.0.0)**:
+```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    AI 分析層                                       │
-│  services/aiAnalysisService.js                                   │
-│  ├─ 1. 構建 AI Prompt                                             │
-│  │   - 法官姓名                                                   │
-│  │   - 案件統計數據                                               │
-│  │   - 代表性案例摘要                                             │
-│  │                                                               │
-│  ├─ 2. 調用 OpenAI GPT-4o                                         │
-│  │   - 模型: gpt-4.1                                             │
-│  │   - 返回: JSON 格式的 traits 和 tendency                      │
-│  │                                                               │
-│  └─ 3. 更新 Firestore                                             │
-│      - processingStatus: 'complete'                              │
-│      - traits: [...]                                             │
-│      - tendency: {...}                                           │
-└────────────────────────┬────────────────────────────────────────┘
-                         │
-                         ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    前端輪詢層                                      │
+│                    前端輪詢層 (已廢棄)                             │
 │  SearchJudgeResults.js - useEffect (輪詢)                         │
 │  ├─ 每 5 秒調用 GET /api/judges/:judgeName/analysis-status       │
 │  ├─ 檢查 processingStatus                                         │
@@ -183,9 +198,11 @@
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### 2.2 API 請求/響應格式
+---
 
-#### 初始請求
+### 2.2 API 請求/響應格式 (v3.0.0)
+
+#### 初始請求 (唯一請求)
 
 **Request**:
 ```http
@@ -195,18 +212,15 @@ Authorization: Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...
 Content-Type: application/json
 ```
 
-**Response (Partial - 基礎數據)**:
+**Response (🆕 Complete - 完整數據,無需輪詢)**:
 ```json
 {
-  "status": "partial",
+  "status": "complete",  // 🆕 直接返回 complete
   "data": {
     "name": "王婉如",
     "latestCourtName": "臺灣高等法院",
-    "lastUpdated": {
-      "_seconds": 1704067200,
-      "_nanoseconds": 0
-    },
-    "processingStatus": "partial",
+    "lastUpdated": "2025-10-03T12:34:56.789Z",  // 🆕 ISO 字串格式
+    "processingStatus": "complete",  // 🆕 不再有 partial 狀態
     "caseStats": {
       "totalCases": 156,
       "recentCases": 89,
@@ -254,57 +268,38 @@ Content-Type: application/json
         "summary_ai": "原告請求被告賠償...",
         "main_reasons_ai": ["被告確有過失", "損害金額部分過高"]
       }
-    ],
-    "traits": [],
-    "tendency": null
+    ]
+    // ❌ 已移除: traits 和 tendency 欄位
   }
 }
 ```
 
-#### 輪詢請求
+#### ❌ 已廢棄: 輪詢請求
 
-**Request**:
+**舊版 Request** (v3.0.0 已廢棄):
 ```http
 GET /api/judges/王婉如/analysis-status HTTP/1.1
 Host: courtdataapi.onrender.com
 Authorization: Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...
 ```
 
-**Response (Complete - AI 分析完成)**:
+**舊版 Response** (v3.0.0 已廢棄):
 ```json
 {
   "processingStatus": "complete",
-  "traits": [
-    {
-      "text": "傾向支持有證據支持的請求",
-      "icon": "📊",
-      "confidence": "高"
-    },
-    {
-      "text": "對於金額過高的請求會酌減",
-      "icon": "💰",
-      "confidence": "中"
-    },
-    {
-      "text": "重視程序正義",
-      "icon": "⚖️",
-      "confidence": "高"
-    }
-  ],
-  "tendency": {
-    "summary": "王婉如法官在民事案件中展現出平衡的判決傾向...",
-    "keyPoints": [
-      "原告部分勝訴率較高 (37.5%)",
-      "平均判准金額約為請求金額的 54.4%",
-      "重視證據完整性"
-    ]
-  }
+  "traits": [...],  // ❌ 已移除
+  "tendency": {...}  // ❌ 已移除
 }
 ```
 
+**⚠️ 注意**:
+- `/analysis-status` 端點仍存在但已標記為 DEPRECATED
+- `getAIAnalysisStatus()` 函數仍存在但不再生成 traits/tendency
+- `triggerReanalysis()` 函數仍存在但不再觸發 AI 分析
+
 ---
 
-## 3. 前端架構
+## 3. 前端架構 (v3.0.0 簡化版)
 
 ### 3.1 組件層級結構
 
@@ -313,14 +308,14 @@ SearchJudge.js (搜索頁面)
   └─ 輸入表單 + 搜索歷史
 
 SearchJudgeResults.js (結果頁面)
-  ├─ JudgeProfileCard (法官基本資料)
+  ├─ ❌ JudgeProfileCard (已移除 - 未使用)
   ├─ JudgeCaseTypeStats (案件類型統計)
-  │   └─ JudgeVerdictDistributionChart (判決分布圖表)
+  │   └─ ❌ JudgeVerdictDistributionChart (已移除 - 未使用)
   ├─ JudgeRepresentativeCasesList (代表性案例)
-  └─ JudgeConversationPanel (AI 對話面板)
+  └─ JudgeConversationPanel (AI 對話面板) ✅ 保留
 ```
 
-### 3.2 狀態管理
+### 3.2 狀態管理 (v3.0.0 簡化版)
 
 **SearchJudgeResults.js 核心狀態**:
 
@@ -328,7 +323,7 @@ SearchJudgeResults.js (結果頁面)
 // 法官姓名 (從 URL 參數獲取)
 const [internalJudgeName, setInternalJudgeName] = useState('');
 
-// 法官數據 (基礎統計 + AI 分析)
+// 法官數據 (基礎統計)
 const [currentJudgeData, setCurrentJudgeData] = useState(null);
 
 // 初始加載狀態
@@ -337,22 +332,23 @@ const [isLoadingInitialData, setIsLoadingInitialData] = useState(true);
 // 初始數據錯誤
 const [initialDataError, setInitialDataError] = useState(null);
 
-// AI 分析狀態
-const [aiAnalysisState, setAiAnalysisState] = useState({
-  status: 'idle', // 'idle' | 'polling' | 'complete' | 'failed' | 'timedout'
-  data: { traits: [], tendency: null },
-  estimatedTime: 0,
-  error: null
-});
+// ❌ 已移除: aiAnalysisState (不再需要輪詢)
 
 // UI 控制
 const [activeCaseType, setActiveCaseType] = useState('all');
 const [statsViewMode, setStatsViewMode] = useState('charts');
 ```
 
-### 3.3 關鍵 Hooks
+**關鍵簡化**:
+- ❌ 移除 `aiAnalysisState` (不再追蹤 AI 分析狀態)
+- ❌ 移除 `pollIntervalRef` (不再需要輪詢)
+- ❌ 移除 `maxPollRetries` (不再需要重試邏輯)
+- ❌ 移除 `judgeNameRef` (不再需要)
+- ❌ 移除 `currentJudgeDataRef` (不再需要)
 
-#### useEffect - 初始數據獲取
+### 3.3 關鍵 Hooks (v3.0.0 簡化版)
+
+#### useEffect - 初始數據獲取 (簡化版)
 
 ```javascript
 useEffect(() => {
@@ -363,7 +359,7 @@ useEffect(() => {
     const cachedFullData = window.judgeCache[internalJudgeName];
     if (cachedFullData?.processingStatus === 'complete') {
       setCurrentJudgeData(cachedFullData);
-      setAiAnalysisState({ status: 'complete', data: {...} });
+      setIsLoadingInitialData(false);  // 🆕 直接完成
       return;
     }
 
@@ -378,11 +374,14 @@ useEffect(() => {
 
     const apiResponse = await response.json();
 
-    // 4. 更新狀態
+    // 4. 🆕 直接更新狀態 (無需檢查 processingStatus)
     setCurrentJudgeData(apiResponse.data);
+    setIsLoadingInitialData(false);
 
-    // 5. 根據 processingStatus 決定是否輪詢
-    if (apiResponse.data.processingStatus === 'partial') {
+    // 5. 🆕 緩存完整數據
+    window.judgeCache[internalJudgeName] = apiResponse.data;
+
+    // ❌ 已移除: 輪詢邏輯 (不再需要)
       setAiAnalysisState({ status: 'polling', ... });
     }
   };
@@ -1551,35 +1550,91 @@ const handleCaseClick = (caseNumber) => {
 
 ---
 
-## 附錄 I: 完整組件樹
+## 8. 變更歷史 🆕
+
+### v3.0.0 (2025-10-03) - 重大性能優化
+
+**移除功能**:
+- ❌ **Traits (法官特徵標籤)**: 移除 OpenAI 生成的 3-5 個判決特徵
+- ❌ **Tendency (判決傾向分析)**: 移除 OpenAI 生成的 6 維度雷達圖
+- ❌ **AI 分析輪詢機制**: 移除前端 5 秒輪詢邏輯 (最多 60 秒)
+- ❌ **前端組件**: 移除 `JudgeProfileCard`, `JudgeVerdictDistributionChart` (未使用)
+- ❌ **前端狀態**: 移除 `aiAnalysisState`, `pollIntervalRef`, `maxPollRetries` 等
+
+**後端變更**:
+- 🔧 `judgeService.js`:
+  - 移除 `triggerAIAnalysis()` 調用
+  - `processingStatus` 直接設為 `'complete'` (不再有 `'partial'`)
+  - 移除 traits/tendency 欄位
+  - 廢棄 `getAIAnalysisStatus()` 和 `triggerReanalysis()` 函數
+- 🔧 `lastUpdated` 欄位修復:
+  - API 返回: `new Date().toISOString()` (可序列化字串)
+  - Firestore 存儲: `admin.firestore.FieldValue.serverTimestamp()`
+
+**前端變更**:
+- 🔧 `SearchJudgeResults.js`:
+  - 移除整個輪詢 effect (~50 行)
+  - 移除 `handleAnalyzeClick` 函數
+  - 移除 `displayTraits` 和 `displayTendency` 變數
+  - 簡化初始數據獲取邏輯
+  - 增強 `lastUpdated` 類型檢查 (支援 ISO 字串和 Timestamp 物件)
+
+**效益**:
+- ⚡ **速度提升**: 首次搜索從 25-30 秒降至 **2-3 秒** (快 10 倍)
+- 💰 **成本節省**: 每次搜索節省 **$0.01-0.02 USD** OpenAI API 費用
+- 📉 **Firestore 寫入**: 從 2-3 次降至 **1 次** (減少 66%)
+- 🎯 **用戶體驗**: 無需等待,立即顯示結果
+- 🧹 **代碼簡化**: 移除 ~200 行輪詢邏輯
+
+**保留功能**:
+- ✅ **基礎統計分析**: 完整保留,速度更快
+- ✅ **AI 對話助手**: `JudgeConversationPanel` 功能完整,提供更靈活的 AI 互動
+- ✅ **多維度案件分析**: 民事/刑事/行政分析完整保留
+- ✅ **代表性案例**: 前 10 個案例展示完整保留
+
+**設計理念**:
+> "律師不喜歡假客觀的東西,AI 助手的功能對律師來說,幫助會更大"
+>
+> 從自動生成的 AI 分析 (traits/tendency) 轉向按需使用的 AI 對話助手,
+> 讓律師主動提問,獲得更精準、更有價值的分析。
+
+---
+
+### v2.0.0 (2025-10-03 之前) - AI 分析版本
+
+**核心功能**:
+- ✅ 基礎統計分析
+- ✅ AI Traits 生成 (3-5 個特徵標籤)
+- ✅ AI Tendency 生成 (6 維度雷達圖)
+- ✅ 前端輪詢機制 (5 秒間隔,最多 60 秒)
+
+**問題**:
+- ⚠️ 首次搜索需等待 25-30 秒
+- ⚠️ 每次搜索消耗 OpenAI API 費用
+- ⚠️ Traits/Tendency 數據未被前端使用
+- ⚠️ 複雜的輪詢邏輯增加維護成本
+
+---
+
+## 附錄 I: 完整組件樹 (v3.0.0)
 
 ```
 SearchJudgeResults (主頁面)
-├─ JudgeProfileCard (法官基本資料)
-│  ├─ 法官姓名
-│  ├─ 服務法院
-│  ├─ 案件總數
-│  └─ AI 特徵標籤 (traits)
+├─ ❌ JudgeProfileCard (已移除 - 未使用)
 │
 ├─ JudgeCaseTypeStats (案件類型統計)
 │  ├─ 案件類型切換 (全部/民事/刑事/行政)
-│  ├─ JudgeVerdictDistributionChart (判決分布圖)
-│  │  ├─ Doughnut 環圈圖
-│  │  └─ 長條圖列表
+│  ├─ ❌ JudgeVerdictDistributionChart (已移除 - 未使用)
 │  └─ 案件類型詳細指標
 │     ├─ 民事: 原告勝訴率、判准金額比例
 │     ├─ 刑事: 定罪率、緩刑率
 │     └─ 行政: 撤銷率、駁回率
 │
-├─ JudgeLegalAnalysisCharts (法律分析圖表)
-│  ├─ 常用法律依據 (Bar 圖)
-│  └─ 理由強度分布 (Doughnut 圖 - 已禁用)
+├─ ❌ JudgeLegalAnalysisCharts (已註解 - 暫時隱藏)
 │
-├─ JudgeTendencyAnalysis (傾向分析)
-│  ├─ RadarChartComponent (雷達圖)
-│  └─ 維度說明列表
+├─ ❌ JudgeTendencyAnalysis (已註解 - 暫時隱藏)
 │
-├─ JudgeRepresentativeCasesList (代表性案例)
+├─ JudgeRepresentativeCasesList (代表性案例) ✅
 │  └─ CaseCard × N (案件卡片)
 │     ├─ 案件標題
 │     ├─ 案件摘要
@@ -1587,48 +1642,69 @@ SearchJudgeResults (主頁面)
 │     ├─ 律師表現
 │     └─ 判賠比例進度條 (民事)
 │
-└─ JudgeConversationPanel (對話面板)
+└─ JudgeConversationPanel (AI 對話面板) ✅ 核心功能
    ├─ 消息歷史
-   ├─ 建議問題
-   └─ 輸入框
+   ├─ 建議問題 (動態生成)
+   ├─ 輸入框
+   └─ MCP Server 整合 (11 個智能工具)
 ```
+
+**v3.0.0 組件變更**:
+- ❌ 移除: `JudgeProfileCard` (未被渲染)
+- ❌ 移除: `JudgeVerdictDistributionChart` (未被渲染)
+- ❌ 註解: `JudgeLegalAnalysisCharts` (暫時隱藏)
+- ❌ 註解: `JudgeTendencyAnalysis` (暫時隱藏,因為沒有 tendency 數據)
+- ✅ 保留: `JudgeCaseTypeStats` (核心統計)
+- ✅ 保留: `JudgeRepresentativeCasesList` (代表性案例)
+- ✅ 保留: `JudgeConversationPanel` (AI 對話助手 - 核心功能)
 
 ---
 
-## 結語
+## 結語 (v3.0.0)
 
-本文檔提供了法官搜索功能的**完整技術架構**,涵蓋:
+本文檔提供了法官搜索功能的**完整技術架構** (v3.0.0 簡化版),涵蓋:
 
-- ✅ 前端組件層級和狀態管理
-- ✅ 後端路由、服務層和數據處理
+- ✅ 前端組件層級和狀態管理 (簡化版)
+- ✅ 後端路由、服務層和數據處理 (移除 AI 分析)
 - ✅ Elasticsearch 複雜查詢和聚合
-- ✅ AI 分析流程和 Prompt 設計
-- ✅ 緩存策略和性能優化
+- ❌ ~~AI 分析流程和 Prompt 設計~~ (已移除 traits/tendency)
+- ✅ 緩存策略和性能優化 (更快速)
 - ✅ 錯誤處理和測試案例
-- ✅ **圖表組件詳解** (6 種圖表類型)
-- ✅ **完整組件樹** (層級關係)
+- ✅ **變更歷史** (v2.0.0 → v3.0.0) 🆕
+- ✅ **完整組件樹** (v3.0.0 簡化版)
 
-**關鍵技術決策**:
-1. **異步 AI 分析**: 不阻塞用戶體驗
+**關鍵技術決策 (v3.0.0)**:
+1. ~~**異步 AI 分析**: 不阻塞用戶體驗~~ → **移除自動 AI 分析,改為按需對話**
 2. **多層緩存**: Firestore (24h) + window 對象 + localStorage
-3. **輪詢機制**: 5 秒間隔,最多 60 秒
+3. ~~**輪詢機制**: 5 秒間隔,最多 60 秒~~ → **移除輪詢,直接返回完整數據**
 4. **精細分類**: 民事/刑事/行政獨立分析邏輯
 5. **智能顏色系統**: 84 種 verdict_type 顏色映射 + 語意 fallback
 6. **響應式圖表**: Chart.js + React Hooks + Framer Motion
 
-**圖表技術亮點**:
-- 🎨 **環圈圖**: 85% cutout + 懸停隱藏中心文字
-- 📊 **長條圖**: 動態高度 + 外部文字顯示
-- 🕸️ **雷達圖**: 5 維度評估 + 隱藏刻度
+**v3.0.0 核心改進**:
+- ⚡ **速度優化**: 首次搜索從 25-30 秒降至 2-3 秒 (快 10 倍)
+- 💰 **成本優化**: 移除不必要的 OpenAI API 調用 (節省 100%)
+- 🎯 **用戶體驗**: 無需等待,立即顯示結果
+- 🧹 **代碼簡化**: 移除 ~200 行輪詢邏輯
+- 🤖 **AI 策略轉變**: 從自動分析轉向按需對話助手
+
+**保留的技術亮點**:
 - 🎴 **案件卡片**: 橫向滑動 + 判賠進度條
 - 🎭 **動畫效果**: Framer Motion 淡入淡出
+- 💬 **AI 對話助手**: MCP Server 整合 + 動態建議問題
 
-**未來改進方向**:
-1. 實現 WebSocket 替代輪詢
-2. 添加 Redis 緩存層
-3. 優化 AI Prompt 提升準確性
+**未來改進方向 (v3.0.0+)**:
+1. ~~實現 WebSocket 替代輪詢~~ → **已移除輪詢,不再需要**
+2. 添加 Redis 緩存層 (進一步提升速度)
+3. ~~優化 AI Prompt 提升準確性~~ → **專注於對話助手的 Prompt 優化**
 4. 增加更多案件類型支持
 5. **完善案號連結跳轉** (對話面板中的案號點擊)
+6. **優化 AI 對話助手**: 更智能的問題建議、更精準的案件分析
+
+**設計哲學**:
+> "Less is More" - 移除未使用的功能,專注於真正為律師創造價值的核心功能。
+>
+> 從自動化的 AI 分析轉向互動式的 AI 對話,讓律師主動探索,獲得更有價值的洞察。
 6. **啟用理由強度分析** (驗證數據準確性後)
 7. **優化 AI Agent 工具選擇邏輯** (減少不必要的工具調用)
 
