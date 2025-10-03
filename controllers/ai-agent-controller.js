@@ -389,8 +389,8 @@ export async function handleAIAgentChat(req, res) {
         console.log('[AI Agent] ✅ 問題相關,進入完整分析流程');
         console.log('[AI Agent] =====================================');
 
-        // 🆕 動態構建 System Prompt (注入法官上下文 + 提取的資訊)
-        let systemPrompt = SYSTEM_PROMPT;
+        // 🆕 動態構建 System Prompt (上下文優先,放在最前面)
+        let systemPrompt = '';
 
         // 提取的資訊
         const extractedInfo = intentResult.extractedInfo || {};
@@ -398,21 +398,24 @@ export async function handleAIAgentChat(req, res) {
         const caseType = extractedInfo.case_type;
         const verdictType = extractedInfo.verdict_type;
 
+        // 🔴 優先級最高: 將上下文放在最前面
         if (judgeName || questionType) {
-            console.log('[AI Agent] 🔴 動態注入上下文到 System Prompt');
+            console.log('[AI Agent] 🔴 動態注入上下文到 System Prompt (優先級最高)');
 
-            let contextSection = `
+            let contextSection = `🔴 **當前對話上下文** (最高優先級 - 請優先閱讀)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-🔴 **重要上下文 - 問題預處理結果**
 `;
 
             if (judgeName) {
                 contextSection += `
-**法官姓名**: ${judgeName}
-- 用戶問題中提到「法官」、「這位法官」、「該法官」時,都是指「${judgeName}」法官
-- 在**所有**工具調用中,必須使用 judge_name="${judgeName}" 參數
+**當前查詢的法官**: ${judgeName}
+
+**關鍵規則** (必須遵守):
+1. 用戶問題中的「法官」、「這位法官」、「該法官」都是指「${judgeName}」法官
+2. 在**所有**工具調用中,必須使用 judge_name="${judgeName}" 參數
+3. **不要**問用戶是哪位法官,直接使用「${judgeName}」
+4. 如果用戶問題模糊,提供具體的分析選項,但明確是針對「${judgeName}」法官
 `;
             }
 
@@ -439,19 +442,9 @@ export async function handleAIAgentChat(req, res) {
                 contextSection += `
 **建議工作流程** (勝訴率計算):
 1. [第1輪] 調用 semantic_search_judgments(query="${caseType || '*'}", judge_name="${judgeName}", limit=50)
-   - 獲取判決書數據
 2. [第2輪] 調用 calculate_verdict_statistics(analysis_type="verdict_rate", verdict_type="${verdictType || '原告勝訴'}")
    - ⚠️ **不要傳遞 judgments 參數!** 函數會自動從對話歷史中提取數據
 3. [第3輪] 生成回答
-
-**範例**:
-用戶問: "法官在${caseType || '損害賠償'}中的勝訴率?"
-第1輪: semantic_search_judgments(query="${caseType || '損害賠償'}", judge_name="${judgeName}", limit=50)
-  → 返回 18 筆判決書
-第2輪: calculate_verdict_statistics(analysis_type="verdict_rate", verdict_type="${verdictType || '原告勝訴'}")
-  → 函數自動從對話歷史提取 18 筆判決書並計算
-  → 返回: { 總案件數: 18, 原告勝訴: 7, 勝訴率: "38.9%" }
-第3輪: 生成回答 "根據 2025年6-7月 的數據,${judgeName}法官在${caseType || '損害賠償'}案件中,原告勝訴率為 38.9%..."
 `;
             } else if (questionType === '列表') {
                 contextSection += `
@@ -465,20 +458,45 @@ export async function handleAIAgentChat(req, res) {
 1. [第1輪] 調用 get_citation_analysis(judge_name="${judgeName}"${caseType ? `, case_type="${caseType}"` : ''})
 2. [第2輪] 生成回答
 `;
+            } else if (questionType === '其他') {
+                contextSection += `
+**用戶問題較為模糊,建議**:
+1. 先調用 analyze_judge(judge_name="${judgeName}") 獲取法官整體統計
+2. 根據結果,向用戶提供具體的分析選項,例如:
+   - "您想了解${judgeName}法官的勝訴率分析嗎?"
+   - "您想了解${judgeName}法官常引用的法條嗎?"
+   - "您想了解${judgeName}法官的案由分布嗎?"
+3. **重要**: 在回答中明確提到是「${judgeName}法官」,不要問用戶是哪位法官
+`;
             }
 
             contextSection += `
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 `;
 
-            systemPrompt = SYSTEM_PROMPT + contextSection;
+            // 🔴 將上下文放在最前面,然後加上基礎 Prompt
+            systemPrompt = contextSection + SYSTEM_PROMPT;
+        } else {
+            // 沒有上下文,使用原始 Prompt
+            systemPrompt = SYSTEM_PROMPT;
+        }
+
+        // 🆕 增強用戶問題,明確包含法官名稱 (雙重保險)
+        let enhancedQuestion = question;
+        if (judgeName && !question.includes(judgeName)) {
+            // 如果問題中沒有包含法官名稱,明確加上
+            enhancedQuestion = `[關於${judgeName}法官] ${question}`;
+            console.log('[AI Agent] 🔴 增強用戶問題,明確包含法官名稱');
+            console.log('[AI Agent] 原始問題:', question);
+            console.log('[AI Agent] 增強後:', enhancedQuestion);
         }
 
         // 構建對話歷史
         const messages = [
             { role: 'system', content: systemPrompt },
             ...conversation_history,
-            { role: 'user', content: question }
+            { role: 'user', content: enhancedQuestion }
         ];
 
         let iteration = 0;
