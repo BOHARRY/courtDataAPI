@@ -14,6 +14,11 @@ import {
     compare_judges,
     calculate_case_type_distribution
 } from '../utils/ai-agent-local-functions.js';
+import {
+    classifyIntent,
+    generateOutOfScopeResponse,
+    logIntentStats
+} from '../services/intentClassifier.js';
 
 const openai = new OpenAI({
     apiKey: OPENAI_API_KEY,
@@ -325,6 +330,32 @@ export async function handleAIAgentChat(req, res) {
         }
 
         console.log('[AI Agent] 收到問題:', question);
+
+        // 🆕 步驟 1: 意圖識別 (使用 GPT-4o-mini 快速分類)
+        console.log('[AI Agent] ========== 意圖識別 ==========');
+        const intentResult = await classifyIntent(question);
+        logIntentStats(intentResult);
+
+        // 如果不是法律相關問題,直接返回友好回應
+        if (!intentResult.isLegalRelated) {
+            console.log('[AI Agent] ❌ 問題超出範圍,意圖:', intentResult.intent);
+            const outOfScopeResponse = generateOutOfScopeResponse(intentResult.intent, question);
+
+            return res.json({
+                success: true,
+                answer: outOfScopeResponse,
+                iterations: 0,
+                intent: intentResult.intent,
+                skipped_full_analysis: true,
+                token_savings: {
+                    saved_tokens: 4500,  // 估算節省的 Token 數量
+                    cost_saved: 0.011    // 估算節省的成本 (USD)
+                }
+            });
+        }
+
+        console.log('[AI Agent] ✅ 問題相關,進入完整分析流程');
+        console.log('[AI Agent] =====================================');
 
         // 構建對話歷史
         const messages = [
