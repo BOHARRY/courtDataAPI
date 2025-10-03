@@ -17,6 +17,7 @@ import workspaceRoutes from './workspace.js';
 import semanticSearchRoutes from './semantic-search.js';
 import lawSearchRoutes from './law-search.js';
 import mcpRoutes from './mcp.js';
+import aiAgentRoutes from './ai-agent.js';
 
 
 const router = express.Router();
@@ -39,6 +40,7 @@ router.use('/workspaces', workspaceRoutes);
 router.use('/semantic-search', semanticSearchRoutes);
 router.use('/law-search', lawSearchRoutes); // 新增語意搜尋路由
 router.use('/mcp', mcpRoutes); // 新增 MCP 路由
+router.use('/ai-agent', aiAgentRoutes); // 新增 AI Agent 路由
 
 
 // 可以有一個根路由 /api 的健康檢查或歡迎訊息
