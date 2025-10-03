@@ -35,6 +35,26 @@ const testCases = [
         description: "判決傾向分析"
     },
 
+    // 🆕 延續性問題 (需要對話歷史)
+    {
+        question: "只有五件嗎?",
+        expectedIntent: "legal_analysis",
+        description: "延續性問題 - 數量確認",
+        conversationHistory: [
+            { role: 'user', content: '法官有幾件原告勝訴的案子?' },
+            { role: 'assistant', content: '根據數據,有5件原告勝訴的案子...' }
+        ]
+    },
+    {
+        question: "還有其他的嗎?",
+        expectedIntent: "legal_analysis",
+        description: "延續性問題 - 追問更多",
+        conversationHistory: [
+            { role: 'user', content: '法官常引用哪些法條?' },
+            { role: 'assistant', content: '常引用民法184條...' }
+        ]
+    },
+
     // 打招呼 (應該被過濾)
     {
         question: "你好",
@@ -102,8 +122,16 @@ async function runTests() {
         console.log(`問題: "${testCase.question}"`);
         console.log(`預期意圖: ${testCase.expectedIntent}`);
 
+        // 🆕 如果有對話歷史,顯示
+        if (testCase.conversationHistory && testCase.conversationHistory.length > 0) {
+            console.log(`對話歷史: ${testCase.conversationHistory.length} 條`);
+        }
+
         try {
-            const result = await classifyIntent(testCase.question);
+            // 🆕 傳遞對話歷史
+            const result = await classifyIntent(testCase.question, {
+                conversationHistory: testCase.conversationHistory || []
+            });
             
             const passed = result.intent === testCase.expectedIntent;
             if (passed) {

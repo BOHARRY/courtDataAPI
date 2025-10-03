@@ -343,10 +343,14 @@ export async function handleAIAgentChat(req, res) {
 
         // 如果有法官名稱,在意圖識別時也傳遞上下文
         const contextForIntent = judgeName
-            ? `當前查詢的法官: ${judgeName}\n用戶問題: ${question}`
-            : question;
+            ? `當前查詢的法官: ${judgeName}`
+            : '';
 
-        const intentResult = await classifyIntent(contextForIntent);
+        // 🆕 傳遞對話歷史,幫助理解延續性問題
+        const intentResult = await classifyIntent(question, {
+            context: contextForIntent,
+            conversationHistory: conversation_history
+        });
         logIntentStats(intentResult);
 
         // 如果不是法律相關問題,直接返回友好回應

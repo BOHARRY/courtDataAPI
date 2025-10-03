@@ -26,7 +26,7 @@ const INTENT_TYPES = {
 };
 
 /**
- * 意圖識別 System Prompt (極簡版)
+ * 意圖識別 System Prompt (支持對話上下文)
  */
 const INTENT_CLASSIFIER_PROMPT = `你是一個意圖分類器,判斷用戶問題是否與「法官判決分析」相關。
 
@@ -36,45 +36,76 @@ const INTENT_CLASSIFIER_PROMPT = `你是一個意圖分類器,判斷用戶問題
 3. "out_of_scope" - 與法律無關的問題 (如: 法官個人生活、天氣、股票等)
 4. "unclear" - 問題不清楚或無法理解
 
-**範例**:
+**重要規則 - 對話上下文**:
+- 如果用戶問題是延續性問題 (如: "只有這些嗎?", "還有嗎?", "那個案子呢?"),需要查看對話歷史
+- 如果對話歷史中最近討論的是法官判決相關內容,則延續性問題也應該分類為 legal_analysis
+- 代詞 ("這些", "那個", "它") 需要結合上下文理解
+
+**範例 - 獨立問題**:
 - "王婉如法官在交通案件中的勝訴率?" → legal_analysis
 - "損害賠償案件有哪些?" → legal_analysis
 - "法官常引用哪些法條?" → legal_analysis
 - "你好" → greeting
 - "法官單身嗎?" → out_of_scope
 - "今天天氣如何?" → out_of_scope
-- "asdfgh" → unclear
+
+**範例 - 延續性問題**:
+- 對話歷史: "法官有幾件原告勝訴的案子?" → "有5件..."
+  用戶問題: "只有五件嗎?" → legal_analysis (延續法官判決討論)
+
+- 對話歷史: "法官常引用哪些法條?" → "常引用民法184條..."
+  用戶問題: "還有其他的嗎?" → legal_analysis (延續法條討論)
+
+- 對話歷史: "你好" → "您好!我是法官分析助手..."
+  用戶問題: "法官單身嗎?" → out_of_scope (雖然是延續,但內容無關)
 
 **重要**: 只回答分類名稱,不要解釋。`;
 
 /**
  * 分類用戶問題意圖
  * @param {string} question - 用戶問題
- * @param {string} context - 可選的上下文資訊 (如: 當前查詢的法官名稱)
+ * @param {Object} options - 選項
+ * @param {string} options.context - 可選的上下文資訊 (如: 當前查詢的法官名稱)
+ * @param {Array} options.conversationHistory - 可選的對話歷史 (用於理解延續性問題)
  * @returns {Promise<Object>} 意圖分類結果
  */
-export async function classifyIntent(question, context = '') {
+export async function classifyIntent(question, options = {}) {
+    const { context = '', conversationHistory = [] } = options;
     const startTime = Date.now();
-    
+
     try {
         console.log('[Intent Classifier] 開始分類意圖...');
         console.log('[Intent Classifier] 問題:', question);
         if (context) {
             console.log('[Intent Classifier] 上下文:', context.substring(0, 100) + '...');
         }
+        if (conversationHistory.length > 0) {
+            console.log('[Intent Classifier] 對話歷史:', conversationHistory.length, '條');
+        }
 
-        // 構建完整問題 (包含上下文)
-        const fullQuestion = context 
+        // 構建消息列表
+        const messages = [
+            { role: 'system', content: INTENT_CLASSIFIER_PROMPT }
+        ];
+
+        // 🆕 添加最近的對話歷史 (最多 3 輪,避免 Token 過多)
+        const recentHistory = conversationHistory.slice(-6); // 最近 3 輪 (每輪 2 條消息)
+        if (recentHistory.length > 0) {
+            console.log('[Intent Classifier] 使用最近', recentHistory.length, '條對話作為上下文');
+            messages.push(...recentHistory);
+        }
+
+        // 添加當前問題
+        const fullQuestion = context
             ? `上下文: ${context}\n\n用戶問題: ${question}`
             : `用戶問題: ${question}`;
 
-        // 調用 GPT-4.1 nano 進行意圖分類
+        messages.push({ role: 'user', content: fullQuestion });
+
+        // 調用 GPT-4o-mini 進行意圖分類
         const completion = await openai.chat.completions.create({
-            model: 'gpt-4o-mini',  // 🔧 注意: OpenAI 目前還沒有 gpt-4.1-nano,先用 gpt-4o-mini
-            messages: [
-                { role: 'system', content: INTENT_CLASSIFIER_PROMPT },
-                { role: 'user', content: fullQuestion }
-            ],
+            model: 'gpt-4o-mini',
+            messages: messages,
             temperature: 0.1,  // 低溫度,確保分類穩定
             max_tokens: 10     // 只需要返回分類名稱
         });
