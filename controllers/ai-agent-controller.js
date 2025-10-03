@@ -25,21 +25,31 @@ const MCP_SERVER_URL = process.env.MCP_SERVER_URL || 'https://esmcp.onrender.com
 // 最大工具調用輪數
 const MAX_ITERATIONS = 10;
 
-/**
- * 調用 MCP 工具
- */
-async function callMCPTool(toolName, params) {
-    try {
-        console.log(`[AI Agent] 調用 MCP 工具: ${toolName}`, params);
+// MCP Session 管理
+let mcpSessionId = null;
 
-        // 構建 MCP 請求
-        const mcpRequest = {
+/**
+ * 初始化 MCP Session
+ */
+async function initializeMCPSession() {
+    if (mcpSessionId) {
+        return mcpSessionId; // 已經初始化
+    }
+
+    try {
+        console.log('[AI Agent] 初始化 MCP Session...');
+
+        const initRequest = {
             jsonrpc: "2.0",
-            id: Date.now(),
-            method: "tools/call",
+            id: 1,
+            method: "initialize",
             params: {
-                name: toolName,
-                arguments: params
+                protocolVersion: "2024-11-05",
+                capabilities: {},
+                clientInfo: {
+                    name: "lawsowl-ai-agent",
+                    version: "1.0.0"
+                }
             }
         };
 
@@ -48,6 +58,55 @@ async function callMCPTool(toolName, params) {
             headers: {
                 'Content-Type': 'application/json',
                 'Accept': 'application/json, text/event-stream'
+            },
+            body: JSON.stringify(initRequest)
+        });
+
+        if (!response.ok) {
+            throw new Error(`MCP 初始化失敗: ${response.status}`);
+        }
+
+        // 獲取 Session ID
+        mcpSessionId = response.headers.get('Mcp-Session-Id');
+        console.log('[AI Agent] MCP Session 初始化成功:', mcpSessionId);
+
+        return mcpSessionId;
+    } catch (error) {
+        console.error('[AI Agent] MCP 初始化失敗:', error);
+        throw error;
+    }
+}
+
+/**
+ * 調用 MCP 工具
+ */
+async function callMCPTool(toolName, params) {
+    try {
+        console.log(`[AI Agent] 調用 MCP 工具: ${toolName}`, params);
+
+        // 確保 MCP Session 已初始化
+        const sessionId = await initializeMCPSession();
+
+        // 構建 MCP 請求
+        // 注意: FastMCP 要求參數包裝在 params 中
+        const mcpRequest = {
+            jsonrpc: "2.0",
+            id: Date.now(),
+            method: "tools/call",
+            params: {
+                name: toolName,
+                arguments: {
+                    params: params  // FastMCP 要求參數包裝在 params 中
+                }
+            }
+        };
+
+        const response = await fetch(MCP_SERVER_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json, text/event-stream',
+                'Mcp-Session-Id': sessionId  // 添加 Session ID
             },
             body: JSON.stringify(mcpRequest)
         });
