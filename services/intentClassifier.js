@@ -129,42 +129,46 @@ export async function classifyIntent(question, context = '') {
  * 生成友好的拒絕回應
  * @param {string} intent - 意圖類型
  * @param {string} question - 用戶問題
+ * @param {string} judgeName - 當前查詢的法官名稱 (可選)
  * @returns {string} 回應訊息
  */
-export function generateOutOfScopeResponse(intent, question) {
+export function generateOutOfScopeResponse(intent, question, judgeName = null) {
+    // 根據是否有法官名稱,調整回應內容
+    const judgeContext = judgeName
+        ? `${judgeName}法官判決內容`
+        : '法官判決分析';
+
     switch (intent) {
         case INTENT_TYPES.GREETING:
-            return `您好!我是 LawSowl 法官分析助手。
+            return `您好!我是法官分析助手。
 
 我可以幫您:
-• 分析特定法官的判決傾向
-• 計算勝訴率和判決結果分布
-• 查找法官常引用的法條
-• 比較多位法官的判決風格
+• 分析特定法官的判決傾向或判決結果比例
+• 查找特定案由的判決案例
+• 分析法官常引用的法條
 • 分析判決金額趨勢
 
 💡 **數據範圍**: 2025年6-7月的判決書數據
 
-請問您想了解哪位法官的判決傾向?`;
+請問您想了解什麼?`;
 
         case INTENT_TYPES.OUT_OF_SCOPE:
-            return `抱歉,我只能回答與**法官判決分析**相關的問題。
+            return `抱歉,我只能回答與**${judgeContext}**相關的問題。
 
 我可以幫您:
-• 分析法官的判決傾向和勝訴率
+• 分析法官的判決傾向或判決結果比例
 • 查找特定案由的判決案例
 • 分析法官常引用的法條
-• 比較不同法官的判決風格
 
-您的問題似乎與法官判決分析無關。如果您有法律相關的問題,歡迎重新提問! 😊`;
+您的問題似乎與判決分析無關,歡迎重新提問! 😊`;
 
         case INTENT_TYPES.UNCLEAR:
             return `抱歉,我不太理解您的問題。
 
-我是 LawSowl 法官分析助手,專門協助分析法官的判決傾向。
+我是法官分析助手,專門協助分析法官的判決傾向。
 
 **範例問題**:
-• "王婉如法官在交通案件中的勝訴率是多少?"
+• "王婉如法官在交通案件中的判決結果比例?"
 • "損害賠償案件中,法官常引用哪些法條?"
 • "這位法官對原告的判決傾向如何?"
 

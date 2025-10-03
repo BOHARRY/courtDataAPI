@@ -123,7 +123,7 @@ async function runTests() {
 
             // 如果是超出範圍的問題,顯示回應
             if (!result.isLegalRelated) {
-                const response = generateOutOfScopeResponse(result.intent, testCase.question);
+                const response = generateOutOfScopeResponse(result.intent, testCase.question, '王婉如');
                 console.log(`回應預覽: ${response.substring(0, 100)}...`);
             }
 

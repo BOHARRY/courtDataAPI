@@ -321,7 +321,7 @@ async function executeToolCall(toolCall) {
  */
 export async function handleAIAgentChat(req, res) {
     try {
-        const { question, conversation_history = [] } = req.body;
+        const { question, judge_name = null, conversation_history = [] } = req.body;
 
         if (!question) {
             return res.status(400).json({
@@ -331,21 +331,46 @@ export async function handleAIAgentChat(req, res) {
 
         console.log('[AI Agent] 收到問題:', question);
 
+        // 🆕 法官名稱 (從前端直接傳遞)
+        const judgeName = judge_name;
+        if (judgeName) {
+            console.log('[AI Agent] 綁定法官:', judgeName);
+            console.log('[AI Agent] 📌 此對話僅限於該法官的判決分析');
+        }
+
         // 🆕 步驟 1: 意圖識別 (使用 GPT-4o-mini 快速分類)
         console.log('[AI Agent] ========== 意圖識別 ==========');
-        const intentResult = await classifyIntent(question);
+
+        // 如果有法官名稱,在意圖識別時也傳遞上下文
+        const contextForIntent = judgeName
+            ? `當前查詢的法官: ${judgeName}\n用戶問題: ${question}`
+            : question;
+
+        const intentResult = await classifyIntent(contextForIntent);
         logIntentStats(intentResult);
 
         // 如果不是法律相關問題,直接返回友好回應
         if (!intentResult.isLegalRelated) {
             console.log('[AI Agent] ❌ 問題超出範圍,意圖:', intentResult.intent);
-            const outOfScopeResponse = generateOutOfScopeResponse(intentResult.intent, question);
+
+            // 🆕 如果有法官名稱,強調只能回答該法官相關問題
+            const outOfScopeResponse = judgeName
+                ? `抱歉,這裡是 **${judgeName}法官** 的檢索頁面,目前只能回答和 **${judgeName}法官判決內容** 相關的分析唷! 😊
+
+我可以幫您:
+• 分析 ${judgeName}法官的判決傾向或判決結果比例
+• 查找 ${judgeName}法官審理的特定案由判決案例
+• 分析 ${judgeName}法官常引用的法條
+
+歡迎重新提問!`
+                : generateOutOfScopeResponse(intentResult.intent, question, judgeName);
 
             return res.json({
                 success: true,
                 answer: outOfScopeResponse,
                 iterations: 0,
                 intent: intentResult.intent,
+                judge_name: judgeName,
                 skipped_full_analysis: true,
                 token_savings: {
                     saved_tokens: 4500,  // 估算節省的 Token 數量

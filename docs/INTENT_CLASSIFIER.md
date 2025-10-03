@@ -110,11 +110,12 @@ courtDataAPI/
 
 ### **2. 生成回應**
 
-**函數**: `generateOutOfScopeResponse(intent, question)`
+**函數**: `generateOutOfScopeResponse(intent, question, judgeName)`
 
 **參數**:
 - `intent` (string): 意圖類型
 - `question` (string): 用戶問題
+- `judgeName` (string, 可選): 當前查詢的法官名稱
 
 **返回值**: 友好的回應訊息 (string)
 
@@ -124,9 +125,13 @@ courtDataAPI/
 generateOutOfScopeResponse('greeting', '你好')
 // → "您好!我是 LawSowl 法官分析助手。我可以幫您: ..."
 
-// out_of_scope
+// out_of_scope (無法官名稱)
 generateOutOfScopeResponse('out_of_scope', '法官單身嗎?')
 // → "抱歉,我只能回答與**法官判決分析**相關的問題。..."
+
+// out_of_scope (有法官名稱)
+generateOutOfScopeResponse('out_of_scope', '法官單身嗎?', '王婉如')
+// → "抱歉,我只能回答與**王婉如法官判決內容**相關的問題。..."
 
 // unclear
 generateOutOfScopeResponse('unclear', 'asdfgh')
