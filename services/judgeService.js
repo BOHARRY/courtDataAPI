@@ -3,8 +3,7 @@ import admin from 'firebase-admin';
 import esClient from '../config/elasticsearch.js';
 // 從 utils/judgeAnalysisUtils.js 導入實際函數
 import { buildEsQueryForJudgeCases, aggregateJudgeCaseData } from '../utils/judgeAnalysisUtils.js';
-// 從 services/aiAnalysisService.js 導入實際函數
-import { triggerAIAnalysis } from './aiAnalysisService.js';
+// 🗑️ 已移除: triggerAIAnalysis import (AI 分析功能已廢棄)
 
 export const JUDGES_COLLECTION = 'judges'; // 導出以便 aiAnalysisService 可以引用
 const ES_INDEX_NAME = 'search-boooook';
@@ -88,12 +87,11 @@ export async function getJudgeAnalytics(judgeName) {
                 legalStats: { legalBasis: [], reasoningStrength: { high: 0, medium: 0, low: 0 } },
                 caseTypeAnalysis: {},
                 representativeCases: [],
-                traits: [],
-                tendency: null,
+                // 🗑️ 已移除: traits 和 tendency 欄位
             };
             await judgeDocRef.set(noCaseDataForFirestore, { merge: true });
 
-            // 🔧 修復: 返回給前端的數據,將 serverTimestamp() 替換為 ISO 字串
+            // 返回給前端的數據,將 serverTimestamp() 替換為 ISO 字串
             const noCaseDataForResponse = {
                 ...noCaseDataForFirestore,
                 lastUpdated: new Date().toISOString(),
@@ -109,38 +107,31 @@ export async function getJudgeAnalytics(judgeName) {
         // 對 ES 結果進行聚合分析，生成基礎統計數據
         const baseAnalyticsData = aggregateJudgeCaseData(esResult.hits.hits, judgeName); // 需要實作此工具函數
 
-        const existingData = judgeDoc.exists ? judgeDoc.data() : {};
+        // 🗑️ 移除 AI 分析: traits 和 tendency 功能已廢棄,不再生成
         const dataToStoreInFirestore = {
             name: judgeName,
             ...baseAnalyticsData,
             lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
-            processingStatus: 'partial', // 初始設為 partial
-            // 保留已有的 traits/tendency 直到新的分析完成，或者直接清空等待 AI 填充
-            traits: existingData.traits || [],
-            tendency: existingData.tendency || null,
-            aiProcessedAt: existingData.aiProcessedAt || null, // 保留上次AI完成時間
-            processingError: null, // 清除舊錯誤
+            processingStatus: 'complete', // 🔧 直接設為 complete,不再等待 AI 分析
+            processingError: null,
         };
 
         console.log(`[JudgeService] Storing base analytics for ${judgeName} to Firestore.`);
         await judgeDocRef.set(dataToStoreInFirestore, { merge: true });
 
-        // 異步觸發 AI 分析 (不需要 await)
-        triggerAIAnalysis(judgeName, esResult.hits.hits.map(hit => hit._source), baseAnalyticsData) // <<--- 調用真實函數, 傳遞 baseAnalyticsData
-            .then(() => console.log(`[JudgeService] AI analysis successfully triggered and completed for ${judgeName}.`))
-            .catch(aiError => console.error(`[JudgeService] AI analysis process failed for ${judgeName}:`, aiError));
+        // 🗑️ 已移除: AI 分析觸發 (traits/tendency 功能已廢棄)
+        // triggerAIAnalysis(...) 不再調用
 
-        // 🔧 修復: 返回給前端的數據,將 serverTimestamp() 替換為 ISO 字串
+        // 返回給前端的數據,將 serverTimestamp() 替換為 ISO 字串
         const responseData = {
             ...dataToStoreInFirestore,
-            lastUpdated: new Date().toISOString(), // 替換為可序列化的 ISO 字串
-            processingStatus: 'partial'
+            lastUpdated: new Date().toISOString(),
+            processingStatus: 'complete' // 🔧 直接返回 complete
         };
 
         return {
-            status: "partial",
+            status: "complete", // 🔧 改為 complete
             data: responseData,
-            // estimatedTimeRemaining: 60, // 或從 AI 服務獲取一個初始預估
         };
 
     } catch (error) {
@@ -161,42 +152,39 @@ export async function getJudgeAnalytics(judgeName) {
 }
 
 // --- 後續將實作 analysis-status 和 reanalyze 的服務函數 ---
+// 🗑️ 已廢棄: getAIAnalysisStatus 函數不再需要,因為 AI 分析功能已移除
+// 前端不再需要輪詢 AI 分析狀態
 export async function getAIAnalysisStatus(judgeName) {
-    console.log(`[JudgeService] Getting AI analysis status for judge: ${judgeName}`);
+    console.log(`[JudgeService] ⚠️ DEPRECATED: getAIAnalysisStatus called for ${judgeName}, but AI analysis is disabled.`);
     const judgeDocRef = admin.firestore().collection(JUDGES_COLLECTION).doc(judgeName);
     const judgeDoc = await judgeDocRef.get();
 
     if (!judgeDoc.exists) {
-        // 如果在 getJudgeAnalytics 中會創建 'no_cases_found' 記錄，這裡可能需要不同的處理
-        // 或者前端在 fetchInitialData 失敗時就不會輪詢
         console.warn(`[JudgeService] Judge document not found when getting AI status for ${judgeName}.`);
         return { processingStatus: 'not_found_in_status_check' };
     }
     const data = judgeDoc.data();
-    // 確保返回的數據結構與前端期望一致
+    // 🗑️ 返回 complete 狀態,不再返回 traits/tendency
     return {
-        processingStatus: data.processingStatus || 'unknown',
-        traits: data.traits || [],
-        tendency: data.tendency || null,
-        // estimatedTimeRemaining: data.estimatedTimeRemaining || (data.processingStatus === 'partial' ? 30 : 0),
-        // processingError: data.processingError || null, // 可選，給前端更多錯誤信息
+        processingStatus: data.processingStatus || 'complete',
+        // 🗑️ 已移除: traits 和 tendency 欄位
     };
 }
 
+// 🗑️ 已廢棄: triggerReanalysis 函數不再需要,因為 AI 分析功能已移除
 export async function triggerReanalysis(judgeName) {
-    console.log(`[JudgeService] Triggering reanalysis for judge: ${judgeName}`);
+    console.log(`[JudgeService] ⚠️ DEPRECATED: triggerReanalysis called for ${judgeName}, but AI analysis is disabled.`);
     const judgeDocRef = admin.firestore().collection(JUDGES_COLLECTION).doc(judgeName);
     const judgeDoc = await judgeDocRef.get();
 
     if (!judgeDoc.exists) {
-        // 不應該發生，因為通常是已有記錄的法官才會有重新分析的按鈕
         const error = new Error(`Judge ${judgeName} not found for reanalysis.`);
         error.statusCode = 404;
         throw error;
     }
 
     console.log(`[JudgeService] Fetching latest cases for re-analysis of judge ${judgeName} from Elasticsearch.`);
-    const esQuery = buildEsQueryForJudgeCases(judgeName); // <<--- 調用真實函數
+    const esQuery = buildEsQueryForJudgeCases(judgeName);
     const esResult = await esClient.search({
         index: ES_INDEX_NAME,
         query: esQuery,
@@ -212,10 +200,7 @@ export async function triggerReanalysis(judgeName) {
     if (!esResult.hits.hits || esResult.hits.hits.length === 0) {
         await judgeDocRef.update({
             processingStatus: 'no_cases_found_on_reanalyze',
-            traits: [],
-            tendency: null,
             lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
-            aiProcessedAt: null,
             processingError: 'Reanalysis triggered, but no cases found in ES.',
         });
         console.log(`[JudgeService] No cases found for ${judgeName} upon reanalysis trigger.`);
@@ -223,23 +208,18 @@ export async function triggerReanalysis(judgeName) {
     }
 
     // 重新聚合基礎數據，因為案件列表可能已更新
-    const baseAnalyticsData = aggregateJudgeCaseData(esResult.hits.hits, judgeName); // <<--- 調用真實函數
+    const baseAnalyticsData = aggregateJudgeCaseData(esResult.hits.hits, judgeName);
 
-    // 更新 Firestore 狀態以準備重新分析
+    // 🔧 更新 Firestore,直接設為 complete (不再等待 AI 分析)
     await judgeDocRef.update({
-        ...baseAnalyticsData, // 更新基礎統計數據
-        processingStatus: 'partial', // 重置為 partial
-        traits: [], // 清除舊的 AI 結果
-        tendency: null,
+        ...baseAnalyticsData,
+        processingStatus: 'complete', // 🔧 直接設為 complete
         lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
-        aiProcessedAt: null,
         processingError: null,
     });
 
-    // 異步觸發 AI 分析，傳入新的案件數據和新的基礎統計
-    triggerAIAnalysis(judgeName, esResult.hits.hits.map(hit => hit._source), baseAnalyticsData) // <<--- 調用真實函數
-        .then(() => console.log(`[JudgeService] AI re-analysis successfully triggered and completed for ${judgeName}.`))
-        .catch(aiError => console.error(`[JudgeService] AI re-analysis process failed for ${judgeName}:`, aiError));
+    // 🗑️ 已移除: AI 分析觸發
+    // triggerAIAnalysis(...) 不再調用
 
-    return { status: "initiated", message: "重新分析已啟動" };
+    return { status: "complete", message: "重新分析已完成" }; // 🔧 改為 complete
 }
