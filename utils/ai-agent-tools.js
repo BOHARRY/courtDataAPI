@@ -13,17 +13,21 @@ export const MCP_TOOLS = [
         type: "function",
         function: {
             name: "search_judgments",
-            description: "關鍵詞搜尋判決書。適合精確查詢,當用戶提供明確的案由名稱時使用。數據範圍: 2025年6-7月。",
+            description: "關鍵詞搜尋判決書。適合精確查詢,當用戶提供明確的案由名稱或當事人名稱時使用。數據範圍: 2025年6-7月。",
             parameters: {
                 type: "object",
                 properties: {
                     query: {
                         type: "string",
-                        description: "搜尋關鍵字,可以是案由關鍵字、法條等。如果要搜尋所有判決,使用 '*'。如果指定了 judge_name,這個參數可以是案由關鍵字。"
+                        description: "搜尋關鍵字,可以是案由關鍵字、法條等。如果要搜尋所有判決,使用 '*'。如果指定了 judge_name 或 party_name,這個參數可以是案由關鍵字。"
                     },
                     judge_name: {
                         type: "string",
                         description: "法官姓名 (精確匹配),可選。如果指定,將只搜尋該法官的判決書。"
+                    },
+                    party_name: {
+                        type: "string",
+                        description: "當事人名稱 (可選)。可以是原告、被告、上訴人或被上訴人的名稱。支持公司名稱或個人姓名,支持部分匹配 (例如: 輸入「締潔國際」可以匹配「締潔國際股份有限公司」)。"
                     },
                     limit: {
                         type: "number",
@@ -62,6 +66,10 @@ export const MCP_TOOLS = [
                     judge_name: {
                         type: "string",
                         description: "法官姓名 (可選),用於過濾特定法官的判決"
+                    },
+                    party_name: {
+                        type: "string",
+                        description: "當事人名稱 (可選)。可以是原告、被告、上訴人或被上訴人的名稱。支持公司名稱或個人姓名,支持部分匹配。"
                     },
                     verdict_type: {
                         type: "string",
