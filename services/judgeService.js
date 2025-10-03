@@ -79,7 +79,7 @@ export async function getJudgeAnalytics(judgeName) {
         if (!esResult.hits.hits || esResult.hits.hits.length === 0) {
             console.log(`[JudgeService] No cases found in ES for judge ${judgeName}.`);
             // 可以在 Firestore 中創建一個記錄標記此法官無案件，避免重複查詢 ES
-            const noCaseData = {
+            const noCaseDataForFirestore = {
                 name: judgeName,
                 lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
                 processingStatus: 'no_cases_found', // 特殊狀態
@@ -91,10 +91,17 @@ export async function getJudgeAnalytics(judgeName) {
                 traits: [],
                 tendency: null,
             };
-            await judgeDocRef.set(noCaseData, { merge: true });
+            await judgeDocRef.set(noCaseDataForFirestore, { merge: true });
+
+            // 🔧 修復: 返回給前端的數據,將 serverTimestamp() 替換為 ISO 字串
+            const noCaseDataForResponse = {
+                ...noCaseDataForFirestore,
+                lastUpdated: new Date().toISOString(),
+            };
+
             return {
                 status: "complete", // 因為已經確定無案件，所以算 "處理完成"
-                data: noCaseData,
+                data: noCaseDataForResponse,
             };
         }
 
@@ -123,9 +130,16 @@ export async function getJudgeAnalytics(judgeName) {
             .then(() => console.log(`[JudgeService] AI analysis successfully triggered and completed for ${judgeName}.`))
             .catch(aiError => console.error(`[JudgeService] AI analysis process failed for ${judgeName}:`, aiError));
 
+        // 🔧 修復: 返回給前端的數據,將 serverTimestamp() 替換為 ISO 字串
+        const responseData = {
+            ...dataToStoreInFirestore,
+            lastUpdated: new Date().toISOString(), // 替換為可序列化的 ISO 字串
+            processingStatus: 'partial'
+        };
+
         return {
             status: "partial",
-            data: { ...dataToStoreInFirestore, processingStatus: 'partial' },
+            data: responseData,
             // estimatedTimeRemaining: 60, // 或從 AI 服務獲取一個初始預估
         };
 
