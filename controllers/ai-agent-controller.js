@@ -220,7 +220,7 @@ async function executeToolCall(toolCall) {
 
     // MCP 工具列表
     const mcpTools = [
-        'search_judgments_by_judge',
+        'search_judgments',
         'get_citation_analysis',
         'get_case_details',
         'get_perspective_analysis',

@@ -12,30 +12,38 @@ export const MCP_TOOLS = [
     {
         type: "function",
         function: {
-            name: "search_judgments_by_judge",
-            description: "搜尋特定法官的判決書。可以按案由、判決結果類型、日期範圍進行過濾。數據範圍: 2025年6-7月。",
+            name: "search_judgments",
+            description: "搜尋判決書。可以按法官姓名、案由、判決結果類型、日期範圍進行過濾。數據範圍: 2025年6-7月。",
             parameters: {
                 type: "object",
                 properties: {
+                    query: {
+                        type: "string",
+                        description: "搜尋關鍵字,可以是案由關鍵字、法條等。如果要搜尋所有判決,使用 '*'。如果指定了 judge_name,這個參數可以是案由關鍵字。"
+                    },
                     judge_name: {
                         type: "string",
-                        description: "法官姓名 (精確匹配)"
+                        description: "法官姓名 (精確匹配),可選。如果指定,將只搜尋該法官的判決書。"
                     },
-                    case_type: {
+                    limit: {
+                        type: "number",
+                        description: "返回結果數量,預設10,最大100",
+                        default: 10
+                    },
+                    from_date: {
                         type: "string",
-                        description: "案由關鍵字 (可選),如: 交通、侵權、債務、詐欺"
+                        description: "起始日期 (YYYY-MM-DD),可選"
+                    },
+                    to_date: {
+                        type: "string",
+                        description: "結束日期 (YYYY-MM-DD),可選"
                     },
                     verdict_type: {
                         type: "string",
                         description: "判決結果類型 (可選),如: 原告勝訴、原告敗訴、部分勝訴部分敗訴"
-                    },
-                    limit: {
-                        type: "number",
-                        description: "返回結果數量,預設20,最大100",
-                        default: 20
                     }
                 },
-                required: ["judge_name"]
+                required: ["query"]
             }
         }
     },
@@ -242,7 +250,7 @@ export const LOCAL_FUNCTION_TOOLS = [
         type: "function",
         function: {
             name: "calculate_case_type_distribution",
-            description: "計算案件類型分布,可按案由、法院、判決結果分組。需要先調用 search_judgments_by_judge。",
+            description: "計算案件類型分布,可按案由、法院、判決結果分組。需要先調用 search_judgments 獲取判決書數據。",
             parameters: {
                 type: "object",
                 properties: {
@@ -304,9 +312,22 @@ export const SYSTEM_PROMPT = `你是 LawSowl 法官知識通 AI 助手,專門協
 - 適當使用 Markdown 格式 (標題、列表、粗體)
 
 **範例問題處理**:
-Q: "王婉如法官在交通案件中,原告勝訴率是多少?"
-A: 
-1. 調用 search_judgments_by_judge (judge_name="王婉如", case_type="交通")
-2. 調用 calculate_verdict_statistics (analysis_type="verdict_rate", verdict_type="原告勝訴")
-3. 生成回答: "根據 2025年6-7月 的數據,王婉如法官在 37 筆交通案件中..."`;
+
+範例 1: "王婉如法官在交通案件中,原告勝訴率是多少?"
+步驟:
+1. 調用 search_judgments (query="交通", judge_name="王婉如", limit=50)
+2. 調用 calculate_verdict_statistics (judgments=結果, analysis_type="verdict_rate", verdict_type="原告勝訴")
+3. 生成回答: "根據 2025年6-7月 的數據,王婉如法官在交通案件中,原告勝訴率為 XX%..."
+
+範例 2: "原告勝訴的案件都有哪些共通性?"
+步驟:
+1. 調用 search_judgments (query="*", verdict_type="原告勝訴", limit=100)
+2. 調用 calculate_case_type_distribution (judgments=結果, group_by="case_type")
+3. 生成回答: "根據 2025年6-7月 的數據,原告勝訴案件的共通性包括: 主要案由為 XX、YY、ZZ..."
+
+**重要提醒**:
+- 如果用戶問題涉及特定法官,優先使用 judge_name 參數精確匹配
+- 如果需要分析共通性,先獲取足夠多的樣本 (建議 limit >= 50)
+- 組合使用 MCP 工具和本地函數可以提供更深入的分析
+`;
 
