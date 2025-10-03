@@ -26,40 +26,63 @@ const INTENT_TYPES = {
 };
 
 /**
- * 意圖識別 System Prompt (支持對話上下文)
+ * 意圖識別 System Prompt (支持對話上下文 + 輕量級預處理)
  */
-const INTENT_CLASSIFIER_PROMPT = `你是一個意圖分類器,判斷用戶問題是否與「法官判決分析」相關。
+const INTENT_CLASSIFIER_PROMPT = `你是一個意圖分類器,判斷用戶問題是否與「法官判決分析」相關,並提取關鍵資訊。
 
-**你只能回答以下 4 種分類之一**:
+**你需要返回 JSON 格式**:
+{
+  "intent": "legal_analysis",  // 意圖分類
+  "question_type": "勝訴率",   // 問題類型 (僅當 intent=legal_analysis 時)
+  "case_type": "損害賠償",     // 案由 (如果有)
+  "verdict_type": "原告勝訴"   // 判決類型 (如果有)
+}
+
+**意圖分類 (intent)**:
 1. "legal_analysis" - 問題與法官、判決、案件、勝訴率、法條等法律分析相關
 2. "greeting" - 打招呼、問候、自我介紹
 3. "out_of_scope" - 與法律無關的問題 (如: 法官個人生活、天氣、股票等)
 4. "unclear" - 問題不清楚或無法理解
 
+**問題類型 (question_type)** - 僅當 intent=legal_analysis 時填寫:
+- "勝訴率" - 詢問勝訴率、判決結果比例
+- "列表" - 列出判決書、案件
+- "法條" - 詢問常引用的法條
+- "判決傾向" - 詢問法官的判決傾向
+- "金額" - 詢問判決金額趨勢
+- "其他" - 其他法律分析問題
+
+**案由 (case_type)** - 從問題中提取案由關鍵字:
+- 例: "損害賠償", "交通", "返還不當得利", "債務清償" 等
+- 如果問題中沒有明確案由,填 null
+
+**判決類型 (verdict_type)** - 從問題中提取判決類型:
+- "原告勝訴", "原告敗訴", "部分勝訴部分敗訴"
+- 如果問題中沒有明確判決類型,填 null
+
 **重要規則 - 對話上下文**:
-- 如果用戶問題是延續性問題 (如: "只有這些嗎?", "還有嗎?", "那個案子呢?"),需要查看對話歷史
+- 如果用戶問題是延續性問題 (如: "只有這些嗎?", "還有嗎?"),需要查看對話歷史
 - 如果對話歷史中最近討論的是法官判決相關內容,則延續性問題也應該分類為 legal_analysis
 - 代詞 ("這些", "那個", "它") 需要結合上下文理解
 
-**範例 - 獨立問題**:
-- "王婉如法官在交通案件中的勝訴率?" → legal_analysis
-- "損害賠償案件有哪些?" → legal_analysis
-- "法官常引用哪些法條?" → legal_analysis
-- "你好" → greeting
-- "法官單身嗎?" → out_of_scope
-- "今天天氣如何?" → out_of_scope
+**範例**:
 
-**範例 - 延續性問題**:
-- 對話歷史: "法官有幾件原告勝訴的案子?" → "有5件..."
-  用戶問題: "只有五件嗎?" → legal_analysis (延續法官判決討論)
+問題: "王婉如法官在交通案件中的勝訴率?"
+返回: {"intent":"legal_analysis","question_type":"勝訴率","case_type":"交通","verdict_type":"原告勝訴"}
 
-- 對話歷史: "法官常引用哪些法條?" → "常引用民法184條..."
-  用戶問題: "還有其他的嗎?" → legal_analysis (延續法條討論)
+問題: "損害賠償案件有哪些?"
+返回: {"intent":"legal_analysis","question_type":"列表","case_type":"損害賠償","verdict_type":null}
 
-- 對話歷史: "你好" → "您好!我是法官分析助手..."
-  用戶問題: "法官單身嗎?" → out_of_scope (雖然是延續,但內容無關)
+問題: "法官常引用哪些法條?"
+返回: {"intent":"legal_analysis","question_type":"法條","case_type":null,"verdict_type":null}
 
-**重要**: 只回答分類名稱,不要解釋。`;
+問題: "你好"
+返回: {"intent":"greeting","question_type":null,"case_type":null,"verdict_type":null}
+
+問題: "法官單身嗎?"
+返回: {"intent":"out_of_scope","question_type":null,"case_type":null,"verdict_type":null}
+
+**重要**: 只返回 JSON,不要其他文字。`;
 
 /**
  * 分類用戶問題意圖
@@ -107,15 +130,14 @@ export async function classifyIntent(question, options = {}) {
             model: 'gpt-4o-mini',
             messages: messages,
             temperature: 0.1,  // 低溫度,確保分類穩定
-            max_tokens: 10     // 只需要返回分類名稱
+            max_tokens: 100    // 🆕 增加 token 限制以支持 JSON 返回
         });
 
-        const intent = completion.choices[0].message.content.trim().toLowerCase();
+        const rawResponse = completion.choices[0].message.content.trim();
         const duration = Date.now() - startTime;
-
-        // 記錄 Token 使用情況
         const usage = completion.usage;
-        console.log('[Intent Classifier] 分類結果:', intent);
+
+        console.log('[Intent Classifier] 原始返回:', rawResponse);
         console.log('[Intent Classifier] Token 使用:', {
             input: usage.prompt_tokens,
             output: usage.completion_tokens,
@@ -123,22 +145,58 @@ export async function classifyIntent(question, options = {}) {
         });
         console.log('[Intent Classifier] 耗時:', duration, 'ms');
 
-        // 驗證分類結果
+        // 🆕 解析 JSON 返回
+        let parsedResult;
+        try {
+            parsedResult = JSON.parse(rawResponse);
+        } catch (e) {
+            console.log('[Intent Classifier] ⚠️ JSON 解析失敗,使用舊格式:', rawResponse);
+            // 向後兼容: 如果不是 JSON,當作舊格式處理
+            const intent = rawResponse.toLowerCase();
+            const validIntents = Object.values(INTENT_TYPES);
+            const classifiedIntent = validIntents.includes(intent) ? intent : INTENT_TYPES.UNCLEAR;
+
+            parsedResult = {
+                intent: classifiedIntent,
+                question_type: null,
+                case_type: null,
+                verdict_type: null
+            };
+        }
+
+        // 驗證 intent
         const validIntents = Object.values(INTENT_TYPES);
-        const classifiedIntent = validIntents.includes(intent) 
-            ? intent 
+        const intent = validIntents.includes(parsedResult.intent)
+            ? parsedResult.intent
             : INTENT_TYPES.UNCLEAR;
 
+        console.log('[Intent Classifier] 分類結果:', intent);
+        if (parsedResult.question_type) {
+            console.log('[Intent Classifier] 問題類型:', parsedResult.question_type);
+        }
+        if (parsedResult.case_type) {
+            console.log('[Intent Classifier] 案由:', parsedResult.case_type);
+        }
+        if (parsedResult.verdict_type) {
+            console.log('[Intent Classifier] 判決類型:', parsedResult.verdict_type);
+        }
+
         return {
-            intent: classifiedIntent,
-            isLegalRelated: classifiedIntent === INTENT_TYPES.LEGAL_ANALYSIS,
-            confidence: 'high',  // GPT-4o-mini 的分類通常很準確
+            intent: intent,
+            isLegalRelated: intent === INTENT_TYPES.LEGAL_ANALYSIS,
+            confidence: 'high',
             duration: duration,
+            // 🆕 提取的資訊
+            extractedInfo: {
+                question_type: parsedResult.question_type || null,
+                case_type: parsedResult.case_type || null,
+                verdict_type: parsedResult.verdict_type || null
+            },
             tokenUsage: {
                 input: usage.prompt_tokens,
                 output: usage.completion_tokens,
                 total: usage.total_tokens,
-                estimatedCost: (usage.total_tokens / 1000000) * 0.15  // $0.15/1M tokens
+                estimatedCost: (usage.total_tokens / 1000000) * 0.15
             }
         };
 

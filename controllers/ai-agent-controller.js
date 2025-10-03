@@ -242,7 +242,7 @@ async function callMCPTool(toolName, params, retryCount = 0) {
 /**
  * 調用本地函數
  */
-function callLocalFunction(functionName, args) {
+function callLocalFunction(functionName, args, conversationHistory = []) {
     console.log(`[AI Agent] ========== 調用本地函數 ==========`);
     console.log(`[AI Agent] 函數名稱: ${functionName}`);
     console.log(`[AI Agent] 參數:`, JSON.stringify(args, null, 2).substring(0, 500) + '...');
@@ -255,10 +255,13 @@ function callLocalFunction(functionName, args) {
             console.log(`[AI Agent] 分析類型: ${args.analysis_type}`);
             console.log(`[AI Agent] 判決類型: ${args.verdict_type || '未指定'}`);
 
+            // 🆕 傳遞對話歷史
             result = calculate_verdict_statistics(args.judgments, {
                 analysis_type: args.analysis_type,
-                verdict_type: args.verdict_type
-            });
+                verdict_type: args.verdict_type,
+                case_type: args.case_type,
+                judge_name: args.judge_name
+            }, conversationHistory);
             break;
 
         case 'extract_top_citations':
@@ -290,7 +293,7 @@ function callLocalFunction(functionName, args) {
 /**
  * 執行工具調用
  */
-async function executeToolCall(toolCall) {
+async function executeToolCall(toolCall, conversationHistory = []) {
     const functionName = toolCall.function.name;
     const args = JSON.parse(toolCall.function.arguments);
 
@@ -310,8 +313,8 @@ async function executeToolCall(toolCall) {
         const result = await callMCPTool(functionName, args);
         return result;
     } else {
-        // 調用本地函數
-        const result = callLocalFunction(functionName, args);
+        // 調用本地函數 (🆕 傳遞對話歷史)
+        const result = callLocalFunction(functionName, args, conversationHistory);
         return result;
     }
 }
@@ -386,45 +389,89 @@ export async function handleAIAgentChat(req, res) {
         console.log('[AI Agent] ✅ 問題相關,進入完整分析流程');
         console.log('[AI Agent] =====================================');
 
-        // 🆕 動態構建 System Prompt (注入法官上下文)
+        // 🆕 動態構建 System Prompt (注入法官上下文 + 提取的資訊)
         let systemPrompt = SYSTEM_PROMPT;
 
-        if (judgeName) {
-            console.log('[AI Agent] 🔴 動態注入法官上下文到 System Prompt');
-            systemPrompt = `${SYSTEM_PROMPT}
+        // 提取的資訊
+        const extractedInfo = intentResult.extractedInfo || {};
+        const questionType = extractedInfo.question_type;
+        const caseType = extractedInfo.case_type;
+        const verdictType = extractedInfo.verdict_type;
+
+        if (judgeName || questionType) {
+            console.log('[AI Agent] 🔴 動態注入上下文到 System Prompt');
+
+            let contextSection = `
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-🔴 **重要上下文 - 當前查詢的法官**
+🔴 **重要上下文 - 問題預處理結果**
+`;
 
+            if (judgeName) {
+                contextSection += `
 **法官姓名**: ${judgeName}
-
-**關鍵規則**:
 - 用戶問題中提到「法官」、「這位法官」、「該法官」時,都是指「${judgeName}」法官
 - 在**所有**工具調用中,必須使用 judge_name="${judgeName}" 參數
-- 不要問用戶是哪位法官,直接使用 "${judgeName}"
+`;
+            }
 
-**當前法官的範例**:
+            if (questionType) {
+                contextSection += `
+**問題類型**: ${questionType}
+`;
+            }
 
-範例 A: 用戶問 "法官在損害賠償中的勝訴率?"
-步驟:
-1. [必須] 調用 semantic_search_judgments(query="損害賠償", judge_name="${judgeName}", limit=50)
-   - 注意: judge_name="${judgeName}" 是必填的!
-2. [必須] 調用 calculate_verdict_statistics(judgments=步驟1的結果, analysis_type="verdict_rate", verdict_type="原告勝訴")
-3. 生成回答: "根據 2025年6-7月 的數據,${judgeName}法官在損害賠償案件中,原告勝訴率為 XX%..."
+            if (caseType) {
+                contextSection += `
+**案由**: ${caseType}
+`;
+            }
 
-範例 B: 用戶問 "法官常引用哪些法條?"
-步驟:
-1. 調用 get_citation_analysis(judge_name="${judgeName}")
-2. 生成回答: "根據 2025年6-7月 的數據,${judgeName}法官常引用的法條包括: ..."
+            if (verdictType) {
+                contextSection += `
+**判決類型**: ${verdictType}
+`;
+            }
 
-範例 C: 用戶問 "法官的判決傾向如何?"
-步驟:
-1. 調用 analyze_judge(judge_name="${judgeName}")
-2. 生成回答: "根據 2025年6-7月 的數據,${judgeName}法官的判決傾向: ..."
+            // 🆕 根據問題類型提供建議的工作流程
+            if (questionType === '勝訴率') {
+                contextSection += `
+**建議工作流程** (勝訴率計算):
+1. [第1輪] 調用 semantic_search_judgments(query="${caseType || '*'}", judge_name="${judgeName}", limit=50)
+   - 獲取判決書數據
+2. [第2輪] 調用 calculate_verdict_statistics(analysis_type="verdict_rate", verdict_type="${verdictType || '原告勝訴'}")
+   - ⚠️ **不要傳遞 judgments 參數!** 函數會自動從對話歷史中提取數據
+3. [第3輪] 生成回答
 
+**範例**:
+用戶問: "法官在${caseType || '損害賠償'}中的勝訴率?"
+第1輪: semantic_search_judgments(query="${caseType || '損害賠償'}", judge_name="${judgeName}", limit=50)
+  → 返回 18 筆判決書
+第2輪: calculate_verdict_statistics(analysis_type="verdict_rate", verdict_type="${verdictType || '原告勝訴'}")
+  → 函數自動從對話歷史提取 18 筆判決書並計算
+  → 返回: { 總案件數: 18, 原告勝訴: 7, 勝訴率: "38.9%" }
+第3輪: 生成回答 "根據 2025年6-7月 的數據,${judgeName}法官在${caseType || '損害賠償'}案件中,原告勝訴率為 38.9%..."
+`;
+            } else if (questionType === '列表') {
+                contextSection += `
+**建議工作流程** (列出判決書):
+1. [第1輪] 調用 semantic_search_judgments(query="${caseType || '*'}", judge_name="${judgeName}", limit=50)
+2. [第2輪] 直接從返回結果生成回答,列出判決書
+`;
+            } else if (questionType === '法條') {
+                contextSection += `
+**建議工作流程** (分析法條):
+1. [第1輪] 調用 get_citation_analysis(judge_name="${judgeName}"${caseType ? `, case_type="${caseType}"` : ''})
+2. [第2輪] 生成回答
+`;
+            }
+
+            contextSection += `
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 `;
+
+            systemPrompt = SYSTEM_PROMPT + contextSection;
         }
 
         // 構建對話歷史
@@ -482,7 +529,8 @@ export async function handleAIAgentChat(req, res) {
             // 執行所有工具調用
             for (const toolCall of assistantMessage.tool_calls) {
                 try {
-                    const result = await executeToolCall(toolCall);
+                    // 🆕 傳遞對話歷史
+                    const result = await executeToolCall(toolCall, messages);
 
                     console.log(`[AI Agent] 工具 ${toolCall.function.name} 執行成功`);
                     console.log(`[AI Agent] 返回數據大小: ${JSON.stringify(result).length} 字符`);

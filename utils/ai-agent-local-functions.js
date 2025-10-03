@@ -6,24 +6,90 @@
 
 /**
  * 計算判決結果統計
- * @param {Array} judgments - 判決書陣列
+ * @param {Array} judgments - 判決書陣列 (可選,如果為空會從對話歷史中提取)
  * @param {Object} options - 選項
  * @param {string} options.analysis_type - 分析類型: 'verdict_rate' | 'case_type_rate' | 'amount_stats'
  * @param {string} options.verdict_type - 要分析的判決結果類型 (可選)
  * @param {string} options.case_type - 要分析的案由 (可選)
+ * @param {string} options.judge_name - 法官姓名 (用於過濾對話歷史中的數據)
+ * @param {Array} conversationHistory - 對話歷史 (用於自動提取判決書數據)
  * @returns {Object} 統計結果
  */
-export function calculate_verdict_statistics(judgments, options = {}) {
-    const { analysis_type = 'verdict_rate', verdict_type, case_type } = options;
+export function calculate_verdict_statistics(judgments, options = {}, conversationHistory = []) {
+    const { analysis_type = 'verdict_rate', verdict_type, case_type, judge_name } = options;
 
     console.log('[統計函數] ========== 開始計算判決統計 ==========');
-    console.log('[統計函數] 參數:', { analysis_type, verdict_type, case_type });
+    console.log('[統計函數] 參數:', { analysis_type, verdict_type, case_type, judge_name });
     console.log('[統計函數] 收到判決書數量:', judgments?.length || 0);
 
+    // 🆕 如果沒有 judgments,從對話歷史中提取
     if (!Array.isArray(judgments) || judgments.length === 0) {
-        console.log('[統計函數] ❌ 無判決書數據');
+        console.log('[統計函數] ⚠️ 沒有 judgments 參數,嘗試從對話歷史中提取');
+        console.log('[統計函數] 對話歷史長度:', conversationHistory.length);
+
+        // 🆕 策略: 如果有 judge_name 或 case_type 過濾條件,收集所有判決書再過濾
+        // 否則,只使用最近的一個 tool 消息
+        if (judge_name || case_type) {
+            console.log('[統計函數] 檢測到過濾條件,收集所有判決書');
+            let allJudgments = [];
+
+            // 收集所有 tool 消息中的判決書
+            for (let i = 0; i < conversationHistory.length; i++) {
+                const msg = conversationHistory[i];
+                if (msg.role === 'tool') {
+                    try {
+                        const data = JSON.parse(msg.content);
+                        if (data['判決書'] && Array.isArray(data['判決書'])) {
+                            allJudgments = allJudgments.concat(data['判決書']);
+                        }
+                    } catch (e) {
+                        continue;
+                    }
+                }
+            }
+
+            if (allJudgments.length > 0) {
+                console.log('[統計函數] ✅ 從對話歷史中收集到', allJudgments.length, '筆判決書');
+                judgments = allJudgments;
+
+                // 根據 judge_name 和 case_type 過濾
+                if (judge_name) {
+                    const beforeFilter = judgments.length;
+                    judgments = judgments.filter(j => j.法官 === judge_name);
+                    console.log('[統計函數] 過濾法官後: ', beforeFilter, '→', judgments.length, '筆');
+                }
+                if (case_type) {
+                    const beforeFilter = judgments.length;
+                    judgments = judgments.filter(j => j.案由?.includes(case_type));
+                    console.log('[統計函數] 過濾案由後: ', beforeFilter, '→', judgments.length, '筆');
+                }
+            }
+        } else {
+            // 沒有過濾條件,使用最近的一個 tool 消息
+            console.log('[統計函數] 無過濾條件,使用最近的判決書數據');
+            for (let i = conversationHistory.length - 1; i >= 0; i--) {
+                const msg = conversationHistory[i];
+                if (msg.role === 'tool') {
+                    try {
+                        const data = JSON.parse(msg.content);
+                        if (data['判決書'] && Array.isArray(data['判決書'])) {
+                            judgments = data['判決書'];
+                            console.log('[統計函數] ✅ 從對話歷史中提取到', judgments.length, '筆判決書');
+                            break;
+                        }
+                    } catch (e) {
+                        continue;
+                    }
+                }
+            }
+        }
+    }
+
+    // 如果還是沒有數據,返回錯誤
+    if (!Array.isArray(judgments) || judgments.length === 0) {
+        console.log('[統計函數] ❌ 無判決書數據 (對話歷史中也沒有找到)');
         return {
-            error: '無判決書數據',
+            error: '無判決書數據。請先調用 semantic_search_judgments 或 search_judgments 獲取判決書。',
             total_cases: 0
         };
     }

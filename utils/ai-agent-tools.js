@@ -197,13 +197,13 @@ export const LOCAL_FUNCTION_TOOLS = [
         type: "function",
         function: {
             name: "calculate_verdict_statistics",
-            description: "計算判決結果統計,包括勝訴率、案由分布、金額統計等。[重要] 必須先調用 semantic_search_judgments 或 search_judgments 獲取判決書數據,然後將結果傳入 judgments 參數。不能直接調用此函數而不提供判決書數據。",
+            description: "計算判決結果統計,包括勝訴率、案由分布、金額統計等。[重要] 如果沒有提供 judgments 參數,函數會自動從對話歷史中提取最近一次 semantic_search_judgments 或 search_judgments 的結果。建議工作流程: 第1輪調用 semantic_search_judgments 獲取數據,第2輪調用本函數時不需要傳遞 judgments 參數。",
             parameters: {
                 type: "object",
                 properties: {
                     judgments: {
                         type: "array",
-                        description: "[必填] 判決書陣列,必須來自 semantic_search_judgments 或 search_judgments 的結果。每個判決書對象應包含: 案由、裁判結果、法官等欄位。",
+                        description: "[可選] 判決書陣列。如果不提供,函數會自動從對話歷史中提取最近一次搜尋的判決書數據。",
                         items: {
                             type: "object"
                         }
@@ -216,9 +216,17 @@ export const LOCAL_FUNCTION_TOOLS = [
                     verdict_type: {
                         type: "string",
                         description: "要分析的特定判決結果類型 (可選)。常見值: '原告勝訴', '原告敗訴', '部分勝訴部分敗訴'。如果指定,會計算該類型的勝訴率。"
+                    },
+                    judge_name: {
+                        type: "string",
+                        description: "[可選] 法官姓名,用於過濾對話歷史中的判決書數據"
+                    },
+                    case_type: {
+                        type: "string",
+                        description: "[可選] 案由關鍵字,用於過濾對話歷史中的判決書數據"
                     }
                 },
-                required: ["judgments", "analysis_type"]
+                required: ["analysis_type"]
             }
         }
     },
