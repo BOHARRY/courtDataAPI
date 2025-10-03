@@ -407,6 +407,15 @@ function initializeCaseTypeAnalysisEntry() {
 }
 
 function determineMainCaseType(source) {
+    // 🔧 修復：優先使用 stage0_case_type（新版標準化欄位）
+    const stage0Type = String(source.stage0_case_type || '').trim().toLowerCase();
+
+    // 如果 stage0_case_type 存在且有效，直接使用
+    if (stage0Type === 'civil' || stage0Type === '民事') return 'civil';
+    if (stage0Type === 'criminal' || stage0Type === '刑事') return 'criminal';
+    if (stage0Type === 'administrative' || stage0Type === '行政') return 'administrative';
+
+    // Fallback: 使用舊版 case_type 欄位（向下兼容）
     const caseType = String(source.case_type || '').trim();
     if (caseType.startsWith('民事')) return 'civil';
     if (caseType.startsWith('刑事')) return 'criminal';

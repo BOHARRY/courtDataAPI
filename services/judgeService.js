@@ -68,7 +68,7 @@ export async function getJudgeAnalytics(judgeName) {
             size: 1000, // 獲取足夠案件進行分析，可配置
             _source: [ /* 需要的欄位，例如 JID, JDATE, case_type, verdict, legal_basis, JFULL (部分用於AI)等 */
                 "JID", "JYEAR", "JCASE", "JNO", "JDATE", "JDATE_num", "JTITLE", "court",
-                "case_type", "verdict", "verdict_type", "summary_ai", "judges", "main_reasons_ai",
+                "case_type", "stage0_case_type", "verdict", "verdict_type", "summary_ai", "judges", "main_reasons_ai",
                 "legal_basis", "outcome_reasoning_strength", "SCORE", "JFULL",
                 "key_metrics", // 新版金額數據結構 (包含 civil_metrics, criminal_metrics, administrative_metrics)
                 "lawyerperformance" // 向下兼容舊數據
@@ -189,7 +189,7 @@ export async function triggerReanalysis(judgeName) {
         size: 1000,
         _source: [
             "JID", "JYEAR", "JCASE", "JNO", "JDATE", "JDATE_num", "JTITLE", "court",
-            "case_type", "verdict", "verdict_type", "summary_ai", "judges", "main_reasons_ai",
+            "case_type", "stage0_case_type", "verdict", "verdict_type", "summary_ai", "judges", "main_reasons_ai",
             "legal_basis", "outcome_reasoning_strength", "SCORE", "JFULL",
             "lawyerperformance"
         ],
