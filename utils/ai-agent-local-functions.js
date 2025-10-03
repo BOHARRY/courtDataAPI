@@ -16,7 +16,12 @@
 export function calculate_verdict_statistics(judgments, options = {}) {
     const { analysis_type = 'verdict_rate', verdict_type, case_type } = options;
 
+    console.log('[統計函數] ========== 開始計算判決統計 ==========');
+    console.log('[統計函數] 參數:', { analysis_type, verdict_type, case_type });
+    console.log('[統計函數] 收到判決書數量:', judgments?.length || 0);
+
     if (!Array.isArray(judgments) || judgments.length === 0) {
+        console.log('[統計函數] ❌ 無判決書數據');
         return {
             error: '無判決書數據',
             total_cases: 0
@@ -25,12 +30,26 @@ export function calculate_verdict_statistics(judgments, options = {}) {
 
     const total = judgments.length;
 
+    // 🆕 調試: 查看前 3 筆判決書的結構
+    console.log('[統計函數] 判決書樣本 (前3筆):');
+    judgments.slice(0, 3).forEach((j, idx) => {
+        console.log(`  [${idx + 1}] 案由: ${j['案由'] || j.JTITLE || 'N/A'}`);
+        console.log(`      裁判結果: ${j['裁判結果'] || j.verdict_type || 'N/A'}`);
+        console.log(`      法官: ${j['法官'] || 'N/A'}`);
+    });
+
     if (analysis_type === 'verdict_rate') {
         // 計算判決結果分布
         const verdictCounts = {};
         judgments.forEach(j => {
             const verdict = j['裁判結果'] || j.verdict_type || 'Unknown';
             verdictCounts[verdict] = (verdictCounts[verdict] || 0) + 1;
+        });
+
+        // 🆕 調試: 顯示所有判決結果統計
+        console.log('[統計函數] 判決結果統計:');
+        Object.entries(verdictCounts).forEach(([verdict, count]) => {
+            console.log(`  - ${verdict}: ${count} 筆 (${(count / total * 100).toFixed(1)}%)`);
         });
 
         const distribution = Object.entries(verdictCounts).map(([verdict, count]) => ({
@@ -44,18 +63,38 @@ export function calculate_verdict_statistics(judgments, options = {}) {
         let target_rate = null;
         if (verdict_type) {
             const target_count = verdictCounts[verdict_type] || 0;
+
+            // 🆕 調試: 顯示特定判決類型的匹配情況
+            console.log('[統計函數] 查詢特定判決類型:', verdict_type);
+            console.log('[統計函數] 匹配到的數量:', target_count);
+            console.log('[統計函數] 計算勝訴率:', `${(target_count / total * 100).toFixed(1)}%`);
+
+            // 🆕 如果沒有匹配到,列出所有可用的判決類型
+            if (target_count === 0) {
+                console.log('[統計函數] ⚠️ 警告: 沒有匹配到指定的判決類型!');
+                console.log('[統計函數] 可用的判決類型:', Object.keys(verdictCounts));
+            }
+
             target_rate = {
                 判決類型: verdict_type,
                 數量: target_count,
-                勝訴率: `${(target_count / total * 100).toFixed(1)}%`
+                勝訴率: `${(target_count / total * 100).toFixed(1)}%`,
+                百分比: (target_count / total * 100).toFixed(1)
             };
         }
 
-        return {
+        const result = {
             總案件數: total,
             判決結果分布: distribution.sort((a, b) => b.數量 - a.數量),
             特定判決統計: target_rate
         };
+
+        // 🆕 調試: 顯示最終返回結果
+        console.log('[統計函數] ========== 返回結果 ==========');
+        console.log(JSON.stringify(result, null, 2));
+        console.log('[統計函數] =====================================');
+
+        return result;
     }
 
     if (analysis_type === 'case_type_rate') {

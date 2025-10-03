@@ -132,10 +132,13 @@ async function callMCPTool(toolName, params, retryCount = 0) {
     const MAX_RETRIES = 2;
 
     try {
-        console.log(`[AI Agent] 調用 MCP 工具: ${toolName}`, params);
+        console.log(`[AI Agent] ========== 調用 MCP 工具 ==========`);
+        console.log(`[AI Agent] 工具名稱: ${toolName}`);
+        console.log(`[AI Agent] 參數:`, JSON.stringify(params, null, 2));
 
         // 確保 MCP Session 已初始化
         const sessionId = await initializeMCPSession();
+        console.log(`[AI Agent] Session ID: ${sessionId}`);
 
         // 構建 MCP 請求
         // 注意: FastMCP 要求參數包裝在 params 中
@@ -150,6 +153,8 @@ async function callMCPTool(toolName, params, retryCount = 0) {
                 }
             }
         };
+
+        console.log(`[AI Agent] MCP 請求:`, JSON.stringify(mcpRequest, null, 2));
 
         const response = await fetch(MCP_SERVER_URL, {
             method: 'POST',
@@ -176,7 +181,7 @@ async function callMCPTool(toolName, params, retryCount = 0) {
         }
 
         const text = await response.text();
-        console.log('[AI Agent] MCP 原始響應:', text.substring(0, 500));
+        console.log('[AI Agent] MCP 原始響應 (前500字):', text.substring(0, 500));
 
         // 解析 SSE 格式
         const lines = text.trim().split('\n');
@@ -190,27 +195,38 @@ async function callMCPTool(toolName, params, retryCount = 0) {
         }
 
         if (!data) {
-            console.error('[AI Agent] 未找到 data 行,完整響應:', text);
+            console.error('[AI Agent] ❌ 未找到 data 行,完整響應:', text);
             throw new Error('MCP Server 未返回數據');
         }
 
         const result = JSON.parse(data);
-        console.log('[AI Agent] 解析後的結果:', JSON.stringify(result, null, 2));
+        console.log('[AI Agent] 解析後的 JSON 結果 (前500字):', JSON.stringify(result, null, 2).substring(0, 500));
 
         // 提取工具返回的內容
         if (result.result && result.result.content && result.result.content[0]) {
             const content = result.result.content[0].text;
-            console.log('[AI Agent] 工具返回內容:', content.substring(0, 200));
-            return JSON.parse(content);
+            console.log('[AI Agent] 工具返回內容 (前500字):', content.substring(0, 500));
+
+            const parsedContent = JSON.parse(content);
+
+            // 🆕 特別記錄判決書數據
+            if (parsedContent['判決書']) {
+                console.log(`[AI Agent] ✅ 返回 ${parsedContent['判決書'].length} 筆判決書`);
+                console.log('[AI Agent] 判決書樣本 (第1筆):');
+                console.log(JSON.stringify(parsedContent['判決書'][0], null, 2));
+            }
+
+            console.log('[AI Agent] =====================================');
+            return parsedContent;
         }
 
         // 檢查是否有錯誤
         if (result.error) {
-            console.error('[AI Agent] MCP 工具返回錯誤:', result.error);
+            console.error('[AI Agent] ❌ MCP 工具返回錯誤:', result.error);
             throw new Error(`MCP 工具錯誤: ${result.error.message || JSON.stringify(result.error)}`);
         }
 
-        console.error('[AI Agent] 未預期的響應格式:', result);
+        console.error('[AI Agent] ❌ 未預期的響應格式:', result);
         throw new Error('MCP 工具返回格式錯誤');
     } catch (error) {
         console.error(`[AI Agent] MCP 工具調用失敗:`, error);
@@ -222,30 +238,48 @@ async function callMCPTool(toolName, params, retryCount = 0) {
  * 調用本地函數
  */
 function callLocalFunction(functionName, args) {
-    console.log(`[AI Agent] 調用本地函數: ${functionName}`, args);
+    console.log(`[AI Agent] ========== 調用本地函數 ==========`);
+    console.log(`[AI Agent] 函數名稱: ${functionName}`);
+    console.log(`[AI Agent] 參數:`, JSON.stringify(args, null, 2).substring(0, 500) + '...');
+
+    let result;
 
     switch (functionName) {
         case 'calculate_verdict_statistics':
-            return calculate_verdict_statistics(args.judgments, {
+            console.log(`[AI Agent] 判決書數量: ${args.judgments?.length || 0}`);
+            console.log(`[AI Agent] 分析類型: ${args.analysis_type}`);
+            console.log(`[AI Agent] 判決類型: ${args.verdict_type || '未指定'}`);
+
+            result = calculate_verdict_statistics(args.judgments, {
                 analysis_type: args.analysis_type,
                 verdict_type: args.verdict_type
             });
-        
+            break;
+
         case 'extract_top_citations':
-            return extract_top_citations(args.citation_analysis, args.top_n);
-        
+            result = extract_top_citations(args.citation_analysis, args.top_n);
+            break;
+
         case 'analyze_amount_trends':
-            return analyze_amount_trends(args.judgments, args.trend_type);
-        
+            result = analyze_amount_trends(args.judgments, args.trend_type);
+            break;
+
         case 'compare_judges':
-            return compare_judges(args.judges_data);
-        
+            result = compare_judges(args.judges_data);
+            break;
+
         case 'calculate_case_type_distribution':
-            return calculate_case_type_distribution(args.judgments, args.group_by);
-        
+            result = calculate_case_type_distribution(args.judgments, args.group_by);
+            break;
+
         default:
             throw new Error(`未知的本地函數: ${functionName}`);
     }
+
+    console.log(`[AI Agent] 本地函數返回結果:`, JSON.stringify(result, null, 2).substring(0, 500) + '...');
+    console.log(`[AI Agent] =====================================`);
+
+    return result;
 }
 
 /**
@@ -305,7 +339,9 @@ export async function handleAIAgentChat(req, res) {
         // 循環調用工具,直到 GPT 生成最終回答
         while (iteration < MAX_ITERATIONS) {
             iteration++;
+            console.log(`\n[AI Agent] ========================================`);
             console.log(`[AI Agent] 第 ${iteration} 輪`);
+            console.log(`[AI Agent] ========================================`);
 
             // 調用 OpenAI
             const completion = await openai.chat.completions.create({
@@ -317,12 +353,28 @@ export async function handleAIAgentChat(req, res) {
             });
 
             const assistantMessage = completion.choices[0].message;
+
+            // 🆕 記錄 GPT 的決策
+            if (assistantMessage.tool_calls && assistantMessage.tool_calls.length > 0) {
+                console.log(`[AI Agent] GPT 決定調用 ${assistantMessage.tool_calls.length} 個工具:`);
+                assistantMessage.tool_calls.forEach((tc, idx) => {
+                    console.log(`  [${idx + 1}] ${tc.function.name}`);
+                    console.log(`      參數: ${tc.function.arguments.substring(0, 100)}...`);
+                });
+            } else {
+                console.log(`[AI Agent] GPT 決定生成最終回答 (不調用工具)`);
+                if (assistantMessage.content) {
+                    console.log(`[AI Agent] 回答預覽: ${assistantMessage.content.substring(0, 200)}...`);
+                }
+            }
+
             messages.push(assistantMessage);
 
             // 檢查是否有工具調用
             if (!assistantMessage.tool_calls || assistantMessage.tool_calls.length === 0) {
                 // 沒有工具調用,表示 GPT 已生成最終回答
                 finalResponse = assistantMessage.content;
+                console.log(`[AI Agent] ✅ 完成! 共 ${iteration} 輪工具調用`);
                 break;
             }
 
@@ -330,16 +382,22 @@ export async function handleAIAgentChat(req, res) {
             for (const toolCall of assistantMessage.tool_calls) {
                 try {
                     const result = await executeToolCall(toolCall);
-                    
+
+                    console.log(`[AI Agent] 工具 ${toolCall.function.name} 執行成功`);
+                    console.log(`[AI Agent] 返回數據大小: ${JSON.stringify(result).length} 字符`);
+
                     // 將工具結果添加到對話歷史
-                    messages.push({
+                    const toolMessage = {
                         role: 'tool',
                         tool_call_id: toolCall.id,
                         content: JSON.stringify(result, null, 2)
-                    });
+                    };
+                    messages.push(toolMessage);
+
+                    console.log(`[AI Agent] 已將工具結果添加到對話歷史`);
                 } catch (error) {
-                    console.error('[AI Agent] 工具調用失敗:', error);
-                    
+                    console.error(`[AI Agent] ❌ 工具調用失敗:`, error);
+
                     // 將錯誤信息添加到對話歷史
                     messages.push({
                         role: 'tool',
