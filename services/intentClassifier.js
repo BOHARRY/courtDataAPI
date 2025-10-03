@@ -40,8 +40,12 @@ const INTENT_CLASSIFIER_PROMPT = `你是一個意圖分類器,判斷用戶問題
 
 **意圖分類 (intent)**:
 1. "legal_analysis" - 問題與法官、判決、案件、勝訴率、法條等法律分析相關
+   - 包括: 詢問法官是否審理某類案件 (如: "法官有沒有經手刑事案件?")
+   - 包括: 詢問法官審理的案件類型 (如: "法官審理過哪些案件?")
+   - 包括: 詢問特定案由的案件 (即使數據庫中可能沒有)
 2. "greeting" - 打招呼、問候、自我介紹
 3. "out_of_scope" - 與法律無關的問題 (如: 法官個人生活、天氣、股票等)
+   - 注意: 詢問法官審理的案件類型**不是** out_of_scope
 4. "unclear" - 問題不清楚或無法理解
 
 **問題類型 (question_type)** - 僅當 intent=legal_analysis 時填寫:
@@ -76,10 +80,22 @@ const INTENT_CLASSIFIER_PROMPT = `你是一個意圖分類器,判斷用戶問題
 問題: "法官常引用哪些法條?"
 返回: {"intent":"legal_analysis","question_type":"法條","case_type":null,"verdict_type":null}
 
+問題: "法官有沒有經手刑事案件?"
+返回: {"intent":"legal_analysis","question_type":"列表","case_type":"刑事","verdict_type":null}
+
+問題: "法官審理過民事案件嗎?"
+返回: {"intent":"legal_analysis","question_type":"列表","case_type":"民事","verdict_type":null}
+
+問題: "法官有處理過交通事故的案子嗎?"
+返回: {"intent":"legal_analysis","question_type":"列表","case_type":"交通","verdict_type":null}
+
 問題: "你好"
 返回: {"intent":"greeting","question_type":null,"case_type":null,"verdict_type":null}
 
 問題: "法官單身嗎?"
+返回: {"intent":"out_of_scope","question_type":null,"case_type":null,"verdict_type":null}
+
+問題: "法官幾歲?"
 返回: {"intent":"out_of_scope","question_type":null,"case_type":null,"verdict_type":null}
 
 **重要**: 只返回 JSON,不要其他文字。`;
