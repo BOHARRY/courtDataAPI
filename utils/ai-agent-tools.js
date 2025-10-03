@@ -197,13 +197,13 @@ export const LOCAL_FUNCTION_TOOLS = [
         type: "function",
         function: {
             name: "calculate_verdict_statistics",
-            description: "計算判決結果統計,包括勝訴率、案由分布、金額統計等。需要先調用 search_judgments_by_judge 獲取判決書數據。",
+            description: "計算判決結果統計,包括勝訴率、案由分布、金額統計等。[重要] 必須先調用 semantic_search_judgments 或 search_judgments 獲取判決書數據,然後將結果傳入 judgments 參數。不能直接調用此函數而不提供判決書數據。",
             parameters: {
                 type: "object",
                 properties: {
                     judgments: {
                         type: "array",
-                        description: "判決書陣列 (來自 search_judgments_by_judge 的結果)",
+                        description: "[必填] 判決書陣列,必須來自 semantic_search_judgments 或 search_judgments 的結果。每個判決書對象應包含: 案由、裁判結果、法官等欄位。",
                         items: {
                             type: "object"
                         }
@@ -211,11 +211,11 @@ export const LOCAL_FUNCTION_TOOLS = [
                     analysis_type: {
                         type: "string",
                         enum: ["verdict_rate", "case_type_rate", "amount_stats"],
-                        description: "分析類型: verdict_rate (判決結果分布), case_type_rate (案由分布), amount_stats (金額統計)"
+                        description: "分析類型: verdict_rate (判決結果分布和勝訴率), case_type_rate (案由分布), amount_stats (金額統計)"
                     },
                     verdict_type: {
                         type: "string",
-                        description: "要分析的特定判決結果類型 (可選)"
+                        description: "要分析的特定判決結果類型 (可選)。常見值: '原告勝訴', '原告敗訴', '部分勝訴部分敗訴'。如果指定,會計算該類型的勝訴率。"
                     }
                 },
                 required: ["judgments", "analysis_type"]
@@ -366,14 +366,16 @@ export const SYSTEM_PROMPT = `你是 LawSowl 法官知識通 AI 助手,專門協
 
 範例 1: "王婉如法官在返還不當得利中的勝訴率?" - 重要範例
 步驟:
-1. 調用 semantic_search_judgments (query="返還不當得利", judge_name="王婉如", limit=50) - [重要] 不要加 verdict_type 過濾!
-2. 調用 calculate_verdict_statistics (judgments=結果, analysis_type="verdict_rate", verdict_type="原告勝訴")
+1. [必須] 先調用 semantic_search_judgments (query="返還不當得利", judge_name="王婉如", limit=50) - 獲取判決書數據
+   - [重要] 不要加 verdict_type 過濾!
+2. [必須] 再調用 calculate_verdict_statistics (judgments=步驟1的結果, analysis_type="verdict_rate", verdict_type="原告勝訴")
+   - [重要] judgments 參數必須是步驟1返回的判決書陣列!
 3. 生成回答: "根據 2025年6-7月 的數據,王婉如法官在返還不當得利案件中,共審理 X 筆,原告勝訴率為 XX%..."
 
 範例 2: "王婉如法官在交通案件中,原告勝訴率是多少?"
 步驟:
-1. 調用 semantic_search_judgments (query="交通", judge_name="王婉如", limit=50) - 使用語意搜尋精確匹配案由
-2. 調用 calculate_verdict_statistics (judgments=結果, analysis_type="verdict_rate", verdict_type="原告勝訴")
+1. [必須] 先調用 semantic_search_judgments (query="交通", judge_name="王婉如", limit=50) - 獲取判決書數據
+2. [必須] 再調用 calculate_verdict_statistics (judgments=步驟1的結果, analysis_type="verdict_rate", verdict_type="原告勝訴")
 3. 生成回答: "根據 2025年6-7月 的數據,王婉如法官在交通案件中,原告勝訴率為 XX%..."
 
 範例 3: "原告勝訴的案件都有哪些共通性?"
@@ -434,9 +436,19 @@ export const SYSTEM_PROMPT = `你是 LawSowl 法官知識通 AI 助手,專門協
 - 當用戶問"需要注意哪些傾向"時,應該提供: 勝訴率、常引用法條、判決金額趨勢等多維度分析
 
 **關鍵規則 - 計算勝訴率時**:
-- [錯誤] 只搜尋勝訴案件,然後說勝訴率 100%
-- [正確] 搜尋**所有**該案由的案件 (不加 verdict_type 過濾),然後用 calculate_verdict_statistics 計算勝訴率
-- 範例: 用戶問"返還不當得利的勝訴率?" → 調用 semantic_search_judgments(query="返還不當得利", judge_name="王婉如", limit=50) **不要加 verdict_type**
+- ❌ [錯誤] 只搜尋勝訴案件,然後說勝訴率 100%
+- ❌ [錯誤] 直接調用 calculate_verdict_statistics 而不先獲取判決書數據
+- ✅ [正確] 必須先調用 semantic_search_judgments 或 search_judgments 獲取判決書數據
+- ✅ [正確] 搜尋**所有**該案由的案件 (不加 verdict_type 過濾)
+- ✅ [正確] 然後用 calculate_verdict_statistics 計算勝訴率
+- 範例: 用戶問"返還不當得利的勝訴率?"
+  → 步驟1: semantic_search_judgments(query="返還不當得利", judge_name="王婉如", limit=50) **不要加 verdict_type**
+  → 步驟2: calculate_verdict_statistics(judgments=步驟1的結果, analysis_type="verdict_rate", verdict_type="原告勝訴")
+
+**重要提醒 - calculate_verdict_statistics 的 judgments 參數**:
+- judgments 參數必須是從 semantic_search_judgments 或 search_judgments 獲取的判決書陣列
+- 不能直接調用 calculate_verdict_statistics 而不提供 judgments 數據
+- 如果 judgments 為空或未定義,函數會返回錯誤
 
 **案由匹配優先級**:
 1. 優先使用 semantic_search_judgments - 會精確匹配案由欄位
