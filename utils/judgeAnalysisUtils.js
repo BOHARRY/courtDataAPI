@@ -168,6 +168,14 @@ export function aggregateJudgeCaseData(esHits, judgeName) {
             analysisEntry.outcomes[judgeCentricOutcomeCode] = (analysisEntry.outcomes[judgeCentricOutcomeCode] || 0) + 1;
         }
 
+        // 🆕 統計 verdict_type（原始判決結果）
+        if (source.verdict_type) {
+            const verdictType = String(source.verdict_type).trim();
+            analysisEntry.verdictTypes[verdictType] = (analysisEntry.verdictTypes[verdictType] || 0) + 1;
+        } else {
+            analysisEntry.verdictTypes['未知判決結果'] = (analysisEntry.verdictTypes['未知判決結果'] || 0) + 1;
+        }
+
         if (mainType === 'civil') {
             // 優先使用新版 key_metrics.civil_metrics 結構
             if (source.key_metrics && source.key_metrics.civil_metrics) {
@@ -235,6 +243,13 @@ export function aggregateJudgeCaseData(esHits, judgeName) {
         entry.outcomeDetails = Object.entries(entry.outcomes).map(([outcomeCode, count]) => ({
             code: outcomeCode,
             // description: getOutcomeDescription(outcomeCode), // 如果需要中文描述
+            count: count,
+            percent: calculateRate(count, entry.count)
+        })).sort((a, b) => b.count - a.count);
+
+        // 🆕 計算 verdictTypeDetails（基於原始 verdict_type）
+        entry.verdictTypeDetails = Object.entries(entry.verdictTypes).map(([verdictType, count]) => ({
+            verdict_type: verdictType,
             count: count,
             percent: calculateRate(count, entry.count)
         })).sort((a, b) => b.count - a.count);
@@ -369,6 +384,7 @@ function initializeCaseTypeAnalysisEntry() {
     return {
         count: 0,
         outcomes: {},
+        verdictTypes: {},  // 🆕 新增：按 verdict_type 統計
         totalClaimAmount: 0,
         claimCount: 0,
         totalGrantedAmount: 0,
