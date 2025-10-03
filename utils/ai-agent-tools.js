@@ -13,7 +13,7 @@ export const MCP_TOOLS = [
         type: "function",
         function: {
             name: "search_judgments",
-            description: "搜尋判決書。可以按法官姓名、案由、判決結果類型、日期範圍進行過濾。數據範圍: 2025年6-7月。",
+            description: "關鍵詞搜尋判決書。適合精確查詢,當用戶提供明確的案由名稱時使用。數據範圍: 2025年6-7月。",
             parameters: {
                 type: "object",
                 properties: {
@@ -41,6 +41,42 @@ export const MCP_TOOLS = [
                     verdict_type: {
                         type: "string",
                         description: "判決結果類型 (可選),如: 原告勝訴、原告敗訴、部分勝訴部分敗訴"
+                    }
+                },
+                required: ["query"]
+            }
+        }
+    },
+    {
+        type: "function",
+        function: {
+            name: "semantic_search_judgments",
+            description: "語意搜尋判決書。使用 AI 向量相似度匹配,適合模糊查詢、同義詞匹配、自然語言問題。當用戶使用口語化描述或關鍵詞搜尋失敗時使用。數據範圍: 2025年6-7月。",
+            parameters: {
+                type: "object",
+                properties: {
+                    query: {
+                        type: "string",
+                        description: "自然語言查詢,可以是口語化描述。例如: '欠錢不還'、'房東趕房客'、'車禍賠償'、'債務清償'"
+                    },
+                    judge_name: {
+                        type: "string",
+                        description: "法官姓名 (可選),用於過濾特定法官的判決"
+                    },
+                    verdict_type: {
+                        type: "string",
+                        description: "判決結果類型 (可選),如: 原告勝訴、原告敗訴、部分勝訴部分敗訴"
+                    },
+                    limit: {
+                        type: "number",
+                        description: "返回結果數量,預設50,最大100",
+                        default: 50
+                    },
+                    vector_field: {
+                        type: "string",
+                        enum: ["summary_ai_vector", "text_embedding", "legal_issues_embedding"],
+                        description: "向量欄位選擇。summary_ai_vector (預設,通用搜尋), text_embedding (深度內容), legal_issues_embedding (爭點搜尋)",
+                        default: "summary_ai_vector"
                     }
                 },
                 required: ["query"]
@@ -328,12 +364,36 @@ export const SYSTEM_PROMPT = `你是 LawSowl 法官知識通 AI 助手,專門協
 範例 3: "如果我是律師,要在王婉如法官面前打『債務清償』案件,可能需要注意哪些傾向?"
 步驟:
 1. 調用 analyze_judge (judge_name="王婉如") - 先了解法官整體傾向
-2. 調用 search_judgments (query="債務清償", judge_name="王婉如", limit=50) - 獲取該法官的債務清償案件
+2. 調用 semantic_search_judgments (query="債務清償", judge_name="王婉如", limit=50) - 使用語意搜尋獲取相關案件 (自動匹配"清償債務"等同義詞)
 3. 調用 calculate_verdict_statistics (judgments=結果, analysis_type="verdict_rate") - 計算勝訴率
 4. 調用 get_citation_analysis (judge_name="王婉如", case_type="債務清償") - 分析常引用法條
 5. 生成回答: "根據 2025年6-7月 的數據,王婉如法官在債務清償案件中: 1) 原告勝訴率為 XX%; 2) 常引用法條為...; 3) 建議注意..."
 
+範例 4: "房東趕房客的案件,這位法官傾向如何?"
+步驟:
+1. 調用 semantic_search_judgments (query="房東趕房客", judge_name="王婉如", limit=50) - 語意搜尋會自動匹配"返還房屋"、"遷讓房屋"等相關案由
+2. 調用 calculate_verdict_statistics (分析勝訴率)
+3. 生成回答
+
+**工具選擇策略**:
+
+1. **使用 search_judgments (關鍵詞搜尋)** 當:
+   - 用戶提供明確的標準案由名稱 (如: "交通"、"侵權行為")
+   - 查詢包含精確的判決字號
+   - 需要按日期範圍過濾
+
+2. **使用 semantic_search_judgments (語意搜尋)** 當:
+   - 用戶使用口語化描述 (如: "欠錢不還"、"房東趕房客")
+   - 查詢可能包含同義詞 (如: "債務清償" vs "清償債務")
+   - 關鍵詞搜尋失敗或結果太少 (< 5 筆)
+   - 不確定精確的案由名稱時
+
+3. **混合策略** (推薦):
+   - 優先嘗試 semantic_search_judgments (語意搜尋更靈活)
+   - 如果需要精確過濾 (如日期範圍),再使用 search_judgments
+
 **重要提醒**:
+- 語意搜尋會自動處理同義詞,不需要手動嘗試多個關鍵詞
 - 如果用戶問題涉及特定法官,優先使用 judge_name 參數精確匹配
 - 如果需要分析共通性,先獲取足夠多的樣本 (建議 limit >= 50)
 - 組合使用 MCP 工具和本地函數可以提供更深入的分析

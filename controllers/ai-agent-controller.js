@@ -221,6 +221,7 @@ async function executeToolCall(toolCall) {
     // MCP 工具列表
     const mcpTools = [
         'search_judgments',
+        'semantic_search_judgments',  // 新增語意搜尋工具
         'get_citation_analysis',
         'get_case_details',
         'get_perspective_analysis',
