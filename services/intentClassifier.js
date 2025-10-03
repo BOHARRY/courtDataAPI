@@ -26,79 +26,36 @@ const INTENT_TYPES = {
 };
 
 /**
- * 意圖識別 System Prompt (支持對話上下文 + 輕量級預處理)
+ * 意圖識別 System Prompt (簡化版 - 相信 GPT 的判斷)
  */
-const INTENT_CLASSIFIER_PROMPT = `你是一個意圖分類器,判斷用戶問題是否與「法官判決分析」相關,並提取關鍵資訊。
+const INTENT_CLASSIFIER_PROMPT = `你是一個意圖分類器。判斷用戶問題是否與「法官判決分析」相關。
 
-**你需要返回 JSON 格式**:
+**返回 JSON 格式**:
 {
-  "intent": "legal_analysis",  // 意圖分類
-  "question_type": "勝訴率",   // 問題類型 (僅當 intent=legal_analysis 時)
-  "case_type": "損害賠償",     // 案由 (如果有)
-  "verdict_type": "原告勝訴"   // 判決類型 (如果有)
+  "intent": "legal_analysis" | "greeting" | "out_of_scope" | "unclear",
+  "question_type": "勝訴率" | "列表" | "法條" | "判決傾向" | "金額" | "其他" | null,
+  "case_type": "案由關鍵字" | null,
+  "verdict_type": "原告勝訴" | "原告敗訴" | "部分勝訴部分敗訴" | null
 }
 
-**意圖分類 (intent)**:
-1. "legal_analysis" - 問題與法官、判決、案件、勝訴率、法條等法律分析相關
-   - 包括: 詢問法官是否審理某類案件 (如: "法官有沒有經手刑事案件?")
-   - 包括: 詢問法官審理的案件類型 (如: "法官審理過哪些案件?")
-   - 包括: 詢問特定案由的案件 (即使數據庫中可能沒有)
-2. "greeting" - 打招呼、問候、自我介紹
-3. "out_of_scope" - 與法律無關的問題 (如: 法官個人生活、天氣、股票等)
-   - 注意: 詢問法官審理的案件類型**不是** out_of_scope
-4. "unclear" - 問題不清楚或無法理解
+**意圖分類**:
+- legal_analysis: 與法官判決、案件、勝訴率、法條等法律分析相關
+- greeting: 打招呼、問候
+- out_of_scope: 與法律分析無關 (如: 法官個人生活、天氣)
+- unclear: 無法理解
 
-**問題類型 (question_type)** - 僅當 intent=legal_analysis 時填寫:
-- "勝訴率" - 詢問勝訴率、判決結果比例
-- "列表" - 列出判決書、案件
-- "法條" - 詢問常引用的法條
-- "判決傾向" - 詢問法官的判決傾向
-- "金額" - 詢問判決金額趨勢
-- "其他" - 其他法律分析問題
-
-**案由 (case_type)** - 從問題中提取案由關鍵字:
-- 例: "損害賠償", "交通", "返還不當得利", "債務清償" 等
-- 如果問題中沒有明確案由,填 null
-
-**判決類型 (verdict_type)** - 從問題中提取判決類型:
-- "原告勝訴", "原告敗訴", "部分勝訴部分敗訴"
-- 如果問題中沒有明確判決類型,填 null
-
-**重要規則 - 對話上下文**:
-- 如果用戶問題是延續性問題 (如: "只有這些嗎?", "還有嗎?"),需要查看對話歷史
-- 如果對話歷史中最近討論的是法官判決相關內容,則延續性問題也應該分類為 legal_analysis
-- 代詞 ("這些", "那個", "它") 需要結合上下文理解
+**核心原則**:
+- 詢問法官的判決、案件、勝訴率、法條、判決傾向 → legal_analysis
+- 詢問法官的年齡、婚姻、外貌、個人生活 → out_of_scope
+- 延續性問題 (如: "還有嗎?") 需結合對話歷史判斷
 
 **範例**:
+問題: "法官在交通案件中的勝訴率?" → {"intent":"legal_analysis","question_type":"勝訴率","case_type":"交通","verdict_type":"原告勝訴"}
+問題: "法官有沒有經手刑事案件?" → {"intent":"legal_analysis","question_type":"列表","case_type":"刑事","verdict_type":null}
+問題: "你好" → {"intent":"greeting","question_type":null,"case_type":null,"verdict_type":null}
+問題: "法官單身嗎?" → {"intent":"out_of_scope","question_type":null,"case_type":null,"verdict_type":null}
 
-問題: "王婉如法官在交通案件中的勝訴率?"
-返回: {"intent":"legal_analysis","question_type":"勝訴率","case_type":"交通","verdict_type":"原告勝訴"}
-
-問題: "損害賠償案件有哪些?"
-返回: {"intent":"legal_analysis","question_type":"列表","case_type":"損害賠償","verdict_type":null}
-
-問題: "法官常引用哪些法條?"
-返回: {"intent":"legal_analysis","question_type":"法條","case_type":null,"verdict_type":null}
-
-問題: "法官有沒有經手刑事案件?"
-返回: {"intent":"legal_analysis","question_type":"列表","case_type":"刑事","verdict_type":null}
-
-問題: "法官審理過民事案件嗎?"
-返回: {"intent":"legal_analysis","question_type":"列表","case_type":"民事","verdict_type":null}
-
-問題: "法官有處理過交通事故的案子嗎?"
-返回: {"intent":"legal_analysis","question_type":"列表","case_type":"交通","verdict_type":null}
-
-問題: "你好"
-返回: {"intent":"greeting","question_type":null,"case_type":null,"verdict_type":null}
-
-問題: "法官單身嗎?"
-返回: {"intent":"out_of_scope","question_type":null,"case_type":null,"verdict_type":null}
-
-問題: "法官幾歲?"
-返回: {"intent":"out_of_scope","question_type":null,"case_type":null,"verdict_type":null}
-
-**重要**: 只返回 JSON,不要其他文字。`;
+只返回 JSON,不要其他文字。`;
 
 /**
  * 分類用戶問題意圖
