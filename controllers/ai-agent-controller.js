@@ -27,13 +27,38 @@ const MAX_ITERATIONS = 10;
 
 // MCP Session 管理
 let mcpSessionId = null;
+let sessionInitTime = null;
+const SESSION_TIMEOUT = 5 * 60 * 1000; // 5 分鐘過期
+
+/**
+ * 檢查 Session 是否有效
+ */
+function isSessionValid() {
+    if (!mcpSessionId || !sessionInitTime) {
+        return false;
+    }
+
+    const now = Date.now();
+    const elapsed = now - sessionInitTime;
+
+    if (elapsed > SESSION_TIMEOUT) {
+        console.log('[AI Agent] Session 已過期,需要重新初始化');
+        mcpSessionId = null;
+        sessionInitTime = null;
+        return false;
+    }
+
+    return true;
+}
 
 /**
  * 初始化 MCP Session
  */
-async function initializeMCPSession() {
-    if (mcpSessionId) {
-        return mcpSessionId; // 已經初始化
+async function initializeMCPSession(forceReinit = false) {
+    // 如果強制重新初始化或 Session 無效,則重新初始化
+    if (!forceReinit && isSessionValid()) {
+        console.log('[AI Agent] 使用現有 Session:', mcpSessionId);
+        return mcpSessionId;
     }
 
     try {
@@ -69,6 +94,7 @@ async function initializeMCPSession() {
 
         // 獲取 Session ID
         mcpSessionId = initResponse.headers.get('Mcp-Session-Id');
+        sessionInitTime = Date.now();
         console.log('[AI Agent] MCP Session 初始化成功:', mcpSessionId);
 
         // 步驟 2: 發送 initialized 通知 (必須!)
@@ -93,15 +119,18 @@ async function initializeMCPSession() {
         return mcpSessionId;
     } catch (error) {
         console.error('[AI Agent] MCP 初始化失敗:', error);
-        mcpSessionId = null; // 重置以便下次重試
+        mcpSessionId = null;
+        sessionInitTime = null;
         throw error;
     }
 }
 
 /**
- * 調用 MCP 工具
+ * 調用 MCP 工具 (帶重試機制)
  */
-async function callMCPTool(toolName, params) {
+async function callMCPTool(toolName, params, retryCount = 0) {
+    const MAX_RETRIES = 2;
+
     try {
         console.log(`[AI Agent] 調用 MCP 工具: ${toolName}`, params);
 
@@ -135,6 +164,14 @@ async function callMCPTool(toolName, params) {
         if (!response.ok) {
             const errorText = await response.text();
             console.error('[AI Agent] MCP Server 錯誤響應:', errorText);
+
+            // 如果是 Session 相關錯誤且還有重試次數,重新初始化 Session 並重試
+            if ((errorText.includes('session') || errorText.includes('Session')) && retryCount < MAX_RETRIES) {
+                console.log(`[AI Agent] Session 錯誤,重新初始化並重試 (${retryCount + 1}/${MAX_RETRIES})...`);
+                await initializeMCPSession(true); // 強制重新初始化
+                return await callMCPTool(toolName, params, retryCount + 1);
+            }
+
             throw new Error(`MCP Server 錯誤: ${response.status}`);
         }
 
