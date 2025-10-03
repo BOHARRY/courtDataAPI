@@ -39,8 +39,26 @@ async function testMCPConnection() {
         const sessionId = initResponse.headers.get('Mcp-Session-Id');
         console.log('✅ Session ID:', sessionId);
 
-        // 步驟 2: 調用 analyze_judge 工具
-        console.log('\n步驟 2: 調用 analyze_judge 工具');
+        // 步驟 2: 發送 initialized 通知
+        console.log('\n步驟 2: 發送 initialized 通知');
+        const notifyRequest = {
+            jsonrpc: "2.0",
+            method: "notifications/initialized"
+        };
+
+        await fetch(MCP_SERVER_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json, text/event-stream',
+                'Mcp-Session-Id': sessionId
+            },
+            body: JSON.stringify(notifyRequest)
+        });
+        console.log('✅ 通知發送成功');
+
+        // 步驟 3: 調用 analyze_judge 工具
+        console.log('\n步驟 3: 調用 analyze_judge 工具');
         const toolRequest = {
             jsonrpc: "2.0",
             id: Date.now(),

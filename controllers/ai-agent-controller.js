@@ -39,6 +39,7 @@ async function initializeMCPSession() {
     try {
         console.log('[AI Agent] 初始化 MCP Session...');
 
+        // 步驟 1: 發送 initialize 請求
         const initRequest = {
             jsonrpc: "2.0",
             id: 1,
@@ -53,7 +54,7 @@ async function initializeMCPSession() {
             }
         };
 
-        const response = await fetch(MCP_SERVER_URL, {
+        const initResponse = await fetch(MCP_SERVER_URL, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -62,17 +63,37 @@ async function initializeMCPSession() {
             body: JSON.stringify(initRequest)
         });
 
-        if (!response.ok) {
-            throw new Error(`MCP 初始化失敗: ${response.status}`);
+        if (!initResponse.ok) {
+            throw new Error(`MCP 初始化失敗: ${initResponse.status}`);
         }
 
         // 獲取 Session ID
-        mcpSessionId = response.headers.get('Mcp-Session-Id');
+        mcpSessionId = initResponse.headers.get('Mcp-Session-Id');
         console.log('[AI Agent] MCP Session 初始化成功:', mcpSessionId);
+
+        // 步驟 2: 發送 initialized 通知 (必須!)
+        console.log('[AI Agent] 發送 initialized 通知...');
+        const notifyRequest = {
+            jsonrpc: "2.0",
+            method: "notifications/initialized"
+        };
+
+        await fetch(MCP_SERVER_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json, text/event-stream',
+                'Mcp-Session-Id': mcpSessionId
+            },
+            body: JSON.stringify(notifyRequest)
+        });
+
+        console.log('[AI Agent] initialized 通知發送成功');
 
         return mcpSessionId;
     } catch (error) {
         console.error('[AI Agent] MCP 初始化失敗:', error);
+        mcpSessionId = null; // 重置以便下次重試
         throw error;
     }
 }
@@ -112,15 +133,18 @@ async function callMCPTool(toolName, params) {
         });
 
         if (!response.ok) {
+            const errorText = await response.text();
+            console.error('[AI Agent] MCP Server 錯誤響應:', errorText);
             throw new Error(`MCP Server 錯誤: ${response.status}`);
         }
 
         const text = await response.text();
-        
+        console.log('[AI Agent] MCP 原始響應:', text.substring(0, 500));
+
         // 解析 SSE 格式
         const lines = text.trim().split('\n');
         let data = null;
-        
+
         for (const line of lines) {
             if (line.startsWith('data: ')) {
                 data = line.substring(6).trim();
@@ -129,17 +153,27 @@ async function callMCPTool(toolName, params) {
         }
 
         if (!data) {
+            console.error('[AI Agent] 未找到 data 行,完整響應:', text);
             throw new Error('MCP Server 未返回數據');
         }
 
         const result = JSON.parse(data);
-        
+        console.log('[AI Agent] 解析後的結果:', JSON.stringify(result, null, 2));
+
         // 提取工具返回的內容
         if (result.result && result.result.content && result.result.content[0]) {
             const content = result.result.content[0].text;
+            console.log('[AI Agent] 工具返回內容:', content.substring(0, 200));
             return JSON.parse(content);
         }
 
+        // 檢查是否有錯誤
+        if (result.error) {
+            console.error('[AI Agent] MCP 工具返回錯誤:', result.error);
+            throw new Error(`MCP 工具錯誤: ${result.error.message || JSON.stringify(result.error)}`);
+        }
+
+        console.error('[AI Agent] 未預期的響應格式:', result);
         throw new Error('MCP 工具返回格式錯誤');
     } catch (error) {
         console.error(`[AI Agent] MCP 工具調用失敗:`, error);
