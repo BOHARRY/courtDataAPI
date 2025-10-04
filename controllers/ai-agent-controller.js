@@ -387,6 +387,13 @@ export async function handleAIAgentChat(req, res) {
         }
 
         console.log('[AI Agent] ✅ 問題相關,進入完整分析流程');
+
+        // 🆕 如果 Intent Classifier 提取到 case_id，添加到上下文中
+        if (intentResult.extractedInfo?.case_id) {
+            console.log('[AI Agent] 🆔 偵測到案號ID:', intentResult.extractedInfo.case_id);
+            console.log('[AI Agent] 💡 提示: 這是一個案件詳情查詢，建議使用 get_case_details 工具');
+        }
+
         console.log('[AI Agent] =====================================');
 
         // 🆕 動態構建 System Prompt (上下文優先,放在最前面)

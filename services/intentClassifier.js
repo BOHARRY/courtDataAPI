@@ -26,34 +26,39 @@ const INTENT_TYPES = {
 };
 
 /**
- * 意圖識別 System Prompt (簡化版 - 相信 GPT 的判斷)
+ * 意圖識別 System Prompt (強化版 - 支援案件詳情查詢)
  */
-const INTENT_CLASSIFIER_PROMPT = `你是一個意圖分類器。判斷用戶問題是否與「法官判決分析」相關。
+const INTENT_CLASSIFIER_PROMPT = `你是一個意圖分類器。判斷用戶問題是否與「法律案件/判決相關任務」有關（不限於法官分析），並抽取關鍵欄位。
 
 **返回 JSON 格式**:
 {
   "intent": "legal_analysis" | "greeting" | "out_of_scope" | "unclear",
-  "question_type": "勝訴率" | "列表" | "法條" | "判決傾向" | "金額" | "其他" | null,
+  "question_type": "勝訴率" | "列表" | "法條" | "判決傾向" | "金額" | "摘要" | "其他" | null,
   "case_type": "案由關鍵字" | null,
-  "verdict_type": "原告勝訴" | "原告敗訴" | "部分勝訴部分敗訴" | null
+  "verdict_type": "原告勝訴" | "原告敗訴" | "部分勝訴部分敗訴" | null,
+  "case_id": "string | null"
 }
 
+**核心規則**:
+1. **只要涉及「判決書/案件/案號/判決ID/摘要/理由/主文/裁判要旨/法條引用」，一律 intent=legal_analysis**
+2. **可偵測案號/判決ID**（例如含多個逗號分段的碼，如 \`TPHV,113,上,656,20250701,4\`）時，填入 case_id
+3. **不要因為當前對話綁定了某位法官而把與案件相關的問題標為 out_of_scope**；法官是否匹配由後續階段判斷
+4. **僅在明確與法律/判決無關**（如生活嗜好、天氣、八卦）時，才標 out_of_scope
+5. **若不確定類別**，使用 question_type="其他" 並保持 intent=legal_analysis
+
 **意圖分類**:
-- legal_analysis: 與法官判決、案件、勝訴率、法條等法律分析相關
+- legal_analysis: 與法律案件、判決、法官分析、案件詳情、摘要等相關
 - greeting: 打招呼、問候
-- out_of_scope: 與法律分析無關 (如: 法官個人生活、天氣)
+- out_of_scope: 明確與法律/判決無關（生活嗜好、天氣、八卦）
 - unclear: 無法理解
 
-**核心原則**:
-- 詢問法官的判決、案件、勝訴率、法條、判決傾向 → legal_analysis
-- 詢問法官的年齡、婚姻、外貌、個人生活 → out_of_scope
-- 延續性問題 (如: "還有嗎?") 需結合對話歷史判斷
-
 **範例**:
-問題: "法官在交通案件中的勝訴率?" → {"intent":"legal_analysis","question_type":"勝訴率","case_type":"交通","verdict_type":"原告勝訴"}
-問題: "法官有沒有經手刑事案件?" → {"intent":"legal_analysis","question_type":"列表","case_type":"刑事","verdict_type":null}
-問題: "你好" → {"intent":"greeting","question_type":null,"case_type":null,"verdict_type":null}
-問題: "法官單身嗎?" → {"intent":"out_of_scope","question_type":null,"case_type":null,"verdict_type":null}
+問題: "TPHV,113,上,656,20250701,4 的判決摘要？" → {"intent":"legal_analysis","question_type":"摘要","case_type":null,"verdict_type":null,"case_id":"TPHV,113,上,656,20250701,4"}
+問題: "可以給我 SLEV,114,士簡,720,20250731,1 這篇判決的摘要嗎?" → {"intent":"legal_analysis","question_type":"摘要","case_type":null,"verdict_type":null,"case_id":"SLEV,114,士簡,720,20250731,1"}
+問題: "法官在交通案件中的勝訴率?" → {"intent":"legal_analysis","question_type":"勝訴率","case_type":"交通","verdict_type":"原告勝訴","case_id":null}
+問題: "法官有沒有經手刑事案件?" → {"intent":"legal_analysis","question_type":"列表","case_type":"刑事","verdict_type":null,"case_id":null}
+問題: "你好" → {"intent":"greeting","question_type":null,"case_type":null,"verdict_type":null,"case_id":null}
+問題: "法官喜歡吃臭豆腐嗎？" → {"intent":"out_of_scope","question_type":null,"case_type":null,"verdict_type":null,"case_id":null}
 
 只返回 JSON,不要其他文字。`;
 
@@ -142,7 +147,8 @@ export async function classifyIntent(question, options = {}) {
                 intent: classifiedIntent,
                 question_type: null,
                 case_type: null,
-                verdict_type: null
+                verdict_type: null,
+                case_id: null  // 🆕 向後兼容
             };
         }
 
@@ -162,6 +168,9 @@ export async function classifyIntent(question, options = {}) {
         if (parsedResult.verdict_type) {
             console.log('[Intent Classifier] 判決類型:', parsedResult.verdict_type);
         }
+        if (parsedResult.case_id) {
+            console.log('[Intent Classifier] 案號ID:', parsedResult.case_id);
+        }
 
         return {
             intent: intent,
@@ -172,7 +181,8 @@ export async function classifyIntent(question, options = {}) {
             extractedInfo: {
                 question_type: parsedResult.question_type || null,
                 case_type: parsedResult.case_type || null,
-                verdict_type: parsedResult.verdict_type || null
+                verdict_type: parsedResult.verdict_type || null,
+                case_id: parsedResult.case_id || null  // 🆕 添加 case_id
             },
             tokenUsage: {
                 input: usage.prompt_tokens,
