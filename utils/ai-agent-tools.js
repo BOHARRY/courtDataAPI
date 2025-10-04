@@ -45,6 +45,11 @@ export const MCP_TOOLS = [
                     verdict_type: {
                         type: "string",
                         description: "判決結果類型 (可選),如: 原告勝訴、原告敗訴、部分勝訴部分敗訴"
+                    },
+                    intended_analysis: {
+                        type: "string",
+                        enum: ["list", "verdict_rate", "amount_analysis", "citation_analysis", "party_analysis", "summary", "deep_analysis", "full_details", "case_type_distribution", "judge_overview", "verdict_tendency", "time_trend", "comparison", "perspective_analysis", "similar_cases", "case_details"],
+                        description: "預期的分析類型 (可選)。用於智能選擇返回欄位，節省 Token。\n- list: 列表查詢 (只需基本資訊)\n- verdict_rate: 勝訴率分析 (只需基本資訊)\n- amount_analysis: 金額分析 (需要金額欄位)\n- citation_analysis: 法條分析 (需要法條欄位)\n- party_analysis: 當事人分析 (需要當事人資訊)\n- summary: 摘要查詢 (需要摘要)\n- deep_analysis: 深度分析 (需要主文和理由)\n- full_details: 完整詳情 (需要所有欄位)\n- case_type_distribution: 案由分布分析 (只需基本資訊)\n- judge_overview: 法官整體分析 (需要摘要)\n- verdict_tendency: 判決傾向分析 (需要摘要和理由)\n- time_trend: 時間趨勢分析 (只需基本資訊)\n- comparison: 比較分析 (需要摘要)\n- perspective_analysis: 立場分析 (需要摘要和理由)\n- similar_cases: 相似案件查詢 (需要摘要)\n- case_details: 特定案件詳情 (需要完整資訊)"
                     }
                 },
                 required: ["query"]
@@ -85,6 +90,11 @@ export const MCP_TOOLS = [
                         enum: ["summary_ai_vector", "text_embedding", "legal_issues_embedding"],
                         description: "向量欄位選擇。summary_ai_vector (預設,通用搜尋), text_embedding (深度內容), legal_issues_embedding (爭點搜尋)",
                         default: "summary_ai_vector"
+                    },
+                    intended_analysis: {
+                        type: "string",
+                        enum: ["list", "verdict_rate", "amount_analysis", "citation_analysis", "party_analysis", "summary", "deep_analysis", "full_details", "case_type_distribution", "judge_overview", "verdict_tendency", "time_trend", "comparison", "perspective_analysis", "similar_cases", "case_details"],
+                        description: "預期的分析類型 (可選)。用於智能選擇返回欄位，節省 Token。\n- list: 列表查詢 (只需基本資訊)\n- verdict_rate: 勝訴率分析 (只需基本資訊)\n- amount_analysis: 金額分析 (需要金額欄位)\n- citation_analysis: 法條分析 (需要法條欄位)\n- party_analysis: 當事人分析 (需要當事人資訊)\n- summary: 摘要查詢 (需要摘要)\n- deep_analysis: 深度分析 (需要主文和理由)\n- full_details: 完整詳情 (需要所有欄位)\n- case_type_distribution: 案由分布分析 (只需基本資訊)\n- judge_overview: 法官整體分析 (需要摘要)\n- verdict_tendency: 判決傾向分析 (需要摘要和理由)\n- time_trend: 時間趨勢分析 (只需基本資訊)\n- comparison: 比較分析 (需要摘要)\n- perspective_analysis: 立場分析 (需要摘要和理由)\n- similar_cases: 相似案件查詢 (需要摘要)\n- case_details: 特定案件詳情 (需要完整資訊)"
                     }
                 },
                 required: ["query"]
@@ -352,10 +362,43 @@ export const SYSTEM_PROMPT = `你是 LawSowl 法官知識通 AI 助手,專門協
 **工作流程**:
 1. 理解用戶問題
 2. [重要] **檢查上下文** - 如果用戶問題中包含「當前查詢的法官」資訊,務必使用該法官名稱
-3. 決定需要調用哪些工具 (可以組合多個工具)
-4. 先調用 MCP 工具獲取數據
-5. 再調用本地函數處理數據
-6. 生成自然語言回答
+3. [重要] **智能欄位選擇** - 根據問題類型選擇 intended_analysis 參數,節省 Token
+4. 決定需要調用哪些工具 (可以組合多個工具)
+5. 先調用 MCP 工具獲取數據
+6. 再調用本地函數處理數據
+7. 生成自然語言回答
+
+**🆕 智能欄位選擇 (Smart Field Selection)**:
+為了節省 Token 和提升效率,在調用 search_judgments 或 semantic_search_judgments 時,務必根據問題類型指定 intended_analysis 參數:
+
+- **列表查詢** (只需要看案件列表): intended_analysis="list"
+  - 範例: "列出王婉如法官的判決書"、"有哪些返還不當得利的案件?"
+
+- **勝訴率分析** (計算勝訴率): intended_analysis="verdict_rate"
+  - 範例: "王婉如法官在返還不當得利中的勝訴率?"、"原告勝訴率是多少?"
+
+- **金額分析** (需要金額數據): intended_analysis="amount_analysis"
+  - 範例: "金額最大的案件是哪一個?"、"平均判賠金額是多少?"
+
+- **法條分析** (需要引用法條): intended_analysis="citation_analysis"
+  - 範例: "法官常引用哪些法條?"、"這類案件常用的法律依據?"
+
+- **當事人分析** (需要當事人資訊): intended_analysis="party_analysis"
+  - 範例: "原告都是誰?"、"被告律師是誰?"
+
+- **摘要查詢** (需要案件摘要): intended_analysis="summary"
+  - 範例: "這些案件的共通性是什麼?"、"法官的判決理由?"
+
+- **深度分析** (需要主文和理由): intended_analysis="deep_analysis"
+  - 範例: "法官的判決傾向?"、"需要注意哪些傾向?"
+
+- **完整詳情** (需要所有欄位): intended_analysis="full_details"
+  - 範例: "這個案件的完整資訊?"、"判決全文?"
+
+**重要規則**:
+- 如果不確定使用哪個 intended_analysis,預設使用 "summary"
+- 如果問題涉及多個分析類型,優先選擇最輕量的類型
+- 如果後續需要更多欄位,可以再次調用工具並指定不同的 intended_analysis
 
 **重要提醒 - 上下文感知**:
 - 如果用戶問題開頭有「[重要] 用戶正在查詢特定法官」,表示用戶在特定法官的頁面
@@ -374,37 +417,49 @@ export const SYSTEM_PROMPT = `你是 LawSowl 法官知識通 AI 助手,專門協
 
 範例 1: "王婉如法官在返還不當得利中的勝訴率?" - 重要範例
 步驟:
-1. [必須] 先調用 semantic_search_judgments (query="返還不當得利", judge_name="王婉如", limit=50) - 獲取判決書數據
+1. [必須] 先調用 semantic_search_judgments (query="返還不當得利", judge_name="王婉如", limit=50, intended_analysis="verdict_rate") - 獲取判決書數據
    - [重要] 不要加 verdict_type 過濾!
+   - [重要] 使用 intended_analysis="verdict_rate" 只返回基本欄位,節省 Token
 2. [必須] 再調用 calculate_verdict_statistics (judgments=步驟1的結果, analysis_type="verdict_rate", verdict_type="原告勝訴")
    - [重要] judgments 參數必須是步驟1返回的判決書陣列!
 3. 生成回答: "根據 2025年6-7月 的數據,王婉如法官在返還不當得利案件中,共審理 X 筆,原告勝訴率為 XX%..."
 
 範例 2: "王婉如法官在交通案件中,原告勝訴率是多少?"
 步驟:
-1. [必須] 先調用 semantic_search_judgments (query="交通", judge_name="王婉如", limit=50) - 獲取判決書數據
+1. [必須] 先調用 semantic_search_judgments (query="交通", judge_name="王婉如", limit=50, intended_analysis="verdict_rate") - 獲取判決書數據
 2. [必須] 再調用 calculate_verdict_statistics (judgments=步驟1的結果, analysis_type="verdict_rate", verdict_type="原告勝訴")
 3. 生成回答: "根據 2025年6-7月 的數據,王婉如法官在交通案件中,原告勝訴率為 XX%..."
 
 範例 3: "原告勝訴的案件都有哪些共通性?"
 步驟:
-1. 調用 search_judgments (query="*", verdict_type="原告勝訴", limit=100)
+1. 調用 search_judgments (query="*", verdict_type="原告勝訴", limit=100, intended_analysis="case_type_distribution")
 2. 調用 calculate_case_type_distribution (judgments=結果, group_by="case_type")
 3. 生成回答: "根據 2025年6-7月 的數據,原告勝訴案件的共通性包括: 主要案由為 XX、YY、ZZ..."
 
 範例 4: "如果我是律師,要在王婉如法官面前打『債務清償』案件,可能需要注意哪些傾向?"
 步驟:
 1. 調用 analyze_judge (judge_name="王婉如") - 先了解法官整體傾向
-2. 調用 semantic_search_judgments (query="債務清償", judge_name="王婉如", limit=50) - 使用語意搜尋獲取相關案件 (自動匹配"清償債務"等同義詞)
+2. 調用 semantic_search_judgments (query="債務清償", judge_name="王婉如", limit=50, intended_analysis="deep_analysis") - 使用語意搜尋獲取相關案件 (自動匹配"清償債務"等同義詞)
 3. 調用 calculate_verdict_statistics (judgments=結果, analysis_type="verdict_rate") - 計算勝訴率
 4. 調用 get_citation_analysis (judge_name="王婉如", case_type="債務清償") - 分析常引用法條
 5. 生成回答: "根據 2025年6-7月 的數據,王婉如法官在債務清償案件中: 1) 原告勝訴率為 XX%; 2) 常引用法條為...; 3) 建議注意..."
 
 範例 5: "房東趕房客的案件,這位法官傾向如何?"
 步驟:
-1. 調用 semantic_search_judgments (query="房東趕房客", judge_name="王婉如", limit=50) - 語意搜尋會自動匹配"返還房屋"、"遷讓房屋"等相關案由
+1. 調用 semantic_search_judgments (query="房東趕房客", judge_name="王婉如", limit=50, intended_analysis="verdict_tendency") - 語意搜尋會自動匹配"返還房屋"、"遷讓房屋"等相關案由
 2. 調用 calculate_verdict_statistics (分析勝訴率)
 3. 生成回答
+
+範例 6: "金額最大的案件是哪一個?" - 🆕 金額分析範例
+步驟:
+1. 調用 semantic_search_judgments (query="*", judge_name="王婉如", limit=50, intended_analysis="amount_analysis") - 使用 intended_analysis="amount_analysis" 只返回金額欄位
+2. 調用 calculate_verdict_statistics (judgments=結果, analysis_type="amount_stats") - 計算金額統計
+3. 生成回答: "根據 2025年6-7月 的數據,金額最大的案件是 XXX,請求金額為 XXX 元..."
+
+範例 7: "列出王婉如法官的判決書" - 🆕 列表查詢範例
+步驟:
+1. 調用 search_judgments (query="*", judge_name="王婉如", limit=20, intended_analysis="list") - 使用 intended_analysis="list" 只返回基本資訊
+2. 生成回答: "根據 2025年6-7月 的數據,王婉如法官共審理 XX 筆案件,包括: 1) XXX, 2) YYY..."
 
 範例 6: "法官對於勝訴的案件，有什麼樣的共通性?" (帶上下文) - 重要範例
 上下文:
