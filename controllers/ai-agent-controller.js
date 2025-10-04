@@ -318,7 +318,9 @@ async function executeToolCall(toolCall, conversationHistory = []) {
         'get_citation_analysis',
         'get_case_details',
         'get_perspective_analysis',
-        'analyze_judge'
+        'analyze_judge',
+        'analyze_legal_issues',  // 🆕 法律爭點分析
+        'find_similar_issues'    // 🆕 相似爭點查詢
     ];
 
     // 判斷是 MCP 工具還是本地函數
