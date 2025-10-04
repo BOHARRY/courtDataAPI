@@ -33,7 +33,7 @@ const INTENT_CLASSIFIER_PROMPT = `你是一個意圖分類器。判斷用戶問�
 **返回 JSON 格式**:
 {
   "intent": "legal_analysis" | "greeting" | "out_of_scope" | "unclear",
-  "question_type": "勝訴率" | "列表" | "法條" | "判決傾向" | "金額" | "摘要" | "其他" | null,
+  "question_type": "建議" | "摘要" | "勝訴率" | "金額" | "法條" | "判決傾向" | "列表" | "其他" | null,
   "case_type": "案由關鍵字" | null,
   "verdict_type": "原告勝訴" | "原告敗訴" | "部分勝訴部分敗訴" | null,
   "case_id": "string | null"
@@ -45,6 +45,8 @@ const INTENT_CLASSIFIER_PROMPT = `你是一個意圖分類器。判斷用戶問�
 3. **不要因為當前對話綁定了某位法官而把與案件相關的問題標為 out_of_scope**；法官是否匹配由後續階段判斷
 4. **僅在明確與法律/判決無關**（如生活嗜好、天氣、八卦）時，才標 out_of_scope
 5. **若不確定類別**，使用 question_type="其他" 並保持 intent=legal_analysis
+6. **[重要] 若問題包含「怎麼處理」「你建議我」「該怎麼做」「勝算大嗎」「如何應對」等尋求建議的關鍵字**，則標記為 intent=legal_analysis, question_type="建議"，並交給下游模組決定如何回覆
+7. **不要因為問題帶有策略性或諮詢性質，就直接判為 out_of_scope**；只要與法官判決分析相關，都應標為 legal_analysis
 
 **意圖分類**:
 - legal_analysis: 與法律案件、判決、法官分析、案件詳情、摘要等相關
@@ -53,6 +55,9 @@ const INTENT_CLASSIFIER_PROMPT = `你是一個意圖分類器。判斷用戶問�
 - unclear: 無法理解
 
 **範例**:
+問題: "我剛好有一個案件是關於返還不當得利的，明天開庭，法官就是王婉如法官，當事人是被告，你會建議我怎麼處理?" → {"intent":"legal_analysis","question_type":"建議","case_type":"返還不當得利","verdict_type":null,"case_id":null}
+問題: "我是原告，要對王婉如法官提起侵權訴訟，勝算大嗎?" → {"intent":"legal_analysis","question_type":"建議","case_type":"侵權","verdict_type":null,"case_id":null}
+問題: "面對這個法官，我該怎麼準備?" → {"intent":"legal_analysis","question_type":"建議","case_type":null,"verdict_type":null,"case_id":null}
 問題: "TPHV,113,上,656,20250701,4 的判決摘要？" → {"intent":"legal_analysis","question_type":"摘要","case_type":null,"verdict_type":null,"case_id":"TPHV,113,上,656,20250701,4"}
 問題: "可以給我 SLEV,114,士簡,720,20250731,1 這篇判決的摘要嗎?" → {"intent":"legal_analysis","question_type":"摘要","case_type":null,"verdict_type":null,"case_id":"SLEV,114,士簡,720,20250731,1"}
 問題: "法官在交通案件中的勝訴率?" → {"intent":"legal_analysis","question_type":"勝訴率","case_type":"交通","verdict_type":"原告勝訴","case_id":null}
