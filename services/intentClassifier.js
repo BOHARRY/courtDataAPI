@@ -85,7 +85,16 @@ export async function classifyIntent(question, options = {}) {
         ];
 
         // 🆕 添加最近的對話歷史 (最多 3 輪,避免 Token 過多)
-        const recentHistory = conversationHistory.slice(-6); // 最近 3 輪 (每輪 2 條消息)
+        // ⚠️ 重要：移除 tool 和 tool_calls 訊息，避免 OpenAI API 錯誤
+        const recentHistory = conversationHistory
+            .slice(-6) // 最近 3 輪 (每輪 2 條消息)
+            .filter(msg => {
+                // 只保留 user 和 assistant 訊息
+                // 移除 tool 訊息（避免缺少對應的 tool_calls）
+                // 移除包含 tool_calls 的 assistant 訊息（簡化對話）
+                return (msg.role === 'user' || msg.role === 'assistant') && !msg.tool_calls;
+            });
+
         if (recentHistory.length > 0) {
             console.log('[Intent Classifier] 使用最近', recentHistory.length, '條對話作為上下文');
             messages.push(...recentHistory);
