@@ -185,10 +185,11 @@ export function calculate_verdict_statistics(judgments, options = {}, conversati
 
     if (analysis_type === 'amount_stats') {
         // 計算金額統計
+        // 提取金額數據 - 只使用中文欄位名稱（MCP Server 已經正確提取）
         const amounts = judgments
             .map(j => ({
-                claim: parseFloat(j['請求金額'] || j.claim_amount || 0),
-                granted: parseFloat(j['判賠金額'] || j.granted_amount || 0)
+                claim: parseFloat(j['請求金額'] || 0),
+                granted: parseFloat(j['判賠金額'] || 0)
             }))
             .filter(a => a.claim > 0 || a.granted > 0);
 
