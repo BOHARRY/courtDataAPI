@@ -393,3 +393,173 @@ export function calculate_case_type_distribution(judgments, group_by = 'case_typ
     };
 }
 
+/**
+ * 分析法官引用判例的模式
+ * @param {Array} judgments - 判決書陣列 (可選,如果為空會從對話歷史中提取)
+ * @param {Object} options - 選項
+ * @param {string} options.citation_type - 引用類型: 'all' | 'supreme_court' | 'constitutional_court' | 'other'
+ * @param {string} options.judge_name - 法官姓名 (用於過濾對話歷史中的數據)
+ * @param {string} options.case_type - 案由 (用於過濾對話歷史中的數據)
+ * @param {number} options.top_n - 返回前 N 個最常引用的判例
+ * @param {Array} conversationHistory - 對話歷史 (用於自動提取判決書數據)
+ * @returns {Object} 引用分析結果
+ */
+export function analyze_citations(judgments, options = {}, conversationHistory = []) {
+    const { citation_type = 'all', judge_name, case_type, top_n = 10 } = options;
+
+    console.log('[引用分析] ========== 開始分析引用判例 ==========');
+    console.log('[引用分析] 參數:', { citation_type, judge_name, case_type, top_n });
+    console.log('[引用分析] 收到判決書數量:', judgments?.length || 0);
+
+    // 如果沒有 judgments,從對話歷史中提取
+    if (!Array.isArray(judgments) || judgments.length === 0) {
+        console.log('[引用分析] ⚠️ 沒有 judgments 參數,嘗試從對話歷史中提取');
+        console.log('[引用分析] 對話歷史長度:', conversationHistory.length);
+
+        // 如果有過濾條件,收集所有判決書再過濾
+        if (judge_name || case_type) {
+            console.log('[引用分析] 檢測到過濾條件,收集所有判決書');
+            let allJudgments = [];
+
+            for (let i = 0; i < conversationHistory.length; i++) {
+                const msg = conversationHistory[i];
+                if (msg.role === 'tool') {
+                    try {
+                        const data = JSON.parse(msg.content);
+                        if (data['判決書'] && Array.isArray(data['判決書'])) {
+                            allJudgments = allJudgments.concat(data['判決書']);
+                        }
+                    } catch (e) {
+                        continue;
+                    }
+                }
+            }
+
+            if (allJudgments.length > 0) {
+                console.log('[引用分析] ✅ 從對話歷史中收集到', allJudgments.length, '筆判決書');
+                judgments = allJudgments;
+
+                // 根據 judge_name 和 case_type 過濾
+                if (judge_name) {
+                    const beforeFilter = judgments.length;
+                    judgments = judgments.filter(j => j.法官 === judge_name);
+                    console.log('[引用分析] 過濾法官後: ', beforeFilter, '→', judgments.length, '筆');
+                }
+                if (case_type) {
+                    const beforeFilter = judgments.length;
+                    judgments = judgments.filter(j => j.案由?.includes(case_type));
+                    console.log('[引用分析] 過濾案由後: ', beforeFilter, '→', judgments.length, '筆');
+                }
+            }
+        } else {
+            // 沒有過濾條件,使用最近的一個 tool 消息
+            console.log('[引用分析] 無過濾條件,使用最近的判決書數據');
+            for (let i = conversationHistory.length - 1; i >= 0; i--) {
+                const msg = conversationHistory[i];
+                if (msg.role === 'tool') {
+                    try {
+                        const data = JSON.parse(msg.content);
+                        if (data['判決書'] && Array.isArray(data['判決書'])) {
+                            judgments = data['判決書'];
+                            console.log('[引用分析] ✅ 從對話歷史中提取到', judgments.length, '筆判決書');
+                            break;
+                        }
+                    } catch (e) {
+                        continue;
+                    }
+                }
+            }
+        }
+    }
+
+    // 如果還是沒有數據,返回錯誤
+    if (!Array.isArray(judgments) || judgments.length === 0) {
+        console.log('[引用分析] ❌ 無判決書數據 (對話歷史中也沒有找到)');
+        return {
+            error: '無判決書數據。請先調用 semantic_search_judgments 或 search_judgments 獲取判決書。',
+            total_cases: 0
+        };
+    }
+
+    const total = judgments.length;
+    console.log('[引用分析] 開始分析', total, '筆判決書的引用判例');
+
+    // 收集所有引用
+    const citationCounts = {};
+    const citationsByType = {
+        supreme_court: {},  // 最高法院判決
+        constitutional_court: {},  // 大法官解釋
+        other: {}  // 其他
+    };
+
+    let totalCitations = 0;
+    let casesWithCitations = 0;
+
+    judgments.forEach(j => {
+        const citations = j['引用判例'] || j.citations || [];
+
+        if (citations.length > 0) {
+            casesWithCitations++;
+        }
+
+        citations.forEach(citation => {
+            totalCitations++;
+
+            // 統計總引用次數
+            citationCounts[citation] = (citationCounts[citation] || 0) + 1;
+
+            // 分類統計
+            if (citation.includes('最高法院')) {
+                citationsByType.supreme_court[citation] = (citationsByType.supreme_court[citation] || 0) + 1;
+            } else if (citation.includes('大法官') || citation.includes('釋字') || citation.includes('憲法')) {
+                citationsByType.constitutional_court[citation] = (citationsByType.constitutional_court[citation] || 0) + 1;
+            } else {
+                citationsByType.other[citation] = (citationsByType.other[citation] || 0) + 1;
+            }
+        });
+    });
+
+    console.log('[引用分析] 總引用次數:', totalCitations);
+    console.log('[引用分析] 有引用的案件數:', casesWithCitations);
+
+    // 根據 citation_type 選擇要分析的引用
+    let targetCitations;
+    if (citation_type === 'supreme_court') {
+        targetCitations = citationsByType.supreme_court;
+    } else if (citation_type === 'constitutional_court') {
+        targetCitations = citationsByType.constitutional_court;
+    } else if (citation_type === 'other') {
+        targetCitations = citationsByType.other;
+    } else {
+        targetCitations = citationCounts;
+    }
+
+    // 排序並取前 N 個
+    const topCitations = Object.entries(targetCitations)
+        .map(([citation, count]) => ({
+            引用判例: citation,
+            引用次數: count,
+            引用比例: `${(count / total * 100).toFixed(1)}%`,
+            出現於案件比例: `${(count / total * 100).toFixed(1)}%`
+        }))
+        .sort((a, b) => b.引用次數 - a.引用次數)
+        .slice(0, top_n);
+
+    console.log('[引用分析] ✅ 分析完成,返回前', top_n, '個引用判例');
+
+    return {
+        總案件數: total,
+        有引用判例的案件數: casesWithCitations,
+        有引用比例: `${(casesWithCitations / total * 100).toFixed(1)}%`,
+        總引用次數: totalCitations,
+        平均每案引用數: (totalCitations / total).toFixed(2),
+        引用類型過濾: citation_type,
+        引用類型統計: {
+            最高法院判決: Object.keys(citationsByType.supreme_court).length,
+            大法官解釋: Object.keys(citationsByType.constitutional_court).length,
+            其他: Object.keys(citationsByType.other).length
+        },
+        最常引用判例: topCitations
+    };
+}
+

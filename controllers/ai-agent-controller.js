@@ -12,7 +12,8 @@ import {
     extract_top_citations,
     analyze_amount_trends,
     compare_judges,
-    calculate_case_type_distribution
+    calculate_case_type_distribution,
+    analyze_citations
 } from '../utils/ai-agent-local-functions.js';
 import {
     classifyIntent,
@@ -278,6 +279,19 @@ function callLocalFunction(functionName, args, conversationHistory = []) {
 
         case 'calculate_case_type_distribution':
             result = calculate_case_type_distribution(args.judgments, args.group_by);
+            break;
+
+        case 'analyze_citations':
+            result = analyze_citations(
+                args.judgments,
+                {
+                    citation_type: args.citation_type,
+                    judge_name: args.judge_name,
+                    case_type: args.case_type,
+                    top_n: args.top_n
+                },
+                conversationHistory
+            );
             break;
 
         default:

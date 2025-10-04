@@ -195,6 +195,66 @@ export const MCP_TOOLS = [
                 required: ["judge_name"]
             }
         }
+    },
+    {
+        type: "function",
+        function: {
+            name: "analyze_legal_issues",
+            description: "分析法官在特定法律爭點上的裁決傾向。提供法官對不同爭點的判決模式、有利方分析、常見理由等。適合律師了解法官在特定爭點上的立場。數據範圍: 2025年6-7月。",
+            parameters: {
+                type: "object",
+                properties: {
+                    judge_name: {
+                        type: "string",
+                        description: "法官姓名"
+                    },
+                    issue_topic: {
+                        type: "string",
+                        description: "爭點主題關鍵字 (可選)。例如: '契約成立'、'證據充分性'、'時效抗辯'、'損害賠償範圍'。如果不指定，將分析所有爭點。"
+                    },
+                    case_type: {
+                        type: "string",
+                        description: "案由關鍵字 (可選)。用於過濾特定案由的爭點分析。"
+                    },
+                    limit: {
+                        type: "number",
+                        description: "分析的判決書數量,預設30",
+                        default: 30
+                    }
+                },
+                required: ["judge_name"]
+            }
+        }
+    },
+    {
+        type: "function",
+        function: {
+            name: "find_similar_issues",
+            description: "找出與當前案件相似的法律爭點案例。使用語意搜尋技術，找出法官處理過的類似爭點，並提供判決結果和理由。適合律師尋找判決先例和參考案例。數據範圍: 2025年6-7月。",
+            parameters: {
+                type: "object",
+                properties: {
+                    issue_description: {
+                        type: "string",
+                        description: "爭點描述。可以是自然語言描述，例如: '原告主張被告違約，但被告抗辯契約未成立'、'雙方對於損害賠償範圍有爭議'。"
+                    },
+                    judge_name: {
+                        type: "string",
+                        description: "法官姓名 (可選)。如果指定，只搜尋該法官的案例。"
+                    },
+                    case_type: {
+                        type: "string",
+                        description: "案由關鍵字 (可選)。用於過濾特定案由的案例。"
+                    },
+                    limit: {
+                        type: "number",
+                        description: "返回案例數量,預設10",
+                        default: 10
+                    }
+                },
+                required: ["issue_description"]
+            }
+        }
     }
 ];
 
@@ -331,6 +391,45 @@ export const LOCAL_FUNCTION_TOOLS = [
                     }
                 },
                 required: ["judgments"]
+            }
+        }
+    },
+    {
+        type: "function",
+        function: {
+            name: "analyze_citations",
+            description: "分析法官引用判例的模式。統計最常引用的判例、引用頻率、引用判例的類型分布等。[重要] 如果沒有提供 judgments 參數,函數會自動從對話歷史中提取最近一次搜尋的結果。",
+            parameters: {
+                type: "object",
+                properties: {
+                    judgments: {
+                        type: "array",
+                        description: "[可選] 判決書陣列。如果不提供,函數會自動從對話歷史中提取最近一次搜尋的判決書數據。",
+                        items: {
+                            type: "object"
+                        }
+                    },
+                    citation_type: {
+                        type: "string",
+                        enum: ["all", "supreme_court", "constitutional_court", "other"],
+                        description: "引用類型過濾: all (所有判例), supreme_court (最高法院判決), constitutional_court (大法官解釋), other (其他)",
+                        default: "all"
+                    },
+                    judge_name: {
+                        type: "string",
+                        description: "[可選] 法官姓名,用於過濾對話歷史中的判決書數據"
+                    },
+                    case_type: {
+                        type: "string",
+                        description: "[可選] 案由關鍵字,用於過濾對話歷史中的判決書數據"
+                    },
+                    top_n: {
+                        type: "number",
+                        description: "返回前 N 個最常引用的判例,預設10",
+                        default: 10
+                    }
+                },
+                required: []
             }
         }
     }
