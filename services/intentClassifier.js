@@ -453,7 +453,7 @@ export function generateOutOfScopeResponse(intent, question, judgeName = null) {
 • 分析法官常引用的法條
 • 分析判決金額趨勢
 
-💡 **數據範圍**: 2025年6-7月的判決書數據
+💡 **數據範圍**: 2025年5-7月的判決書數據
 
 請問您想了解什麼?`;
 
