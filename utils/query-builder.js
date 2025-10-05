@@ -44,20 +44,69 @@ function buildSubQuery(term) {
     return { bool: { must_not: { match_all: {} } } };
   }
 
-  // ===== 核心修改：統一使用 match_phrase =====
+  // ===== 核心修改：統一使用 match_phrase + 擴充新欄位 =====
   // 不論使用者是否加引號，都執行精準的詞組匹配。
+  // 新增：利用新 mapping 的豐富欄位提升搜索覆蓋率
+  const shouldClauses = [
+    // 原有核心欄位
+    { match_phrase: { "JFULL":           { query: searchTerm, boost: 3 } } },
+    { match_phrase: { "JTITLE":          { query: searchTerm, boost: 4 } } },
+    { match_phrase: { "summary_ai":      { query: searchTerm, boost: 2 } } },
+    { match_phrase: { "main_reasons_ai": { query: searchTerm, boost: 2 } } },
+    { match_phrase: { "tags":            { query: searchTerm, boost: 1.5 } } },
+
+    // 對於 .exact (keyword) 欄位, match_phrase 等同於 term 查詢，行為正確
+    { match_phrase: { "lawyers.exact":   { query: searchTerm, boost: 8 } } },
+    { match_phrase: { "judges.exact":    { query: searchTerm, boost: 8 } } },
+
+    // 🆕 新增欄位：法律請求基礎
+    { match_phrase: { "legal_claim_basis": { query: searchTerm, boost: 2.5 } } },
+
+    // 🆕 新增欄位：原告主張和被告抗辯摘要
+    { match_phrase: { "plaintiff_claims_summary": { query: searchTerm, boost: 2 } } },
+    { match_phrase: { "defendant_defenses_summary": { query: searchTerm, boost: 2 } } },
+
+    // 🆕 新增欄位：可複製策略文本
+    { match_phrase: { "replicable_strategies_text": { query: searchTerm, boost: 2 } } },
+
+    // 🆕 新增欄位：利用 .legal 子欄位進行法律術語搜索（使用法律同義詞分析器）
+    { match_phrase: { "JFULL.legal":     { query: searchTerm, boost: 2.5 } } },
+    { match_phrase: { "summary_ai.legal": { query: searchTerm, boost: 1.8 } } },
+  ];
+
+  // 🆕 新增：nested 查詢 - 可引用段落
+  shouldClauses.push({
+    nested: {
+      path: "citable_paragraphs",
+      query: {
+        match_phrase: {
+          "citable_paragraphs.paragraph_text": {
+            query: searchTerm,
+            boost: 2.5
+          }
+        }
+      }
+    }
+  });
+
+  // 🆕 新增：nested 查詢 - 法律爭點
+  shouldClauses.push({
+    nested: {
+      path: "legal_issues",
+      query: {
+        bool: {
+          should: [
+            { match_phrase: { "legal_issues.question": { query: searchTerm, boost: 3 } } },
+            { match_phrase: { "legal_issues.answer":   { query: searchTerm, boost: 2 } } }
+          ]
+        }
+      }
+    }
+  });
+
   return {
     bool: {
-      should: [
-        { match_phrase: { "JFULL":           { query: searchTerm, boost: 3 } } },
-        { match_phrase: { "JTITLE":          { query: searchTerm, boost: 4 } } },
-        { match_phrase: { "summary_ai":      { query: searchTerm, boost: 2 } } },
-        { match_phrase: { "main_reasons_ai": { query: searchTerm, boost: 2 } } },
-        { match_phrase: { "tags":            { query: searchTerm, boost: 1.5 } } },
-        // 對於 .exact (keyword) 欄位, match_phrase 等同於 term 查詢，行為正確
-        { match_phrase: { "lawyers.exact":   { query: searchTerm, boost: 8 } } },
-        { match_phrase: { "judges.exact":    { query: searchTerm, boost: 8 } } }
-      ],
+      should: shouldClauses,
       minimum_should_match: 1
     }
   };
