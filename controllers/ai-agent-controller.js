@@ -449,9 +449,31 @@ export async function handleAIAgentChat(req, res) {
             }
 
             if (caseType) {
-                contextSection += `
+                const expandedCaseTypes = extractedInfo.case_type_expanded;
+
+                if (expandedCaseTypes && expandedCaseTypes.length > 0) {
+                    // 🆕 如果有展開的案由清單
+                    contextSection += `
+**案由類別**: ${caseType}
+**具體案由**: ${expandedCaseTypes.join('、')}
+
+**重要規則** (案由過濾):
+1. 用戶想分析「${caseType}」類別的案件
+2. 這個類別包含以下具體案由: ${expandedCaseTypes.join('、')}
+3. 當調用工具時:
+   - 先獲取法官的所有判決書
+   - 然後從結果中**過濾出**案由包含上述關鍵詞的案件
+   - 只分析和統計這些過濾後的案件
+4. 在回答中明確說明:
+   - 「在 X 筆判決書中，有 Y 筆屬於${caseType}案件」
+   - 只列出${caseType}案件的統計和分析
+`;
+                } else {
+                    // 普通案由
+                    contextSection += `
 **案由**: ${caseType}
 `;
+                }
             }
 
             if (verdictType) {
