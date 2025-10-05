@@ -15,6 +15,7 @@ import intakeRoutes from './intake.js';
 import ezshipRoutes from './ezship.js'; // 新增這行
 import workspaceRoutes from './workspace.js';
 import semanticSearchRoutes from './semantic-search.js';
+import maintenanceRoutes from './maintenanceRoutes.js'; // 維護模式路由
 import lawSearchRoutes from './law-search.js';
 import mcpRoutes from './mcp.js';
 import aiAgentRoutes from './ai-agent.js';
@@ -29,14 +30,15 @@ router.use('/lawyers', lawyerRoutes);    // 例如 /api/lawyers/...
 router.use('/users', userRoutes);        // 例如 /api/users/...
 router.use('/judges', judgeRoutes); // <<--- 新增掛載
 router.use('/complaint', complaintRoutes); // 新增掛載
-router.use('/config', configRoutes); 
+router.use('/config', configRoutes);
 router.use('/ai', aiAnalysisRoutes);
 router.use('/platform-status', platformStatusRoutes); // 新增掛載平台狀態路由
 router.use('/contact', contactRoutes);
 router.use('/payment', paymentRoutes);
-router.use('/intake', intakeRoutes); 
+router.use('/intake', intakeRoutes);
 router.use('/ezship', ezshipRoutes); // 新增這行
 router.use('/workspaces', workspaceRoutes);
+router.use('/system', maintenanceRoutes); // 維護模式路由
 router.use('/semantic-search', semanticSearchRoutes);
 router.use('/law-search', lawSearchRoutes); // 新增語意搜尋路由
 router.use('/mcp', mcpRoutes); // 新增 MCP 路由
