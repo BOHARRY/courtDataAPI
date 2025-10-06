@@ -310,62 +310,79 @@ function generateStrategicInsights(similarCases, position, verdictAnalysis) {
 }
 
 /**
- * 🆕 根據立場選擇向量欄位和權重策略
+ * 🆕 根據立場和案件類型選擇向量欄位和權重策略
+ * @param {string} position - 立場 (plaintiff/defendant/neutral)
+ * @param {string} caseType - 案件類型 (民事/刑事/行政)
  */
-function getPositionBasedSearchStrategy(position) {
-    console.log(`[getPositionBasedSearchStrategy] 🎯 使用立場導向向量欄位進行 ${position} 立場搜尋`);
+function getPositionBasedSearchStrategy(position, caseType = '民事') {
+    console.log(`[getPositionBasedSearchStrategy] 🎯 使用立場導向向量欄位進行 ${position} 立場搜尋 (案件類型: ${caseType})`);
+
+    // ✅ 根據案件類型映射正確的視角欄位
+    const perspectiveMap = {
+        '民事': {
+            plaintiff: 'plaintiff_perspective',
+            defendant: 'defendant_perspective'
+        },
+        '刑事': {
+            plaintiff: 'prosecutor_perspective',
+            defendant: 'defense_perspective'
+        },
+        '行政': {
+            plaintiff: 'citizen_perspective',
+            defendant: 'agency_perspective'
+        }
+    };
+
+    const perspectives = perspectiveMap[caseType] || perspectiveMap['民事'];
 
     switch (position) {
         case 'plaintiff':
+            const plaintiffPerspective = perspectives.plaintiff;
             return {
-                primaryVectorField: 'text_embedding', // 主要向量欄位
+                primaryVectorField: 'text_embedding',
                 vectorFields: {
-                    'text_embedding': 0.7,                 // 主要：一般相似性
-                    'legal_issues_vector': 0.3             // ✅ 修正: 輔助：法律爭點
+                    'text_embedding': 0.7,
+                    'legal_issues_vector': 0.3
                 },
-                // 🎯 新增：律師導向的高價值案例過濾
                 filterQuery: {
                     bool: {
                         should: [
-                            // 1. 尋找對原告有利的判例
-                            { term: { 'position_based_analysis.citizen_perspective.case_value': 'positive_precedent' } },
-                            { term: { 'position_based_analysis.citizen_perspective.overall_result': 'major_victory' } },
-                            { term: { 'position_based_analysis.citizen_perspective.overall_result': 'partial_success' } },
+                            // 1. 尋找對原告方有利的判例
+                            { term: { [`position_based_analysis.${plaintiffPerspective}.case_value`]: 'positive_precedent' } },
+                            { term: { [`position_based_analysis.${plaintiffPerspective}.overall_result`]: 'major_victory' } },
+                            { term: { [`position_based_analysis.${plaintiffPerspective}.overall_result`]: 'partial_success' } },
 
-                            // 2. 尋找高複製性的策略
-                            { term: { 'position_based_analysis.replication_potential': 'high' } },
-
-                            // 3. 尋找有成功要素的案例
-                            { exists: { field: 'position_based_analysis.citizen_perspective.successful_elements' } }
+                            // 2. 尋找有成功要素的案例
+                            { exists: { field: `position_based_analysis.${plaintiffPerspective}.successful_elements` } }
                         ],
-                        minimum_should_match: 0 // 🚨 改為加分制，不強制要求
+                        minimum_should_match: 0
                     }
                 }
             };
         case 'defendant':
+            const defendantPerspective = perspectives.defendant;
             return {
-                primaryVectorField: 'text_embedding', // 主要向量欄位
+                primaryVectorField: 'text_embedding',
                 vectorFields: {
-                    'text_embedding': 0.7,                 // 主要：一般相似性
-                    'legal_issues_vector': 0.3             // ✅ 修正: 輔助：法律爭點
+                    'text_embedding': 0.7,
+                    'legal_issues_vector': 0.3
                 },
-                // 🎯 新增：律師導向的高價值案例過濾（被告視角）
                 filterQuery: {
                     bool: {
                         should: [
-                            // 1. 尋找對被告有利的判例
-                            { term: { 'position_based_analysis.agency_perspective.case_value': 'model_defense' } },
-                            { term: { 'position_based_analysis.agency_perspective.overall_result': 'major_victory' } },
-                            { term: { 'position_based_analysis.agency_perspective.overall_result': 'partial_success' } },
+                            // 1. 尋找對被告方有利的判例
+                            { term: { [`position_based_analysis.${defendantPerspective}.case_value`]: 'model_defense' } },
+                            { term: { [`position_based_analysis.${defendantPerspective}.overall_result`]: 'major_victory' } },
+                            { term: { [`position_based_analysis.${defendantPerspective}.overall_result`]: 'partial_success' } },
 
                             // 2. 尋找高複製性的防禦策略
                             { term: { 'position_based_analysis.replication_potential': 'high' } },
 
                             // 3. 尋找有成功策略的案例
-                            { exists: { field: 'position_based_analysis.agency_perspective.successful_strategies' } },
-                            { exists: { field: 'position_based_analysis.agency_perspective.winning_formula' } }
+                            { exists: { field: `position_based_analysis.${defendantPerspective}.successful_strategies` } },
+                            { exists: { field: `position_based_analysis.${defendantPerspective}.winning_formula` } }
                         ],
-                        minimum_should_match: 0 // 🚨 改為加分制，不強制要求
+                        minimum_should_match: 0
                     }
                 }
             };
@@ -373,12 +390,12 @@ function getPositionBasedSearchStrategy(position) {
             return {
                 primaryVectorField: 'text_embedding',
                 vectorFields: {
-                    'text_embedding': 0.6,                 // 主要：一般相似性
-                    'legal_issues_vector': 0.2,            // ✅ 修正: 輔助：法律爭點
-                    'replicable_strategies_vector': 0.1,   // 參考：策略
-                    'main_reasons_ai_vector': 0.1          // 參考：勝負邏輯
+                    'text_embedding': 0.6,
+                    'legal_issues_vector': 0.2,
+                    'replicable_strategies_vector': 0.1,
+                    'main_reasons_ai_vector': 0.1
                 },
-                filterQuery: null // 中性分析不使用立場過濾
+                filterQuery: null
             };
     }
 }
@@ -391,7 +408,7 @@ async function performMultiAngleSearch(searchAngles, courtLevel, caseType, thres
         console.log(`[casePrecedentAnalysisService] 開始立場導向多角度搜尋，立場: ${position}，共 ${Object.keys(searchAngles).length} 個角度`);
 
         const minScore = getThresholdValue(threshold);
-        const searchStrategy = getPositionBasedSearchStrategy(position);
+        const searchStrategy = getPositionBasedSearchStrategy(position, caseType); // ✅ 傳入 caseType
 
         // 並行執行所有角度的搜尋
         const searchPromises = Object.entries(searchAngles).map(async ([angleName, config]) => {
@@ -456,48 +473,38 @@ async function performMultiAngleSearch(searchAngles, courtLevel, caseType, thres
 
                 // 1. 法院層級過濾（最重要！）
                 if (courtLevel && courtLevel !== '全部') {
-                    // 🚨 修復：使用正確的欄位名稱和值
+                    // ✅ 修正：移除 .exact 子欄位，直接使用 court 欄位
                     if (courtLevel === '地方法院') {
                         basicFilters.push({
                             bool: {
                                 should: [
-                                    { wildcard: { 'court.exact': '*地方法院*' } },
-                                    { wildcard: { 'court.exact': '*簡易庭*' } },
-                                    { wildcard: { 'court.exact': '*地院*' } }
+                                    { wildcard: { 'court': '*地方法院*' } },
+                                    { wildcard: { 'court': '*簡易庭*' } },
+                                    { wildcard: { 'court': '*地院*' } }
                                 ]
                             }
                         });
                     } else if (courtLevel === '高等法院') {
-                        basicFilters.push({ wildcard: { 'court.exact': '*高等*' } });
+                        basicFilters.push({ wildcard: { 'court': '*高等*' } });
                     } else if (courtLevel === '最高法院') {
-                        basicFilters.push({ wildcard: { 'court.exact': '*最高*' } });
+                        basicFilters.push({ wildcard: { 'court': '*最高*' } });
                     }
                 }
 
                 // 2. 案件類型過濾（最重要！）
                 if (caseType && caseType !== '全部') {
-                    // 🚨 修復：使用正確的案件類型過濾邏輯
+                    // ✅ 修正：使用正確的欄位名稱 stage0_case_type 和英文值
                     if (caseType === '民事') {
                         basicFilters.push({
-                            bool: {
-                                should: [
-                                    { prefix: { 'case_type': '民事' } },
-                                    { prefix: { 'case_type': '家事' } }
-                                ],
-                                minimum_should_match: 1
-                            }
+                            term: { 'stage0_case_type': 'civil' }
                         });
                     } else if (caseType === '刑事') {
-                        basicFilters.push({ prefix: { 'case_type': '刑事' } });
+                        basicFilters.push({
+                            term: { 'stage0_case_type': 'criminal' }
+                        });
                     } else if (caseType === '行政') {
                         basicFilters.push({
-                            bool: {
-                                should: [
-                                    { wildcard: { 'case_type': '*行政*' } },
-                                    { wildcard: { 'case_type': '*訴願*' } }
-                                ],
-                                minimum_should_match: 1
-                            }
+                            term: { 'stage0_case_type': 'administrative' }
                         });
                     }
                 }
@@ -2289,7 +2296,7 @@ async function getMainstreamCasesWithSummary(caseDescription, courtLevel, caseTy
         // 🆕 1. 使用與初始搜索相同的立場導向策略
         const queryVector = await generateEmbedding(caseDescription);
         const minScore = getThresholdValue(threshold);
-        const searchStrategy = getPositionBasedSearchStrategy(position);
+        const searchStrategy = getPositionBasedSearchStrategy(position, caseType); // ✅ 傳入 caseType
 
         const knnQuery = {
             field: searchStrategy.primaryVectorField,
