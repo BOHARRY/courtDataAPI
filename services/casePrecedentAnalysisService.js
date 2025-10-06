@@ -86,7 +86,7 @@ async function generateEmbedding(text) {
  */
 async function enrichCaseDescription(userInput) {
     try {
-        console.log(`[casePrecedentAnalysisService] 使用 GPT-4o 補足案件事由: "${userInput}"`);
+        console.log(`🔵 [ENRICH-START] 使用 GPT-4o 補足案件事由: "${userInput}"`);
 
         const prompt = `你是資深法律專家。請分析以下案件事由，從四個維度補足搜尋角度：
 
@@ -109,6 +109,7 @@ JSON格式回應：
   "specificIssues": "具體法律爭點"
 }`;
 
+        console.log(`🔵 [ENRICH-API-CALL] 開始調用 OpenAI API`);
         const response = await openai.chat.completions.create({
             model: "gpt-4o",
             messages: [{ role: "user", content: prompt }],
@@ -117,18 +118,25 @@ JSON格式回應：
             response_format: { type: "json_object" }
         });
 
+        console.log(`🔵 [ENRICH-API-SUCCESS] OpenAI API 調用成功`);
         const enrichment = JSON.parse(response.choices[0].message.content);
-        console.log(`[casePrecedentAnalysisService] 事由補足結果:`, enrichment);
+        console.log(`🔵 [ENRICH-RESULT] 事由補足結果:`, enrichment);
         return enrichment;
 
     } catch (error) {
-        console.error('[casePrecedentAnalysisService] 事由補足失敗:', error);
+        console.error('🔴 [ENRICH-ERROR] 事由補足失敗');
+        console.error('🔴 [ENRICH-ERROR] 錯誤類型:', error.name);
+        console.error('🔴 [ENRICH-ERROR] 錯誤訊息:', error.message);
+        console.error('🔴 [ENRICH-ERROR] 錯誤堆疊:', error.stack);
+
         // 降級策略：返回基本結構
-        return {
+        const fallback = {
             formalTerms: userInput,
             practicalTerms: userInput,
             specificIssues: userInput
         };
+        console.log('🟡 [ENRICH-FALLBACK] 使用降級策略:', fallback);
+        return fallback;
     }
 }
 
@@ -405,18 +413,29 @@ function getPositionBasedSearchStrategy(position, caseType = '民事') {
  */
 async function performMultiAngleSearch(searchAngles, courtLevel, caseType, threshold, position = 'neutral') {
     try {
-        console.log(`[casePrecedentAnalysisService] 開始立場導向多角度搜尋，立場: ${position}，共 ${Object.keys(searchAngles).length} 個角度`);
+        console.log(`🟣 [MULTI-SEARCH-START] ===== 開始立場導向多角度搜尋 =====`);
+        console.log(`🟣 [MULTI-SEARCH-START] 立場: ${position}，角度數量: ${Object.keys(searchAngles).length}`);
+        console.log(`🟣 [MULTI-SEARCH-START] 參數:`, { courtLevel, caseType, threshold });
 
         const minScore = getThresholdValue(threshold);
+        console.log(`🟣 [MULTI-SEARCH-START] 最低分數閾值: ${minScore}`);
+
         const searchStrategy = getPositionBasedSearchStrategy(position, caseType); // ✅ 傳入 caseType
+        console.log(`🟣 [MULTI-SEARCH-START] 搜索策略:`, {
+            primaryVectorField: searchStrategy.primaryVectorField,
+            vectorFields: Object.keys(searchStrategy.vectorFields || {}),
+            hasFilter: !!searchStrategy.filterQuery
+        });
 
         // 並行執行所有角度的搜尋
         const searchPromises = Object.entries(searchAngles).map(async ([angleName, config]) => {
             try {
-                console.log(`[casePrecedentAnalysisService] 執行角度「${angleName}」立場導向搜尋: "${config.query}"`);
+                console.log(`🟣 [ANGLE-${angleName}] 開始搜尋: "${config.query}"`);
 
                 // 生成該角度的查詢向量
+                console.log(`🟣 [ANGLE-${angleName}] 生成查詢向量...`);
                 const queryVector = await generateEmbedding(config.query);
+                console.log(`🟣 [ANGLE-${angleName}] ✅ 向量生成完成，維度: ${queryVector?.length}`);
 
                 // 🆕 構建立場導向的 KNN 查詢
                 const knnQuery = {
@@ -1608,17 +1627,36 @@ async function executeAnalysisInBackground(taskId, analysisData, userId) {
 
     try {
         logMemoryUsage('Start-Analysis');
-        console.log(`[casePrecedentAnalysisService] 🆕 開始執行多角度案件有利判決分析，任務ID: ${taskId}`);
+        console.log(`🟢 [ANALYSIS-START] ===== 開始執行多角度案件有利判決分析 =====`);
+        console.log(`🟢 [ANALYSIS-START] 任務ID: ${taskId}`);
+        console.log(`🟢 [ANALYSIS-START] 用戶ID: ${userId}`);
+        console.log(`🟢 [ANALYSIS-START] 分析參數:`, {
+            caseType: analysisData.caseType,
+            courtLevel: analysisData.courtLevel,
+            threshold: analysisData.threshold,
+            position: analysisData.position
+        });
 
         // 🆕 1. AI事由補足與分析
+        console.log(`🟢 [CHECKPOINT-1] 開始 AI 事由補足`);
         const enrichment = await enrichCaseDescription(analysisData.caseDescription);
-        console.log(`[casePrecedentAnalysisService] 事由補足完成:`, enrichment);
+        console.log(`🟢 [CHECKPOINT-1] ✅ 事由補足完成:`, enrichment);
 
         // 🆕 2. 生成四角度搜尋策略
+        console.log(`🟢 [CHECKPOINT-2] 開始生成搜尋角度`);
         const searchAngles = generateSearchAngles(analysisData.caseDescription, enrichment);
-        console.log(`[casePrecedentAnalysisService] 生成搜尋角度:`, Object.keys(searchAngles));
+        console.log(`🟢 [CHECKPOINT-2] ✅ 生成搜尋角度:`, Object.keys(searchAngles));
+        console.log(`🟢 [CHECKPOINT-2] 搜尋角度詳情:`, searchAngles);
 
         // 🆕 3. 執行立場導向的多角度並行搜尋
+        console.log(`🟢 [CHECKPOINT-3] 開始執行多角度並行搜尋`);
+        console.log(`🟢 [CHECKPOINT-3] 搜尋參數:`, {
+            courtLevel: analysisData.courtLevel,
+            caseType: analysisData.caseType,
+            threshold: analysisData.threshold,
+            position: analysisData.position || 'neutral'
+        });
+
         const multiAngleResults = await performMultiAngleSearch(
             searchAngles,
             analysisData.courtLevel,
@@ -1626,15 +1664,19 @@ async function executeAnalysisInBackground(taskId, analysisData, userId) {
             analysisData.threshold,
             analysisData.position || 'neutral' // 🆕 新增立場參數
         );
+        console.log(`🟢 [CHECKPOINT-3] ✅ 多角度搜尋完成，結果數量:`, multiAngleResults.length);
 
         // 🆕 4. 智能合併結果（傳入用戶輸入用於價值評估）
+        console.log(`🟢 [CHECKPOINT-4] 開始智能合併結果`);
         const similarCases = mergeMultiAngleResults(multiAngleResults, analysisData.caseDescription);
+        console.log(`🟢 [CHECKPOINT-4] ✅ 合併完成，最終案例數量: ${similarCases.length}`);
 
         if (similarCases.length === 0) {
+            console.error(`🔴 [ANALYSIS-ERROR] 未找到符合條件的相似案例`);
             throw new Error('未找到符合條件的相似案例');
         }
 
-        console.log(`[casePrecedentAnalysisService] 🎯 多角度搜尋完成，找到 ${similarCases.length} 個相似案例`);
+        console.log(`🟢 [CHECKPOINT-5] 🎯 多角度搜尋完成，找到 ${similarCases.length} 個相似案例`);
 
         // 統計多角度搜尋效果
         const intersectionCases = similarCases.filter(c => c.multiAngleData?.isIntersection);
