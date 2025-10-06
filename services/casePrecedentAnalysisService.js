@@ -497,21 +497,21 @@ async function performMultiAngleSearch(searchAngles, courtLevel, caseType, thres
 
                 // 1. 法院層級過濾（最重要！）
                 if (courtLevel && courtLevel !== '全部') {
-                    // ✅ 修正：移除 .exact 子欄位，直接使用 court 欄位
+                    // ✅ 修正：使用 court.exact 欄位（keyword 類型支援 wildcard）
                     if (courtLevel === '地方法院') {
                         basicFilters.push({
                             bool: {
                                 should: [
-                                    { wildcard: { 'court': '*地方法院*' } },
-                                    { wildcard: { 'court': '*簡易庭*' } },
-                                    { wildcard: { 'court': '*地院*' } }
+                                    { wildcard: { 'court.exact': '*地方法院*' } },
+                                    { wildcard: { 'court.exact': '*簡易庭*' } },
+                                    { wildcard: { 'court.exact': '*地院*' } }
                                 ]
                             }
                         });
                     } else if (courtLevel === '高等法院') {
-                        basicFilters.push({ wildcard: { 'court': '*高等*' } });
+                        basicFilters.push({ wildcard: { 'court.exact': '*高等*' } });
                     } else if (courtLevel === '最高法院') {
-                        basicFilters.push({ wildcard: { 'court': '*最高*' } });
+                        basicFilters.push({ wildcard: { 'court.exact': '*最高*' } });
                     }
                 }
 
