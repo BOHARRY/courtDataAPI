@@ -321,7 +321,7 @@ function getPositionBasedSearchStrategy(position) {
                 primaryVectorField: 'text_embedding', // 主要向量欄位
                 vectorFields: {
                     'text_embedding': 0.7,                 // 主要：一般相似性
-                    'legal_issues_embedding': 0.3          // 輔助：法律爭點
+                    'legal_issues_vector': 0.3             // ✅ 修正: 輔助：法律爭點
                 },
                 // 🎯 新增：律師導向的高價值案例過濾
                 filterQuery: {
@@ -347,7 +347,7 @@ function getPositionBasedSearchStrategy(position) {
                 primaryVectorField: 'text_embedding', // 主要向量欄位
                 vectorFields: {
                     'text_embedding': 0.7,                 // 主要：一般相似性
-                    'legal_issues_embedding': 0.3          // 輔助：法律爭點
+                    'legal_issues_vector': 0.3             // ✅ 修正: 輔助：法律爭點
                 },
                 // 🎯 新增：律師導向的高價值案例過濾（被告視角）
                 filterQuery: {
@@ -374,7 +374,7 @@ function getPositionBasedSearchStrategy(position) {
                 primaryVectorField: 'text_embedding',
                 vectorFields: {
                     'text_embedding': 0.6,                 // 主要：一般相似性
-                    'legal_issues_embedding': 0.2,         // 輔助：法律爭點
+                    'legal_issues_vector': 0.2,            // ✅ 修正: 輔助：法律爭點
                     'replicable_strategies_vector': 0.1,   // 參考：策略
                     'main_reasons_ai_vector': 0.1          // 參考：勝負邏輯
                 },
@@ -438,22 +438,14 @@ async function performMultiAngleSearch(searchAngles, courtLevel, caseType, thres
                         'JID', 'JTITLE', 'verdict_type', 'court', 'JYEAR',
                         'summary_ai', // 🆕 案例摘要信息（必需用於案例列表顯示）
                         'main_reasons_ai', // 🆕 勝負關鍵因素分析需要
-                        'position_based_analysis', // 🆕 新增立場分析資料
+                        'position_based_analysis', // 🆕 新增立場分析資料（包含所有立場分析欄位）
                         // 🚨 新增所有立場導向向量欄位和相關資料
                         'plaintiff_combined_vector',
                         'defendant_combined_vector',
                         'replicable_strategies_vector',
                         'main_reasons_ai_vector',
                         'text_embedding',
-                        'legal_issues_embedding',
-                        // 🚨 新增立場分析的詳細欄位
-                        'plaintiff_perspective',
-                        'defendant_perspective',
-                        'critical_failures',
-                        'key_lessons',
-                        'risk_warning',
-                        'successful_strategies',
-                        'winning_formula'
+                        'legal_issues_vector' // ✅ 修正: legal_issues_embedding → legal_issues_vector
                     ],
                     size: 25,
                     timeout: '20s'
@@ -939,21 +931,13 @@ async function searchSimilarCases(caseDescription, courtLevel, caseType, thresho
                 'summary_ai', // 🆕 案例摘要信息（必需用於案例列表顯示）
                 'main_reasons_ai', // 🆕 勝負關鍵因素分析需要
                 // 🚨 新增所有立場導向向量欄位和相關資料
-                'position_based_analysis',
+                'position_based_analysis', // 🆕 包含所有立場分析欄位（plaintiff_perspective, defendant_perspective 等）
                 'plaintiff_combined_vector',
                 'defendant_combined_vector',
                 'replicable_strategies_vector',
                 'main_reasons_ai_vector',
                 'text_embedding',
-                'legal_issues_embedding',
-                // 🚨 新增立場分析的詳細欄位
-                'plaintiff_perspective',
-                'defendant_perspective',
-                'critical_failures',
-                'key_lessons',
-                'risk_warning',
-                'successful_strategies',
-                'winning_formula'
+                'legal_issues_vector' // ✅ 修正: legal_issues_embedding → legal_issues_vector
             ],
             size: 50, // 與 k 保持一致
             timeout: '30s' // 設定 ES 查詢超時
@@ -1976,21 +1960,13 @@ async function getJudgmentNodeData(caseId) {
                 'summary_ai', 'main_reasons_ai',
                 'legal_issues', 'citations',
                 // 🚨 新增所有立場導向向量欄位和相關資料
-                'position_based_analysis',
+                'position_based_analysis', // 🆕 包含所有立場分析欄位
                 'plaintiff_combined_vector',
                 'defendant_combined_vector',
                 'replicable_strategies_vector',
                 'main_reasons_ai_vector',
                 'text_embedding',
-                'legal_issues_embedding',
-                // 🚨 新增立場分析的詳細欄位
-                'plaintiff_perspective',
-                'defendant_perspective',
-                'critical_failures',
-                'key_lessons',
-                'risk_warning',
-                'successful_strategies',
-                'winning_formula'
+                'legal_issues_vector' // ✅ 修正: legal_issues_embedding → legal_issues_vector
             ]
         });
 
@@ -2329,22 +2305,14 @@ async function getMainstreamCasesWithSummary(caseDescription, courtLevel, caseTy
             _source: [
                 'JID', 'JTITLE', 'verdict_type', 'court', 'JYEAR', 'summary_ai_full',
                 'main_reasons_ai', // 🆕 勝負關鍵因素分析需要
-                'position_based_analysis', // 🆕 新增立場分析資料
+                'position_based_analysis', // 🆕 新增立場分析資料（包含所有立場分析欄位）
                 // 🚨 新增所有立場導向向量欄位和相關資料
                 'plaintiff_combined_vector',
                 'defendant_combined_vector',
                 'replicable_strategies_vector',
                 'main_reasons_ai_vector',
                 'text_embedding',
-                'legal_issues_embedding',
-                // 🚨 新增立場分析的詳細欄位
-                'plaintiff_perspective',
-                'defendant_perspective',
-                'critical_failures',
-                'key_lessons',
-                'risk_warning',
-                'successful_strategies',
-                'winning_formula'
+                'legal_issues_vector' // ✅ 修正: legal_issues_embedding → legal_issues_vector
             ],
             size: 50,
             timeout: '30s'
