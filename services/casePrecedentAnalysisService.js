@@ -446,7 +446,7 @@ async function performMultiAngleSearch(searchAngles, courtLevel, caseType, thres
                 };
 
                 // 🚨 調試：檢查向量欄位和查詢
-                console.log(`[casePrecedentAnalysisService] 🔍 向量搜尋調試:`, {
+                console.log(`🟣 [ANGLE-${angleName}] 🔍 向量搜尋調試:`, {
                     angleName,
                     query: config.query,
                     primaryVectorField: searchStrategy.primaryVectorField,
@@ -456,8 +456,13 @@ async function performMultiAngleSearch(searchAngles, courtLevel, caseType, thres
                     hasFilterQuery: !!searchStrategy.filterQuery
                 });
 
+                // 🆕 顯示完整的過濾條件
+                if (searchStrategy.filterQuery) {
+                    console.log(`🟣 [ANGLE-${angleName}] 🔍 立場過濾條件:`, JSON.stringify(searchStrategy.filterQuery, null, 2));
+                }
+
                 // 🚨 檢查 ES 查詢結構
-                console.log(`[casePrecedentAnalysisService] 🔍 ES 查詢結構:`, {
+                console.log(`🟣 [ANGLE-${angleName}] 🔍 ES 查詢結構:`, {
                     index: ES_INDEX_NAME,
                     knn_field: knnQuery.field,
                     knn_k: knnQuery.k,
@@ -527,6 +532,14 @@ async function performMultiAngleSearch(searchAngles, courtLevel, caseType, thres
                         });
                     }
                 }
+
+                // 🆕 顯示基本過濾條件
+                console.log(`🟣 [ANGLE-${angleName}] 🔍 基本過濾條件:`, {
+                    courtLevel,
+                    caseType,
+                    basicFiltersCount: basicFilters.length,
+                    basicFilters: JSON.stringify(basicFilters, null, 2)
+                });
 
                 // 3. 結合立場過濾和基本過濾
                 if (basicFilters.length > 0 || searchStrategy.filterQuery) {
