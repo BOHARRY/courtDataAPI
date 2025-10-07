@@ -474,7 +474,7 @@ function getPositionBasedSearchStrategy(position, caseType = '民事') {
 /**
  * 🆕 執行立場導向的多角度並行語意搜尋
  */
-async function performMultiAngleSearch(searchAngles, courtLevel, caseType, threshold, position = 'neutral') {
+async function performMultiAngleSearch(searchAngles, courtLevel, caseType, threshold, position = 'neutral', caseDescription = '') {
     try {
         console.log(`🟣 [MULTI-SEARCH-START] ===== 開始立場導向多角度搜尋 =====`);
         console.log(`🟣 [MULTI-SEARCH-START] 立場: ${position}，角度數量: ${Object.keys(searchAngles).length}`);
@@ -1754,7 +1754,8 @@ async function executeAnalysisInBackground(taskId, analysisData, userId) {
             analysisData.courtLevel,
             analysisData.caseType,
             analysisData.threshold,
-            analysisData.position || 'neutral' // 🆕 新增立場參數
+            analysisData.position || 'neutral', // 🆕 新增立場參數
+            analysisData.caseDescription // ✅ 新增案件描述參數（用於 tags 過濾）
         );
         console.log(`🟢 [CHECKPOINT-3] ✅ 多角度搜尋完成，結果數量:`, multiAngleResults.length);
 
