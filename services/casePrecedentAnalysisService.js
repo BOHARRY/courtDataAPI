@@ -297,16 +297,37 @@ function generateStrategicInsights(similarCases, position, verdictAnalysis) {
     });
 
     const positionLabel = position === 'plaintiff' ? '原告方' : '被告方';
-    const successRate = Math.round((casesWithPositionData.filter(c =>
+
+    // ✅ 修正：計算所有有利結果（major_victory + partial_success）
+    const majorVictoryCount = casesWithPositionData.filter(c =>
         c.positionAnalysis[positionKey].overall_result === 'major_victory'
-    ).length / casesWithPositionData.length) * 100);
+    ).length;
+
+    const partialSuccessCount = casesWithPositionData.filter(c =>
+        c.positionAnalysis[positionKey].overall_result === 'partial_success'
+    ).length;
+
+    const totalSuccessCount = majorVictoryCount + partialSuccessCount;
+    const successRate = Math.round((totalSuccessCount / casesWithPositionData.length) * 100);
+
+    // ✅ 根據成功率動態生成描述
+    let successDescription = '';
+    if (majorVictoryCount > 0 && partialSuccessCount > 0) {
+        successDescription = `(重大勝訴 ${majorVictoryCount} 件，部分勝訴 ${partialSuccessCount} 件)`;
+    } else if (majorVictoryCount > 0) {
+        successDescription = `(重大勝訴 ${majorVictoryCount} 件)`;
+    } else if (partialSuccessCount > 0) {
+        successDescription = `(部分勝訴 ${partialSuccessCount} 件)`;
+    } else {
+        successDescription = `(無明顯有利結果)`;
+    }
 
     return {
         type: position,
         positionLabel,
         successRate,
         insights: [
-            `${positionLabel}成功率：${successRate}% (重大有利結果)`,
+            `${positionLabel}成功率：${successRate}% ${successDescription}`,
             successStrategies.length > 0 ?
                 `關鍵成功策略：${[...new Set(successStrategies)].slice(0, 3).join('、')}` :
                 '成功策略數據不足',
@@ -1955,14 +1976,23 @@ ${smartRecommendations.nextSteps.map(step => `• ${step}`).join('\n')}`;
             verdictAnalysis.anomalies,
             result.casePrecedentData.casePool
         );
-        
+
         // 5. 更新任務狀態為完成
-        await taskRef.update({
-            status: 'complete',
-            completedAt: admin.firestore.FieldValue.serverTimestamp(),
-            result
-        });
-        
+        console.log(`🔵 [FIRESTORE-UPDATE-START] 開始更新 Firestore，任務ID: ${taskId}`);
+        console.log(`🔵 [FIRESTORE-UPDATE-SIZE] 結果大小: ${JSON.stringify(result).length} 字元`);
+
+        try {
+            await taskRef.update({
+                status: 'complete',
+                completedAt: admin.firestore.FieldValue.serverTimestamp(),
+                result
+            });
+            console.log(`🟢 [FIRESTORE-UPDATE-SUCCESS] ✅ Firestore 更新成功，任務ID: ${taskId}`);
+        } catch (firestoreError) {
+            console.error(`🔴 [FIRESTORE-UPDATE-ERROR] ❌ Firestore 更新失敗:`, firestoreError);
+            throw firestoreError;
+        }
+
         console.log(`[casePrecedentAnalysisService] 分析完成，任務ID: ${taskId}`);
         
     } catch (error) {

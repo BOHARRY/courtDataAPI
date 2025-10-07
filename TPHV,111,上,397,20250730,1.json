@@ -341,48 +341,10 @@
       "cited_para_id": "P6"
     }
   ],
-  "position_based_analysis": {
-    "plaintiff_perspective": {
-      "successful_elements": [
-        "明確主張已清償大部分債務，並具體計算剩餘債務金額",
-        "針對票據債權存否提出確認之訴，成功爭取確認利益",
-        "有效主張票據請求權已逾時效，導致對方票據債權請求權不存在",
-        "釐清清償契約性質為第三人新債清償，僅負本金責任，排除利息及違約金"
-      ],
-      "critical_failures": [
-        "部分請求未獲支持（原審駁回部分），顯示部分主張未被完全採納"
-      ],
-      "key_lessons": [
-        "在分配表異議訴訟中，應針對債權存否及清償範圍提出具體主張與證據",
-        "確認利益的存在須明確連結法律地位變動與爭執實益",
-        "對於票據債權，時效抗辯具高度實務效力"
-      ],
-      "risk_warning": "如對清償金額計算或契約性質舉證不明確，易遭部分駁回或產生訴訟風險"
-    },
-    "defendant_perspective": {
-      "successful_strategies": [
-        "主張金商公司應負更高清償責任，試圖擴大債務範圍"
-      ],
-      "failed_strategies": [
-        "未能舉證金商公司承擔蒂亞公司對蔡延綜借款200萬元債務",
-        "未能證明票據債權請求權未逾時效",
-        "未能就違約金及利息部分提出有效主張及依據"
-      ],
-      "winning_formula": [
-        "如能充分舉證債務承擔關係及票據權利存續，或可爭取更有利結果",
-        "應強化對清償契約內容及債權範圍之證據準備"
-      ]
-    },
-    "replicable_strategies": [
-      "在分配表異議訴訟中，針對票據債權時效抗辯可作為有效攻防手段",
-      "對於第三人清償契約，應明確界定責任範圍及清償金額，避免爭議",
-      "確認利益之主張須與法律地位變動及分配表內容密切連結"
-    ]
-  },
-  "plaintiff_combined_text": "部分請求未獲支持（原審駁回部分），顯示部分主張未被完全採納 | 在分配表異議訴訟中，應針對債權存否及清償範圍提出具體主張與證據 ; 確認利益的存在須明確連結法律地位變動與爭執實益 ; 對於票據債權，時效抗辯具高度實務效力 | 明確主張已清償大部分債務，並具體計算剩餘債務金額 ; 針對票據債權存否提出確認之訴，成功爭取確認利益 ; 有效主張票據請求權已逾時效，導致對方票據債權請求權不存在 ; 釐清清償契約性質為第三人新債清償，僅負本金責任，排除利息及違約金 | 如對清償金額計算或契約性質舉證不明確，易遭部分駁回或產生訴訟風險",
-  "defendant_combined_text": "主張金商公司應負更高清償責任，試圖擴大債務範圍 | 如能充分舉證債務承擔關係及票據權利存續，或可爭取更有利結果 ; 應強化對清償契約內容及債權範圍之證據準備 | 未能舉證金商公司承擔蒂亞公司對蔡延綜借款200萬元債務 ; 未能證明票據債權請求權未逾時效 ; 未能就違約金及利息部分提出有效主張及依據",
-  "replicable_strategies_text": "在分配表異議訴訟中，針對票據債權時效抗辯可作為有效攻防手段 | 對於第三人清償契約，應明確界定責任範圍及清償金額，避免爭議 | 確認利益之主張須與法律地位變動及分配表內容密切連結",
-  
+  "summary_ai_vector": [],
+  "legal_issues_vector": [],
+  "legal_issues_count": 5,
+  "main_reasons_ai_vector": [],
   "citation_analysis": [
     {
       "citation": "最高法院71年度第8次民事庭會議決議(二)",
@@ -436,5 +398,59 @@
     }
   ],
   "citation_analysis_date": "2025-10-01T07:54:22.026330",
-  "is_ruling": "否"
+  "is_ruling": "否",
+  "position_based_analysis": {
+    "plaintiff_perspective": {
+      "overall_result": "partial_success",
+      "critical_failures": [
+        "未能完全免除剩餘債務33萬7,600元的責任"
+      ],
+      "successful_elements": [
+        "成功確認恆生公司對七張支票無票據債權請求權",
+        "確認清償契約為第三人新債清償，僅負本金責任"
+      ],
+      "risk_warning": "未能完全免除所有債務可能導致未來的法律挑戰",
+      "case_value": "positive_precedent",
+      "key_lessons": [
+        "確認利益的主張在債權存否爭議中至關重要",
+        "舉證責任的有效運用可減輕不必要的債務負擔"
+      ]
+    },
+    "defendant_perspective": {
+      "overall_result": "major_defeat",
+      "successful_strategies": [
+        "試圖主張金商公司應負更高金額的清償責任"
+      ],
+      "failed_strategies": [
+        "未能證明金商公司承擔蒂亞公司借款的責任",
+        "未能在時效內行使票據權利"
+      ],
+      "case_value": "negative_example",
+      "replication_potential": "low",
+      "winning_formula": [
+        "確保票據權利在時效內行使",
+        "充分舉證以支持債權主張"
+      ]
+    },
+    "replicable_strategies": [
+      "利用時效抗辯來挑戰票據債權的有效性",
+      "主張確認利益以確保法律地位"
+    ],
+    "strategic_value": {
+      "plaintiff_side": {
+        "case_value": "positive_precedent",
+        "reasoning": "成功挑戰票據債權的有效性並確認清償責任的範圍"
+      },
+      "defendant_side": {
+        "case_value": "negative_example",
+        "reasoning": "未能有效舉證和及時行使票據權利導致敗訴"
+      }
+    }
+  },
+  "plaintiff_combined_text": "未能完全免除所有債務可能導致未來的法律挑戰 | 未能完全免除剩餘債務33萬7,600元的責任 | 確認利益的主張在債權存否爭議中至關重要 ; 舉證責任的有效運用可減輕不必要的債務負擔 | 成功確認恆生公司對七張支票無票據債權請求權 ; 確認清償契約為第三人新債清償，僅負本金責任",
+  "defendant_combined_text": "試圖主張金商公司應負更高金額的清償責任 | 確保票據權利在時效內行使 ; 充分舉證以支持債權主張 | 未能證明金商公司承擔蒂亞公司借款的責任 ; 未能在時效內行使票據權利",
+  "replicable_strategies_text": "利用時效抗辯來挑戰票據債權的有效性 | 主張確認利益以確保法律地位",
+  "plaintiff_combined_vector": [],
+  "defendant_combined_vector": [],
+  "replicable_strategies_vector": []
 }
