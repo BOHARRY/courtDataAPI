@@ -88,22 +88,25 @@ async function enrichCaseDescription(userInput) {
     try {
         console.log(`🔵 [ENRICH-START] 使用 GPT-4o 補足案件事由: "${userInput}"`);
 
-        const prompt = `你是資深法律專家。請分析以下案件事由，從四個維度補足搜尋角度：
+        const prompt = `你是資深法律專家。請分析以下案件事由，提取核心法律爭點並轉換為搜尋查詢：
 
 案件事由：「${userInput}」
 
 請提供：
-1. 法律術語：正式法律用詞（1-2個精準詞彙）
-2. 實務用詞：實務常用表達（1-2個常見說法）
-3. 爭點導向：具體法律爭點（1-2個核心爭點）
+1. 核心法律爭點：將案件轉換為法律問題形式（例如：「原告主張之損害賠償請求權是否成立？」）
+2. 法律術語：正式法律用詞（1-2個精準詞彙）
+3. 實務用詞：實務常用表達（1-2個常見說法）
+4. 爭點導向：具體法律爭點（1-2個核心爭點）
 
 要求：
-- 每個維度限制10字內
+- 核心法律爭點要以問句形式呈現，模仿判決書中的法律爭點格式
+- 其他維度限制15字內
 - 使用繁體中文
 - 避免過於寬泛的詞彙
 
 JSON格式回應：
 {
+  "legalIssueQuery": "核心法律爭點（問句形式）",
   "formalTerms": "正式法律術語",
   "practicalTerms": "實務常用說法",
   "specificIssues": "具體法律爭點"
@@ -145,27 +148,33 @@ JSON格式回應：
  */
 function generateSearchAngles(userInput, enrichment) {
     return {
+        法律爭點: {
+            query: enrichment.legalIssueQuery || userInput,  // ✅ 新增：法律爭點查詢
+            weight: 0.35,  // ✅ 最高權重
+            purpose: "法律爭點匹配（用於 legal_issues_vector）",
+            displayName: "法律爭點"
+        },
         核心概念: {
             query: userInput,
-            weight: 0.4,
+            weight: 0.3,  // ✅ 調整權重
             purpose: "保持用戶原始表達",
             displayName: "核心概念"
         },
         法律術語: {
             query: enrichment.formalTerms || userInput,
-            weight: 0.3,
+            weight: 0.2,  // ✅ 調整權重
             purpose: "正式法律用詞",
             displayName: "法律術語"
         },
         實務用詞: {
             query: enrichment.practicalTerms || userInput,
-            weight: 0.2,
+            weight: 0.1,  // ✅ 調整權重
             purpose: "實務常用表達",
             displayName: "實務用詞"
         },
         爭點導向: {
             query: enrichment.specificIssues || userInput,
-            weight: 0.1,
+            weight: 0.05,  // ✅ 調整權重
             purpose: "具體爭點角度",
             displayName: "爭點導向"
         }
