@@ -144,6 +144,37 @@ JSON格式回應：
 }
 
 /**
+ * 🆕 從案件描述中提取相關標籤
+ */
+function extractRelevantTags(caseDescription) {
+    const tags = [];
+    const desc = caseDescription.toLowerCase();
+
+    // 名譽權相關
+    if (desc.includes('名譽') || desc.includes('誹謗') || desc.includes('不實言論')) {
+        tags.push('名譽權', '侵權行為', '誹謗');
+    }
+
+    // 交通事故相關
+    if (desc.includes('車禍') || desc.includes('交通') || desc.includes('撞')) {
+        tags.push('侵權行為', '損害賠償');
+    }
+
+    // 契約相關
+    if (desc.includes('契約') || desc.includes('違約') || desc.includes('解除契約')) {
+        tags.push('契約', '損害賠償');
+    }
+
+    // 勞動相關
+    if (desc.includes('加班') || desc.includes('工資') || desc.includes('解僱') || desc.includes('勞動')) {
+        tags.push('損害賠償');
+    }
+
+    // 如果沒有匹配到特定標籤，返回空陣列（不過濾）
+    return [...new Set(tags)];  // 去重
+}
+
+/**
  * 🆕 生成四角度搜尋策略
  */
 function generateSearchAngles(userInput, enrichment) {
@@ -537,7 +568,8 @@ async function performMultiAngleSearch(searchAngles, courtLevel, caseType, thres
                                     { wildcard: { 'court.exact': '*地方法院*' } },
                                     { wildcard: { 'court.exact': '*簡易庭*' } },
                                     { wildcard: { 'court.exact': '*地院*' } }
-                                ]
+                                ],
+                                minimum_should_match: 1  // ✅ 修正：加上 minimum_should_match
                             }
                         });
                     } else if (courtLevel === '高等法院') {
@@ -565,10 +597,25 @@ async function performMultiAngleSearch(searchAngles, courtLevel, caseType, thres
                     }
                 }
 
+                // 3. ✅ 新增：tags 過濾（根據用戶輸入提取關鍵標籤）
+                const relevantTags = extractRelevantTags(caseDescription);
+                if (relevantTags.length > 0) {
+                    console.log(`🟣 [ANGLE-${angleName}] 🏷️ 提取到相關標籤:`, relevantTags);
+                    basicFilters.push({
+                        bool: {
+                            should: relevantTags.map(tag => ({
+                                term: { 'tags': tag }
+                            })),
+                            minimum_should_match: 1  // ✅ 至少匹配一個標籤
+                        }
+                    });
+                }
+
                 // 🆕 顯示基本過濾條件
                 console.log(`🟣 [ANGLE-${angleName}] 🔍 基本過濾條件:`, {
                     courtLevel,
                     caseType,
+                    relevantTags,
                     basicFiltersCount: basicFilters.length,
                     basicFilters: JSON.stringify(basicFilters, null, 2)
                 });
