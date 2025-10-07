@@ -26,7 +26,10 @@ export const checkAndDeductCredits = (baseCost, purpose, logDetailsOptions = {})
     }
 
     // 🆕 檢查是否為恢復模式（免費重新搜索）
-    const isRestoreMode = req.headers['x-restore-mode'] === 'true';
+    const restoreHeader = req.headers['x-restore-mode'];
+    const isRestoreMode = typeof restoreHeader === 'string'
+      ? ['true', '1'].includes(restoreHeader.toLowerCase())
+      : false;
 
     if (isRestoreMode) {
       console.log(`[Credit Middleware] 🔄 恢復模式檢測到，跳過積分扣除 (用戶: ${userId}, 用途: ${purpose})`);
