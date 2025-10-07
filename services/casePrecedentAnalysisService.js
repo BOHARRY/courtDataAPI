@@ -368,10 +368,11 @@ function getPositionBasedSearchStrategy(position, caseType = '民事') {
         case 'plaintiff':
             const plaintiffPerspective = perspectives.plaintiff;
             return {
-                primaryVectorField: 'text_embedding',
+                primaryVectorField: 'legal_issues_vector',  // ✅ 修正：使用法律爭點向量
                 vectorFields: {
-                    'text_embedding': 0.7,
-                    'legal_issues_vector': 0.3
+                    'legal_issues_vector': 0.5,              // ✅ 法律爭點最重要
+                    'plaintiff_combined_vector': 0.3,        // ✅ 原告方綜合向量
+                    'main_reasons_ai_vector': 0.2            // ✅ 勝負關鍵因素
                 },
                 filterQuery: {
                     bool: {
@@ -391,10 +392,11 @@ function getPositionBasedSearchStrategy(position, caseType = '民事') {
         case 'defendant':
             const defendantPerspective = perspectives.defendant;
             return {
-                primaryVectorField: 'text_embedding',
+                primaryVectorField: 'legal_issues_vector',  // ✅ 修正：使用法律爭點向量
                 vectorFields: {
-                    'text_embedding': 0.7,
-                    'legal_issues_vector': 0.3
+                    'legal_issues_vector': 0.5,              // ✅ 法律爭點最重要
+                    'defendant_combined_vector': 0.3,        // ✅ 被告方綜合向量
+                    'main_reasons_ai_vector': 0.2            // ✅ 勝負關鍵因素
                 },
                 filterQuery: {
                     bool: {
@@ -417,12 +419,12 @@ function getPositionBasedSearchStrategy(position, caseType = '民事') {
             };
         default: // 'neutral'
             return {
-                primaryVectorField: 'text_embedding',
+                primaryVectorField: 'legal_issues_vector',  // ✅ 修正：使用法律爭點向量
                 vectorFields: {
-                    'text_embedding': 0.6,
-                    'legal_issues_vector': 0.2,
-                    'replicable_strategies_vector': 0.1,
-                    'main_reasons_ai_vector': 0.1
+                    'legal_issues_vector': 0.4,              // ✅ 法律爭點最重要
+                    'main_reasons_ai_vector': 0.3,           // ✅ 勝負關鍵因素
+                    'replicable_strategies_vector': 0.2,     // ✅ 可複製策略
+                    'summary_ai_vector': 0.1                 // ✅ 案例摘要
                 },
                 filterQuery: null
             };
@@ -974,7 +976,7 @@ async function searchSimilarCases(caseDescription, courtLevel, caseType, thresho
 
         // 2. 構建 ES KNN 查詢 - 平衡統計意義和性能穩定性
         const knnQuery = {
-            field: "text_embedding",
+            field: "legal_issues_vector",  // ✅ 修正：使用法律爭點向量
             query_vector: queryVector,
             k: 50, // 增加到 50 個案例，提供更好的統計意義
             num_candidates: 100 // 適度增加候選數量
