@@ -170,13 +170,20 @@ function calculateEnhancedWinRates(cases) {
       roleStats.performance[perfKey]++;
 
       // 🆕 添加詳細的表現記錄（用於前端表格顯示）
+      // 提取年份
+      let jyear = '';
+      if (caseItem.date && typeof caseItem.date === 'string') {
+        jyear = caseItem.date.split('/')[0] || caseItem.date.substring(0, 4);
+      }
+
       roleStats.performance_details.push({
         performance: performance,
         outcome: performanceOutcome,
         case_id: caseItem.id,
         title: caseItem.title,  // 🆕 添加案件標題
         court: caseItem.court,  // 🆕 添加法院
-        date: caseItem.date     // 🆕 添加日期
+        date: caseItem.date,    // 🆕 添加日期
+        jyear: jyear            // 🆕 添加年份
       });
     }
 
