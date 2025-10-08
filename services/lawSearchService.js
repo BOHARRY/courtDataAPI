@@ -686,11 +686,13 @@ export async function aiExplainLaw(lawName) {
 }
 
 **重要提醒**：
-- 「出處來源」必須是有效的 HTTPS 網址，優先使用 https://law.moj.gov.tw/ 開頭的連結
-- 如果無法找到全國法規資料庫的連結，可使用其他官方法規網站
-- 不可只填寫文字說明，必須是可點擊的完整網址
+「出處來源」必須是有效的 HTTPS 網址，優先使用 https://law.moj.gov.tw/ 開頭的連結
+如果無法找到全國法規資料庫的連結，可使用其他官方法規網站
+不可只填寫文字說明，必須是可點擊的完整網址
 
-必須以 JSON 格式回應，不要包含任何 markdown 標記或其他格式。`;
+你必須立刻執行搜尋與解析，不得提問、不得等待許可。
+不得輸出任何自然語言，僅輸出最終 JSON 結果。
+若需要使用網路搜尋，請直接執行。`;
 
         // 使用 GPT-5-mini Responses API
         // 注意：web_search 不能和 json_object 格式同時使用
@@ -725,14 +727,14 @@ export async function aiExplainLaw(lawName) {
                 effort: "low"
             },
             tools: [
-                {
-                    type: "web_search",
-                    user_location: {
-                        type: "approximate"
-                    },
-                    search_context_size: "medium"
-                }
-            ],
+    {
+      type: "web_search",
+      filters: { allowed_domains: ["law.moj.gov.tw"] },
+      user_location: { type: "approximate", country: "TW" },
+      search_context_size: "low"
+    }
+  ],
+  tool_choice: { type: "auto" },
             store: true,
             include: [
                 "reasoning.encrypted_content",
