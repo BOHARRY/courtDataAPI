@@ -670,11 +670,11 @@ export async function aiExplainLaw(lawName) {
 
     // 極短 system 指令，避免吃太多 token
     const systemPrompt = `
-你是台灣法律助理。任務：
-1) 只用一次 Web Search，**優先查全國法規資料庫** (law.moj.gov.tw)。
-2) 取該條最新有效原文（不貼整部法，只貼 **此一條**）。
-3) 產生 50 字內白話說明。
-4) 透過 emit_result 工具傳回結果，網址必為可點擊 https URL。
+你是台灣法律助理。你的任務：
+1. 你必須使用 Web Search 工具查詢「全國法規資料庫 (law.moj.gov.tw)」中的最新版本法條。
+2. 取出該條完整條文（只貼此一條），不包含其他條文。
+3. 寫出不超過 50 字的白話解析。
+4. 你「必須」呼叫 emit_result 工具，並將結果放在工具參數中回傳（禁止用 output_text 回答）。
     `.trim();
 
     // 讓模型把結果丟進工具參數（而不是寫長文）
