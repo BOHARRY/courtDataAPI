@@ -660,27 +660,22 @@ function formatLawArticle(hit) {
 
 
 /**
- * 使用 OpenAI Responses API 和 web_search 工具解析法條
+ * 使用 OpenAI Responses API (GPT-5-mini) 和 web_search 工具解析法條
  * @param {string} lawName - 法條名稱（例如：民法第184條）
  * @returns {Promise<Object>} 包含法條原文、出處來源、白話解析的物件
  */
 export async function aiExplainLaw(lawName) {
     try {
-        console.log(`[LawSearch] AI 解析法條 (使用 Responses API): ${lawName}`);
+        console.log(`[LawSearch] AI 解析法條 (使用 GPT-5-mini Responses API): ${lawName}`);
 
-        const systemPrompt = `你是一名台灣法律專家，收到提問時，需主動於網路上搜尋相關且最新的法律依據，並依下列格式完整回覆：
+        const developerPrompt = `你是一名台灣法律專家，收到提問時，需主動於網路上搜尋相關且最新的法律依據，並依下列格式完整回覆：
 
 **搜尋指引**：
 1. **優先使用「全國法規資料庫」**（https://law.moj.gov.tw/）進行搜尋，這是台灣最權威的法規來源。
-2. 搜尋時請使用完整法條名稱（例如：民法第184條）。
+2. 搜尋時請使用完整法條名稱（例如：民法第184條）或使用 site:law.moj.gov.tw 限定搜尋範圍。
 3. 依據搜尋結果，列出完整的法規內容原文。
 4. **必須提供**該法規在全國法規資料庫的完整網址連結。
 5. 以50字以內的白話文字，針對法條內容進行簡要解析，使一般民眾能快速理解重點。
-
-**網址格式範例**：
-- 民法：https://law.moj.gov.tw/LawClass/LawSingle.aspx?pcode=B0000001&flno=184
-- 刑法：https://law.moj.gov.tw/LawClass/LawSingle.aspx?pcode=C0000001&flno=XXX
-- 其他法規請依照全國法規資料庫的實際網址格式
 
 請以 JSON 格式回應，包含以下欄位：
 {
@@ -697,25 +692,62 @@ export async function aiExplainLaw(lawName) {
 
 必須以 JSON 格式回應，不要包含任何 markdown 標記或其他格式。`;
 
-        // 使用 Responses API
+        // 使用 GPT-5-mini Responses API
         const response = await openai.responses.create({
-            model: "gpt-4o-mini",
+            model: "gpt-5-mini",
             input: [
-                { role: "system", content: systemPrompt },
-                { role: "user", content: lawName }
+                {
+                    role: "developer",
+                    content: [
+                        {
+                            type: "input_text",
+                            text: developerPrompt
+                        }
+                    ]
+                },
+                {
+                    role: "user",
+                    content: [
+                        {
+                            type: "input_text",
+                            text: lawName
+                        }
+                    ]
+                }
             ],
+            text: {
+                format: {
+                    type: "json_object"
+                },
+                verbosity: "medium"
+            },
+            reasoning: {
+                effort: "medium"
+            },
             tools: [
-                { type: "web_search" }
+                {
+                    type: "web_search",
+                    user_location: {
+                        type: "approximate"
+                    },
+                    search_context_size: "medium"
+                }
             ],
-            temperature: 0.3
+            store: true,
+            include: [
+                "reasoning.encrypted_content",
+                "web_search_call.action.sources"
+            ]
         });
 
-        // 解析 Responses API 的輸出格式
+        // 解析 GPT-5 Responses API 的輸出格式
         let responseContent = "";
+
+        // GPT-5 的 output 結構
         for (const outputItem of response.output) {
-            if (outputItem.content) {
+            if (outputItem.role === "assistant" && outputItem.content) {
                 for (const contentItem of outputItem.content) {
-                    if (contentItem.text) {
+                    if (contentItem.type === "output_text" && contentItem.text) {
                         responseContent += contentItem.text;
                     }
                 }
@@ -736,11 +768,12 @@ export async function aiExplainLaw(lawName) {
             result.查詢時間 = new Date().toISOString();
         }
 
-        console.log(`[LawSearch] AI 解析成功:`, {
+        console.log(`[LawSearch] AI 解析成功 (GPT-5-mini):`, {
             lawName,
             hasOriginalText: !!result.法條原文,
             hasSource: !!result.出處來源,
-            hasExplanation: !!result.白話解析
+            hasExplanation: !!result.白話解析,
+            sourceUrl: result.出處來源
         });
 
         return result;
