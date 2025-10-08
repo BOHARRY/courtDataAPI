@@ -679,7 +679,24 @@ export async function aiExplainLaw(lawName) {
 
     // 讓模型把結果丟進工具參數（而不是寫長文）
     const tools = [
-      { type: "web_search", user_location: { type: "approximate" }, search_context_size: "low" },
+      {
+        type: "web_search",
+        // 限定搜尋台灣法規相關網站
+        filters: {
+            allowed_domains: [
+            "law.moj.gov.tw",
+            "judicial.gov.tw",
+            "jirs.judicial.gov.tw"
+            ]
+        },
+        // 指定台灣地區，提高搜尋相關性
+        user_location: {
+          type: "approximate",
+          country: "Taiwan"
+        },
+        // 使用低搜尋上下文以減少 token 消耗
+        search_context_size: "low"
+      },
       {
         type: "function",
         name: "emit_result",
@@ -707,7 +724,6 @@ export async function aiExplainLaw(lawName) {
       tools,
       // 關鍵：保留 web_search；不使用 response_format 以免衝突
       reasoning: { effort: "low" },    // 減少推理 token
-      temperature: 0,                  // 減少冗語
       max_output_tokens: 192,          // 限縮輸出長度
       store: false                     // 不儲存，減少後處理/隱性成本
       // 不要 include 任何 reasoning 或 sources，回來只會增胖 payload
