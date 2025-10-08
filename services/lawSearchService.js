@@ -719,10 +719,10 @@ export async function aiExplainLaw(lawName) {
             text: {
                 // 移除 json_object 格式，因為與 web_search 衝突
                 // 改用提示詞要求 JSON 格式
-                verbosity: "medium"
+                verbosity: "low"
             },
             reasoning: {
-                effort: "medium"
+                effort: "low"
             },
             tools: [
                 {
