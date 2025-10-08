@@ -727,14 +727,13 @@ export async function aiExplainLaw(lawName) {
                 effort: "low"
             },
             tools: [
-    {
-      type: "web_search",
-      filters: { allowed_domains: ["law.moj.gov.tw"] },
-      user_location: { type: "approximate", country: "TW" },
-      search_context_size: "low"
-    }
-  ],
-  tool_choice: { type: "auto" },
+                {
+                type: "web_search",
+                filters: { allowed_domains: ["law.moj.gov.tw"] },
+                user_location: { type: "approximate", country: "TW" },
+                search_context_size: "low"
+                }
+            ],
             store: true,
             include: [
                 "reasoning.encrypted_content",
