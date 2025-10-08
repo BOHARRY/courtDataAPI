@@ -665,136 +665,129 @@ function formatLawArticle(hit) {
  * @returns {Promise<Object>} 包含法條原文、出處來源、白話解析的物件
  */
 export async function aiExplainLaw(lawName) {
-  try {
-    console.log(`[LawSearch] AI 解析法條 (GPT-5-mini + web_search + tool): ${lawName}`);
+    try {
+        console.log(`[LawSearch] AI 解析法條 (使用 GPT-5-mini Responses API): ${lawName}`);
 
-    // 極短 system 指令，避免吃太多 token
-    const systemPrompt = `
-你是台灣法律助理。你的任務：
-1. 你必須使用 Web Search 工具查詢「全國法規資料庫 (law.moj.gov.tw)」中的法條。
-2. 取出該條完整條文（只貼此一條），不包含其他條文。
-3. 寫出不超過 50 字的白話解析。
-4. 你「必須」呼叫 emit_result 工具，並將結果放在工具參數中回傳（禁止用 output_text 回答）。
-你必須透過 emit_result 工具回傳結果，禁止輸出 output_text。
-    `.trim();
+        const developerPrompt = `你是一名台灣法律專家，收到提問時，需主動於網路上搜尋相關且最新的法律依據，並依下列格式完整回覆：
 
-    // 讓模型把結果丟進工具參數（而不是寫長文）
-    const tools = [
-      {
-        type: "web_search",
-        // 限定搜尋台灣法規相關網站
-        filters: {
-            allowed_domains: [
-            "law.moj.gov.tw",
-            "judicial.gov.tw",
-            "jirs.judicial.gov.tw"
+**搜尋指引**：
+1. **優先使用「全國法規資料庫」**（https://law.moj.gov.tw/）進行搜尋，這是台灣最權威的法規來源。
+2. 搜尋時請使用完整法條名稱（例如：民法第184條）或使用 site:law.moj.gov.tw 限定搜尋範圍。
+3. 依據搜尋結果，列出完整的法規內容原文。
+4. **必須提供**該法規在全國法規資料庫的完整網址連結。
+5. 以50字以內的白話文字，針對法條內容進行簡要解析，使一般民眾能快速理解重點。
+
+請以 JSON 格式回應，包含以下欄位：
+{
+  "法條原文": "完整的法規條文原文（不含法條編號）",
+  "出處來源": "全國法規資料庫的完整網址（必須以 https://law.moj.gov.tw/ 開頭）",
+  "白話解析": "50字內的精簡直白說明",
+  "查詢時間": "回應時間（ISO 8601 格式）"
+}
+
+**重要提醒**：
+- 「出處來源」必須是有效的 HTTPS 網址，優先使用 https://law.moj.gov.tw/ 開頭的連結
+- 如果無法找到全國法規資料庫的連結，可使用其他官方法規網站
+- 不可只填寫文字說明，必須是可點擊的完整網址
+
+必須以 JSON 格式回應，不要包含任何 markdown 標記或其他格式。`;
+
+        // 使用 GPT-5-mini Responses API
+        // 注意：web_search 不能和 json_object 格式同時使用
+        const response = await openai.responses.create({
+            model: "gpt-5-mini",
+            input: [
+                {
+                    role: "developer",
+                    content: [
+                        {
+                            type: "input_text",
+                            text: developerPrompt
+                        }
+                    ]
+                },
+                {
+                    role: "user",
+                    content: [
+                        {
+                            type: "input_text",
+                            text: lawName
+                        }
+                    ]
+                }
+            ],
+            text: {
+                // 移除 json_object 格式，因為與 web_search 衝突
+                // 改用提示詞要求 JSON 格式
+                verbosity: "medium"
+            },
+            reasoning: {
+                effort: "medium"
+            },
+            tools: [
+                {
+                    type: "web_search",
+                    user_location: {
+                        type: "approximate"
+                    },
+                    search_context_size: "medium"
+                }
+            ],
+            store: true,
+            include: [
+                "reasoning.encrypted_content",
+                "web_search_call.action.sources"
             ]
-        },
-        // 指定台灣地區，提高搜尋相關性
-        user_location: {
-          type: "approximate",
-          country: "TW"
-        },
-        // 使用低搜尋上下文以減少 token 消耗
-        search_context_size: "low"
-      },
-      {
-        type: "function",
-        name: "emit_result",
-        description: "回傳解析後的結果。所有欄位必填，白話解析限 50 字。",
-        parameters: {
-          type: "object",
-          properties: {
-            "法條原文": { type: "string", description: "只貼該條的文字，不含條號與其他條。" },
-            "出處來源": { type: "string", description: "全國法規資料庫或其他官方法規站的 https 連結。" },
-            "白話解析": { type: "string", description: "50字內重點解釋，淺白，不用專有名詞。" },
-            "查詢時間": { type: "string", description: "ISO 8601 時間字串。" }
-          },
-          required: ["法條原文", "出處來源", "白話解析", "查詢時間"],
-          additionalProperties: false
+        });
+
+        // 解析 GPT-5 Responses API 的輸出格式
+        let responseContent = "";
+
+        // GPT-5 的 output 結構
+        for (const outputItem of response.output) {
+            if (outputItem.role === "assistant" && outputItem.content) {
+                for (const contentItem of outputItem.content) {
+                    if (contentItem.type === "output_text" && contentItem.text) {
+                        responseContent += contentItem.text;
+                    }
+                }
+            }
         }
-      }
-    ];
 
-    const response = await openai.responses.create({
-      model: "gpt-5-mini",
-      input: [
-        { role: "system", content: [{ type: "input_text", text: systemPrompt }] },
-        { role: "user", content: [{ type: "input_text", text: `請解析：${lawName}` }] }
-      ],
-      tools,
-      tool_choice: { type: "function", name: "emit_result" }, // ✅ 強制使用這個工具
-      // 關鍵：保留 web_search；不使用 response_format 以免衝突
-      reasoning: { effort: "low" },    // 減少推理 token
-      max_output_tokens: 192,          // 限縮輸出長度
-      store: false                     // 不儲存，減少後處理/隱性成本
-      // 不要 include 任何 reasoning 或 sources，回來只會增胖 payload
-    });
-
-    // 解析工具回呼（function call）結果
-    let toolArgs = null;
-
-    for (const out of response.output ?? []) {
-      if (out.role === "assistant" && Array.isArray(out.content)) {
-        for (const c of out.content) {
-          if (c.type === "tool_call" && c.name === "emit_result") {
-            // arguments 已是結構化物件（不需 JSON.parse）
-            toolArgs = c.arguments;
-            break;
-          }
+        // 移除可能的 markdown 標記
+        if (responseContent.includes('```json')) {
+            responseContent = responseContent.split('```json')[1].split('```')[0].trim();
+        } else if (responseContent.includes('```')) {
+            responseContent = responseContent.split('```')[1].split('```')[0].trim();
         }
-      }
-      if (toolArgs) break;
+
+        const result = JSON.parse(responseContent);
+
+        // 添加查詢時間（如果 AI 沒有提供）
+        if (!result.查詢時間) {
+            result.查詢時間 = new Date().toISOString();
+        }
+
+        console.log(`[LawSearch] AI 解析成功 (GPT-5-mini):`, {
+            lawName,
+            hasOriginalText: !!result.法條原文,
+            hasSource: !!result.出處來源,
+            hasExplanation: !!result.白話解析,
+            sourceUrl: result.出處來源
+        });
+
+        return result;
+
+    } catch (error) {
+        console.error('[LawSearch] AI 解析失敗:', error);
+
+        // 降級處理：返回基本信息
+        return {
+            法條原文: "抱歉，目前無法獲取法條原文，請稍後再試。",
+            出處來源: "查詢失敗",
+            白話解析: "AI 解析服務暫時無法使用，請稍後再試或聯繫客服。",
+            查詢時間: new Date().toISOString(),
+            error: error.message
+        };
     }
-
-    // 保底處理：若模型沒走工具（罕見），嘗試從 output_text 抽 JSON
-    if (!toolArgs) {
-      let textBlob = "";
-      for (const out of response.output ?? []) {
-        if (out.role === "assistant" && Array.isArray(out.content)) {
-          for (const c of out.content) {
-            if (c.type === "output_text" && c.text) textBlob += c.text;
-          }
-        }
-      }
-      if (textBlob) {
-        // 嘗試清掉 ```json 區塊
-        const cleaned =
-          textBlob.includes("```")
-            ? textBlob.replace(/```json|```/g, "").trim()
-            : textBlob.trim();
-        try {
-          toolArgs = JSON.parse(cleaned);
-        } catch {
-          // 仍失敗就讓下方降級處理
-        }
-      }
-    }
-
-    if (toolArgs) {
-      // 檢查缺漏，補上查詢時間
-      if (!toolArgs["查詢時間"]) toolArgs["查詢時間"] = new Date().toISOString();
-
-      console.log(`[LawSearch] AI 解析成功:`, {
-        lawName,
-        hasOriginalText: !!toolArgs["法條原文"],
-        hasSource: !!toolArgs["出處來源"],
-        hasExplanation: !!toolArgs["白話解析"]
-      });
-
-      return toolArgs;
-    }
-
-    // 若沒有抓到工具結果，進入降級
-    throw new Error("模型未回傳工具參數");
-  } catch (error) {
-    console.error("[LawSearch] AI 解析失敗:", error);
-    return {
-      法條原文: "抱歉，目前無法獲取法條原文，請稍後再試。",
-      出處來源: "查詢失敗",
-      白話解析: "AI 解析服務暫時無法使用，請稍後再試或聯繫客服。",
-      查詢時間: new Date().toISOString(),
-      error: String(error?.message ?? error)
-    };
-  }
 }
