@@ -403,17 +403,13 @@ function analyzeAndStructureLawyerData(esHits, lawyerName, esAggregations) {
       }
     }
 
-    console.log(`[Lawyer Service] 案件 ${source.JID}: JDATE=${source.JDATE}, JDATE_num=${source.JDATE_num}, caseDate=${caseDate}, 閾值=${threeYearsAgoNum}`);
+    // console.log(`[Lawyer Service] 案件 ${source.JID}: JDATE=${source.JDATE}, JDATE_num=${source.JDATE_num}, caseDate=${caseDate}, 閾值=${threeYearsAgoNum}`);
 
     // 統計近三年案件
     if (caseDate && !isNaN(caseDate) && caseDate >= threeYearsAgoNum) {
       resultData.stats.totalCasesLast3Years++;
-      console.log(`[Lawyer Service] ✅ 計入近三年案件: ${source.JID}, 日期: ${caseDate}`);
-    } else {
-      console.log(`[Lawyer Service] ❌ 未計入: ${source.JID}, caseDate=${caseDate}, isNaN=${isNaN(caseDate)}, 比較=${caseDate >= threeYearsAgoNum}`);
+      // console.log(`[Lawyer Service] ✅ 計入近三年案件: ${source.JID}, 日期: ${caseDate}`);
     }
-
-    console.log(`[Lawyer Service] 當前 totalCasesLast3Years: ${resultData.stats.totalCasesLast3Years}`);
 
     if (source.case_type) {
       allCaseTypesCounter[source.case_type] = (allCaseTypesCounter[source.case_type] || 0) + 1;
