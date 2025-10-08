@@ -19,6 +19,8 @@ import maintenanceRoutes from './maintenanceRoutes.js'; // 維護模式路由
 import lawSearchRoutes from './law-search.js';
 import mcpRoutes from './mcp.js';
 import aiAgentRoutes from './ai-agent.js';
+import { getCaseDetailController } from '../controllers/judgment-controller.js';
+import { verifyToken } from '../middleware/auth.js';
 
 
 const router = express.Router();
@@ -44,6 +46,8 @@ router.use('/law-search', lawSearchRoutes); // 新增語意搜尋路由
 router.use('/mcp', mcpRoutes); // 新增 MCP 路由
 router.use('/ai-agent', aiAgentRoutes); // 新增 AI Agent 路由
 
+// 案件詳情路由（用於律師表現浮動視窗）
+router.get('/case-detail/:id', verifyToken, getCaseDetailController);
 
 // 可以有一個根路由 /api 的健康檢查或歡迎訊息
 router.get('/', (req, res) => {

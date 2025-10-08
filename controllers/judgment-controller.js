@@ -53,3 +53,24 @@ export async function getJudgmentsByIdsController(req, res, next) {
     next(error);
   }
 }
+
+/**
+ * 獲取案件詳情（用於律師表現浮動視窗）
+ */
+export async function getCaseDetailController(req, res, next) {
+  const caseId = req.params.id;
+
+  if (!caseId) {
+    return res.status(400).json({ error: 'Bad Request', message: 'Case ID is required.' });
+  }
+
+  try {
+    const caseData = await judgmentService.getCaseDetail(caseId);
+    if (!caseData) {
+      return res.status(404).json({ error: 'Not Found', message: `Case with ID ${caseId} not found.` });
+    }
+    res.status(200).json(caseData);
+  } catch (error) {
+    next(error);
+  }
+}

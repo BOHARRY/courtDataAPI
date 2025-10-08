@@ -1,7 +1,7 @@
 // routes/judgment.js
 import express from 'express';
 // 備註：引入我們新增的控制器函式。
-import { getJudgmentByIdController, getJudgmentsByIdsController } from '../controllers/judgment-controller.js';
+import { getJudgmentByIdController, getJudgmentsByIdsController, getCaseDetailController } from '../controllers/judgment-controller.js';
 import { verifyToken } from '../middleware/auth.js'; // 批次獲取需要驗證使用者身份
 
 const router = express.Router();

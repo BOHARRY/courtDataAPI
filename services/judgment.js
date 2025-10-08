@@ -106,3 +106,55 @@ export async function getJudgmentsByIds(judgmentIds) {
     throw serviceError;
   }
 }
+
+/**
+ * 獲取案件詳情（用於律師表現浮動視窗）
+ * 返回案件的基本資料、律師表現、判決結果等
+ * @param {string} caseId - 案件 ID
+ * @returns {Promise<object|null>} 案件詳情
+ */
+export async function getCaseDetail(caseId) {
+  try {
+    // 檢查 ES 連接
+    try {
+      await esClient.ping();
+    } catch (pingError) {
+      console.error(`[getCaseDetail] Elasticsearch connection failed:`, pingError.message);
+      return null;
+    }
+
+    const result = await esClient.get({
+      index: ES_INDEX_NAME,
+      id: caseId,
+      _source: [
+        'JID',
+        'JCASE',
+        'JTITLE',
+        'JDATE',
+        'court',
+        'cause',
+        'verdict_type',
+        'lawyer_performance',
+        'trial_party_lawyers',
+        'appeal_party_lawyers',
+        'disposition'
+      ]
+    });
+
+    if (result && result._source) {
+      return result._source;
+    } else {
+      return null;
+    }
+  } catch (error) {
+    if (error.statusCode === 404) {
+      console.log(`[getCaseDetail] Case ID: ${caseId} not found`);
+      return null;
+    }
+    console.error(`[getCaseDetail] Error getting case ID ${caseId}:`, error.meta || error);
+    const serviceError = new Error(`Failed to retrieve case details for ID ${caseId}.`);
+    serviceError.statusCode = error.statusCode || 500;
+    serviceError.originalError = error.message;
+    throw serviceError;
+  }
+}
