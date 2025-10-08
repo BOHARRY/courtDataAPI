@@ -692,7 +692,7 @@ export async function aiExplainLaw(lawName) {
         // 指定台灣地區，提高搜尋相關性
         user_location: {
           type: "approximate",
-          country: "Taiwan"
+          country: "TW"
         },
         // 使用低搜尋上下文以減少 token 消耗
         search_context_size: "low"
