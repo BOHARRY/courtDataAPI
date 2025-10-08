@@ -675,6 +675,7 @@ export async function aiExplainLaw(lawName) {
 2. 取出該條完整條文（只貼此一條），不包含其他條文。
 3. 寫出不超過 50 字的白話解析。
 4. 你「必須」呼叫 emit_result 工具，並將結果放在工具參數中回傳（禁止用 output_text 回答）。
+你必須透過 emit_result 工具回傳結果，禁止輸出 output_text。
     `.trim();
 
     // 讓模型把結果丟進工具參數（而不是寫長文）
