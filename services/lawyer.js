@@ -158,13 +158,13 @@ function calculateEnhancedWinRates(cases) {
     if (level === 'trial') roleStats.trial_level++;
     else if (level === 'appeal') roleStats.appeal_level++;
 
-    // 判決結果統計
+    // 判決結果統計（使用 disposition.class 的標準化分類）
     if (!roleStats.outcomes[outcome]) roleStats.outcomes[outcome] = 0;
     roleStats.outcomes[outcome]++;
 
-    // 律師表現統計
+    // 🆕 律師表現統計（支援 4 個等級：Excellent/Good/Fair/Poor）
     if (performance && performance !== 'unknown') {
-      const perfKey = performance.toLowerCase(); // 'Good' -> 'good'
+      const perfKey = performance.toLowerCase(); // 'Excellent' -> 'excellent', 'Good' -> 'good'
       if (!roleStats.performance[perfKey]) roleStats.performance[perfKey] = 0;
       roleStats.performance[perfKey]++;
     }
@@ -176,17 +176,22 @@ function calculateEnhancedWinRates(cases) {
     }
   });
 
-  // 計算勝率
+  // 計算勝率和關鍵指標
   ['civil', 'criminal', 'administrative'].forEach(caseType => {
     Object.keys(stats[caseType].by_role).forEach(role => {
       const roleStats = stats[caseType].by_role[role];
       const outcomes = roleStats.outcomes;
+      const performance = roleStats.performance;
 
       // 計算勝率（win + partial_win）/ (total - settlement - procedural)
       const winCount = (outcomes.win || 0) + (outcomes.partial_win || 0);
       const totalRelevant = roleStats.total - (outcomes.settlement || 0) - (outcomes.procedural || 0);
 
       roleStats.win_rate = totalRelevant > 0 ? Math.round((winCount / totalRelevant) * 100) : 0;
+
+      // 🆕 計算表現優秀率（Excellent + Good）/ total
+      const excellentCount = (performance.excellent || 0) + (performance.good || 0);
+      roleStats.excellence_rate = roleStats.total > 0 ? Math.round((excellentCount / roleStats.total) * 100) : 0;
     });
 
     // 計算整體勝率
@@ -215,24 +220,45 @@ export async function searchLawyerData(lawyerName) {
       query: {
         bool: {
           should: [
-            { term: { "lawyers.exact": lawyerNameExact } },      // 查主要律師 (精確)
-            { term: { "lawyersdef.exact": lawyerNameExact } }    // 查辯護律師 (精確)
+            // 🆕 搜索新欄位 trial_party_lawyers
+            {
+              nested: {
+                path: "trial_party_lawyers",
+                query: {
+                  term: { "trial_party_lawyers.lawyers": lawyerNameExact }
+                }
+              }
+            },
+            // 🆕 搜索新欄位 appeal_party_lawyers
+            {
+              nested: {
+                path: "appeal_party_lawyers",
+                query: {
+                  term: { "appeal_party_lawyers.lawyers": lawyerNameExact }
+                }
+              }
+            },
+            // 保留舊欄位搜索（向後兼容）
+            { term: { "lawyers.exact": lawyerNameExact } },
+            { term: { "lawyersdef.exact": lawyerNameExact } }
           ],
           minimum_should_match: 1
         }
       }
     };
 
-    console.log(`[Lawyer Service] Elasticsearch Query for lawyer ${lawyerName}:`, JSON.stringify(esQueryBody.query, null, 2)); // 打印 query 部分
+    console.log(`[Lawyer Service] Elasticsearch Query for lawyer ${lawyerName}:`, JSON.stringify(esQueryBody.query, null, 2));
 
     const esResult = await esClient.search({
       index: ES_INDEX_NAME,
-      body: esQueryBody, // 將 query 放在 body 下
+      body: esQueryBody,
       size: 300,
-      _source: [ // 明確指定需要的欄位，減少數據傳輸
+      _source: [ // 🆕 包含新欄位
         "JID", "court", "JTITLE", "JDATE", "JDATE_num", "case_type", "verdict_type",
-        "cause", "lawyers", "lawyersdef", "JCASE", "is_ruling", "lawyer_assessment", "position_based_analysis"
-        // 確保所有 analyzeLawyerData 和其輔助函數需要的欄位都在這裡
+        "cause", "lawyers", "lawyersdef", "JCASE", "is_ruling",
+        "lawyer_assessment", "position_based_analysis",
+        // 🆕 新增的欄位
+        "trial_party_lawyers", "appeal_party_lawyers", "lawyer_performance", "disposition"
       ]
     });
 
@@ -347,7 +373,16 @@ function analyzeAndStructureLawyerData(esHits, lawyerName, esAggregations) {
       perfVerdictText = source.verdict_type || '結果未明';
     }
 
-    const { neutralOutcomeCode, description } = getDetailedResult(perfVerdictText, mainType, source, lawyerPerfObject); // utils/case-analyzer
+    // 🆕 優先使用 disposition.class 作為 neutralOutcomeCode
+    let neutralOutcomeCode = dispositionClass;
+    let description = perfVerdictText || source.verdict_type || '結果未明';
+
+    // 如果 disposition.class 不存在或為 unknown，回退到舊的 getDetailedResult
+    if (!dispositionClass || dispositionClass === 'unknown') {
+      const detailedResult = getDetailedResult(perfVerdictText, mainType, source, lawyerPerfObject);
+      neutralOutcomeCode = detailedResult.neutralOutcomeCode;
+      description = detailedResult.description;
+    }
 
     // 修正日期格式處理 - 支持多種格式
     let caseDate = null;

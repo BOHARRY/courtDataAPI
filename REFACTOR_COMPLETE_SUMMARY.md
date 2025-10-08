@@ -224,7 +224,33 @@ if (!data || !data.by_role) {
 
 ---
 
+---
+
+## ⚠️ 重要修正
+
+### 律師表現等級
+根據提示詞 `STAGE3_LAWYER_ANALYSIS_PROMPT`，律師表現有 **4 個等級**：
+- **Excellent** (卓越)
+- **Good** (良好)
+- **Fair** (一般)
+- **Poor** (不佳)
+
+後端已更新支援所有 4 個等級，並新增 `excellence_rate` 指標：
+```javascript
+excellence_rate = (excellent + good) / total * 100
+```
+
+### disposition.class 優先級
+案件處理邏輯已更新為：
+1. **優先使用** `disposition.class` 作為 `neutralOutcomeCode`
+2. **回退機制**: 如果 `disposition.class` 不存在或為 'unknown'，才使用舊的 `getDetailedResult` 函數
+
+這確保了新舊數據的兼容性。
+
+---
+
 **重構完成時間**: 2025-10-08
 **測試狀態**: 待測試
 **部署狀態**: 待部署
+**最後更新**: 2025-10-08 (修正律師表現等級支援)
 
