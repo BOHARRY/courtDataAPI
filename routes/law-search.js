@@ -1,10 +1,11 @@
 // routes/law-search.js
 import express from 'express';
-import { 
+import {
     searchLawArticlesController,
     getLawSuggestionsController,
     getLawArticleDetailController,
-    searchLawBySemanticController
+    searchLawBySemanticController,
+    aiExplainLawController
 } from '../controllers/law-search-controller.js';
 import { verifyToken } from '../middleware/auth.js';
 import { checkAndDeductCredits } from '../middleware/credit.js';
@@ -51,6 +52,15 @@ router.get(
 router.get(
     '/suggestions',
     getLawSuggestionsController // 不需要積分，提供快速建議
+);
+
+// AI 法條解析 (POST /api/law-search/ai-explain)
+// 使用 OpenAI Responses API 和 web_search 工具獲取法條詳細解析
+// 不扣積分，使用 token 消耗較少
+router.post(
+    '/ai-explain',
+    verifyToken,
+    aiExplainLawController
 );
 
 export default router;

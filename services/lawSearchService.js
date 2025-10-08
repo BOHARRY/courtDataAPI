@@ -37,7 +37,7 @@ const LAW_CODE_MAPPING = {
 async function enhanceLawQuery(userQuery, context = '') {
     try {
         console.log(`[LawSearch] 使用 claude-opus-4 優化法條查詢: "${userQuery}"`);
-        
+
         const prompt = `你是專業的台灣法律搜尋助手，請分析以下問題並推薦最相關的台灣法條。
 
 **使用繁體中文回應**
@@ -123,7 +123,7 @@ ${context ? `額外上下文：「${context}」` : ''}
 async function getEmbedding(text) {
     try {
         console.log(`[LawSearch] 正在獲取向量 (${text.length} 字)`);
-        
+
         const response = await openai.embeddings.create({
             model: EMBEDDING_MODEL,
             input: text.trim(),
@@ -137,7 +137,7 @@ async function getEmbedding(text) {
         } else {
             throw new Error('向量化回應格式錯誤');
         }
-        
+
     } catch (error) {
         console.error('[LawSearch] 向量化失敗:', error);
         throw new Error(`向量化失敗: ${error.message}`);
@@ -178,7 +178,7 @@ export async function searchLawArticles({ query, code_name, article_number, sear
 
         // 關鍵字搜索
         if (query) {
-            const queryFields = search_type === 'exact' ? 
+            const queryFields = search_type === 'exact' ?
                 // 精確搜索
                 [
                     { match_phrase: { "text_original": { query, boost: 3 } } },
@@ -187,8 +187,8 @@ export async function searchLawArticles({ query, code_name, article_number, sear
                 ] :
                 // 模糊搜索
                 [
-                    { multi_match: { 
-                        query, 
+                    { multi_match: {
+                        query,
                         fields: ["text_original^3", "plain_explanation^2", "typical_scenarios^1.5", "synonyms"],
                         type: "best_fields",
                         fuzziness: search_type === 'fuzzy' ? "AUTO" : 0
@@ -250,7 +250,7 @@ export async function searchLawArticles({ query, code_name, article_number, sear
         });
 
         const articles = esResult.hits.hits.map(hit => formatLawArticle(hit));
-        
+
         return {
             articles,
             total: esResult.hits.total.value,
@@ -656,4 +656,95 @@ function formatLawArticle(hit) {
         relevanceScore: hit._score,
         highlights: hit.highlight || {}
     };
+}
+
+
+/**
+ * 使用 OpenAI Responses API 和 web_search 工具解析法條
+ * @param {string} lawName - 法條名稱（例如：民法第184條）
+ * @returns {Promise<Object>} 包含法條原文、出處來源、白話解析的物件
+ */
+export async function aiExplainLaw(lawName) {
+    try {
+        console.log(`[LawSearch] AI 解析法條 (使用 Responses API): ${lawName}`);
+
+        const systemPrompt = `你是一名台灣法律專家，收到提問時，需主動於網路上搜尋相關且最新的法律依據，並依下列格式完整回覆：
+
+1. 明確搜尋Google或其他可靠網路資源，尋找正確且最新的法條或法律條文。
+2. 依據搜尋結果，列出完整的法規內容原文。
+3. 標註該法規的完整出處與連結。
+4. 以50字以內的白話文字，針對法條內容進行簡要解析，使一般民眾能快速理解重點。
+
+請嚴格依照以上步驟進行，保持資訊來源可靠與答案的正確性。
+
+請以 JSON 格式回應，包含以下欄位：
+{
+  "法條原文": "完整的法規條文原文",
+  "出處來源": "完整法規名稱及查詢網址",
+  "白話解析": "50字內的精簡直白說明",
+  "查詢時間": "回應時間"
+}
+
+必須以 JSON 格式回應，不要包含任何 markdown 標記或其他格式。`;
+
+        // 使用 Responses API
+        const response = await openai.responses.create({
+            model: "gpt-4o-mini",
+            input: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: lawName }
+            ],
+            tools: [
+                { type: "web_search" }
+            ],
+            temperature: 0.3
+        });
+
+        // 解析 Responses API 的輸出格式
+        let responseContent = "";
+        for (const outputItem of response.output) {
+            if (outputItem.content) {
+                for (const contentItem of outputItem.content) {
+                    if (contentItem.text) {
+                        responseContent += contentItem.text;
+                    }
+                }
+            }
+        }
+
+        // 移除可能的 markdown 標記
+        if (responseContent.includes('```json')) {
+            responseContent = responseContent.split('```json')[1].split('```')[0].trim();
+        } else if (responseContent.includes('```')) {
+            responseContent = responseContent.split('```')[1].split('```')[0].trim();
+        }
+
+        const result = JSON.parse(responseContent);
+
+        // 添加查詢時間（如果 AI 沒有提供）
+        if (!result.查詢時間) {
+            result.查詢時間 = new Date().toISOString();
+        }
+
+        console.log(`[LawSearch] AI 解析成功:`, {
+            lawName,
+            hasOriginalText: !!result.法條原文,
+            hasSource: !!result.出處來源,
+            hasExplanation: !!result.白話解析
+        });
+
+        return result;
+
+    } catch (error) {
+        console.error('[LawSearch] AI 解析失敗:', error);
+
+        // 降級處理：返回基本信息
+        return {
+            法條原文: "抱歉，目前無法獲取法條原文，請稍後再試。",
+            出處來源: "查詢失敗",
+            白話解析: "AI 解析服務暫時無法使用，請稍後再試或聯繫客服。",
+            查詢時間: new Date().toISOString(),
+            error: error.message
+        };
+    }
 }

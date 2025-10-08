@@ -7,13 +7,13 @@ import * as lawSearchService from '../services/lawSearchService.js';
  */
 export async function searchLawArticlesController(req, res, next) {
     try {
-        const { 
+        const {
             query,           // 搜索關鍵字
             code_name,       // 法典名稱篩選
             article_number,  // 條號篩選
             search_type = 'mixed', // 搜索類型：exact, fuzzy, mixed
-            page = 1, 
-            pageSize = 20 
+            page = 1,
+            pageSize = 20
         } = req.query;
 
         // 基本驗證
@@ -56,11 +56,11 @@ export async function searchLawArticlesController(req, res, next) {
  */
 export async function searchLawBySemanticController(req, res, next) {
     try {
-        const { 
+        const {
             query,
             context = '',    // 額外上下文資訊
-            page = 1, 
-            pageSize = 10 
+            page = 1,
+            pageSize = 10
         } = req.body;
 
         // 基本驗證
@@ -189,5 +189,42 @@ export async function getLawSuggestionsController(req, res, next) {
             success: true,
             suggestions: []
         });
+    }
+}
+
+
+/**
+ * AI 法條解析控制器
+ * 使用 OpenAI Responses API 和 web_search 工具獲取法條詳細解析
+ */
+export async function aiExplainLawController(req, res, next) {
+    try {
+        const { lawName } = req.body;
+
+        // 基本驗證
+        if (!lawName || lawName.trim().length < 3) {
+            return res.status(400).json({
+                success: false,
+                error: 'Bad Request',
+                message: '請提供有效的法條名稱（至少 3 個字）'
+            });
+        }
+
+        // 執行 AI 解析
+        const result = await lawSearchService.aiExplainLaw(lawName.trim());
+
+        // 檢查是否有錯誤（降級處理的情況）
+        if (result.error) {
+            console.warn('[LawSearchController] AI 解析返回降級結果:', result.error);
+        }
+
+        res.status(200).json({
+            success: true,
+            result
+        });
+
+    } catch (error) {
+        console.error('[LawSearchController] AI 解析法條失敗:', error);
+        next(error);
     }
 }
