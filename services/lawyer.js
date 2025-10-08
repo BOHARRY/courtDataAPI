@@ -112,20 +112,20 @@ function calculateEnhancedWinRates(cases) {
     civil: {
       total_cases: 0,
       by_role: {
-        plaintiff: { total: 0, trial_level: 0, appeal_level: 0, outcomes: {}, performance: {}, client_types: {} },
-        defendant: { total: 0, trial_level: 0, appeal_level: 0, outcomes: {}, performance: {}, client_types: {} }
+        plaintiff: { total: 0, trial_level: 0, appeal_level: 0, outcomes: {}, performance: {}, performance_details: [], client_types: {} },
+        defendant: { total: 0, trial_level: 0, appeal_level: 0, outcomes: {}, performance: {}, performance_details: [], client_types: {} }
       }
     },
     criminal: {
       total_cases: 0,
       by_role: {
-        defendant: { total: 0, trial_level: 0, appeal_level: 0, outcomes: {}, performance: {}, client_types: {} }
+        defendant: { total: 0, trial_level: 0, appeal_level: 0, outcomes: {}, performance: {}, performance_details: [], client_types: {} }
       }
     },
     administrative: {
       total_cases: 0,
       by_role: {
-        plaintiff: { total: 0, trial_level: 0, appeal_level: 0, outcomes: {}, performance: {}, client_types: {} }
+        plaintiff: { total: 0, trial_level: 0, appeal_level: 0, outcomes: {}, performance: {}, performance_details: [], client_types: {} }
       }
     }
   };
@@ -135,6 +135,7 @@ function calculateEnhancedWinRates(cases) {
     const side = caseItem.sideFromPerf || 'unknown';
     const outcome = caseItem.neutralOutcomeCode || 'unknown';
     const performance = caseItem.lawyerPerfObject?.performance || 'unknown';
+    const performanceOutcome = caseItem.lawyerPerfObject?.outcome || ''; // 🆕 律師表現結果
     const level = caseItem.lawyerPerfObject?.level || 'trial';
     const partyType = caseItem.lawyerPerfObject?.partyType || 'unknown';
 
@@ -167,6 +168,13 @@ function calculateEnhancedWinRates(cases) {
       const perfKey = performance.toLowerCase(); // 'Excellent' -> 'excellent', 'Good' -> 'good'
       if (!roleStats.performance[perfKey]) roleStats.performance[perfKey] = 0;
       roleStats.performance[perfKey]++;
+
+      // 🆕 添加詳細的表現記錄（用於前端表格顯示）
+      roleStats.performance_details.push({
+        performance: performance,
+        outcome: performanceOutcome,
+        case_id: caseItem.id
+      });
     }
 
     // 客戶類型統計
