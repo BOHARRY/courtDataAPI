@@ -352,6 +352,7 @@ function analyzeAndStructureLawyerData(esHits, lawyerName, esAggregations) {
       verdict: source.verdict_type,
       dispositionClass: dispositionClass,  // 🆕 新增
       performance: lawyerPerformance?.performance,  // 🆕 新增
+      outcome: lawyerPerformance?.outcome,  // 🆕 新增（律師表現結果）
       level: lawyerRole?.level,  // 🆕 新增（trial/appeal）
       partyType: lawyerRole?.partyType  // 🆕 新增（person/organization）
     };
