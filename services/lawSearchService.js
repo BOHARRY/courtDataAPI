@@ -693,6 +693,7 @@ export async function aiExplainLaw(lawName) {
 必須以 JSON 格式回應，不要包含任何 markdown 標記或其他格式。`;
 
         // 使用 GPT-5-mini Responses API
+        // 注意：web_search 不能和 json_object 格式同時使用
         const response = await openai.responses.create({
             model: "gpt-5-mini",
             input: [
@@ -716,9 +717,8 @@ export async function aiExplainLaw(lawName) {
                 }
             ],
             text: {
-                format: {
-                    type: "json_object"
-                },
+                // 移除 json_object 格式，因為與 web_search 衝突
+                // 改用提示詞要求 JSON 格式
                 verbosity: "medium"
             },
             reasoning: {
