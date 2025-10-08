@@ -3,6 +3,7 @@ import esClient from '../config/elasticsearch.js';
 import { OpenAI } from 'openai';
 import Anthropic from '@anthropic-ai/sdk';
 import { OPENAI_API_KEY, OPENAI_MODEL_NAME_EMBEDDING } from '../config/environment.js';
+import admin from 'firebase-admin';
 
 const openai = new OpenAI({
     apiKey: OPENAI_API_KEY,
@@ -14,6 +15,9 @@ const anthropic = new Anthropic({
 
 const ES_INDEX_NAME = 'law_boook';
 const EMBEDDING_MODEL = OPENAI_MODEL_NAME_EMBEDDING || 'text-embedding-3-large';
+
+// Firebase Firestore 快取集合名稱
+const LAW_CACHE_COLLECTION = 'lawArticleCache';
 
 // 法典名稱對應表 - 處理 GPT 回傳的完整名稱與資料庫簡稱的對應
 const LAW_CODE_MAPPING = {
@@ -660,11 +664,89 @@ function formatLawArticle(hit) {
 
 
 /**
+ * 從 Firebase 快取中查詢法條
+ * @param {string} lawName - 法條名稱（例如：民法第184條）
+ * @returns {Promise<Object|null>} 快取的法條資料，如果不存在則返回 null
+ */
+async function getLawFromCache(lawName) {
+    try {
+        const db = admin.firestore();
+        const docRef = db.collection(LAW_CACHE_COLLECTION).doc(lawName);
+        const docSnap = await docRef.get();
+
+        if (!docSnap.exists) {
+            console.log(`[LawCache] 快取未命中: ${lawName}`);
+            return null;
+        }
+
+        const data = docSnap.data();
+
+        // 更新命中次數
+        await docRef.update({
+            hitCount: admin.firestore.FieldValue.increment(1),
+            lastAccessedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        console.log(`[LawCache] 快取命中: ${lawName}, 命中次數: ${(data.hitCount || 0) + 1}`);
+
+        return {
+            法條原文: data.法條原文,
+            出處來源: data.出處來源,
+            白話解析: data.白話解析,
+            查詢時間: data.查詢時間,
+            _cached: true,
+            _hitCount: (data.hitCount || 0) + 1
+        };
+    } catch (error) {
+        console.error('[LawCache] 查詢快取失敗:', error);
+        return null; // 快取查詢失敗時返回 null，繼續使用 AI 查詢
+    }
+}
+
+/**
+ * 將法條資料存入 Firebase 快取
+ * @param {string} lawName - 法條名稱
+ * @param {Object} lawData - 法條資料
+ * @returns {Promise<void>}
+ */
+async function saveLawToCache(lawName, lawData) {
+    try {
+        const db = admin.firestore();
+        const docRef = db.collection(LAW_CACHE_COLLECTION).doc(lawName);
+
+        await docRef.set({
+            法條原文: lawData.法條原文,
+            出處來源: lawData.出處來源,
+            白話解析: lawData.白話解析,
+            查詢時間: lawData.查詢時間,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            hitCount: 0,
+            lastAccessedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        console.log(`[LawCache] 已存入快取: ${lawName}`);
+    } catch (error) {
+        console.error('[LawCache] 存入快取失敗:', error);
+        // 不拋出錯誤，快取失敗不應影響主流程
+    }
+}
+
+/**
  * 使用 OpenAI Responses API (GPT-5-mini) 和 web_search 工具解析法條
+ * 帶 Firebase 快取層
  * @param {string} lawName - 法條名稱（例如：民法第184條）
  * @returns {Promise<Object>} 包含法條原文、出處來源、白話解析的物件
  */
 export async function aiExplainLaw(lawName) {
+    // 步驟 1: 先檢查 Firebase 快取
+    const cachedResult = await getLawFromCache(lawName);
+    if (cachedResult) {
+        console.log(`[LawSearch] 使用快取結果: ${lawName}`);
+        return cachedResult;
+    }
+
+    // 步驟 2: 快取未命中，使用 AI 查詢
     try {
         console.log(`[LawSearch] AI 解析法條 (使用 GPT-5-mini Responses API): ${lawName}`);
 
@@ -775,6 +857,11 @@ export async function aiExplainLaw(lawName) {
             hasSource: !!result.出處來源,
             hasExplanation: !!result.白話解析,
             sourceUrl: result.出處來源
+        });
+
+        // 步驟 3: 將結果存入 Firebase 快取（異步，不阻塞返回）
+        saveLawToCache(lawName, result).catch(err => {
+            console.error('[LawSearch] 背景存入快取失敗:', err);
         });
 
         return result;
