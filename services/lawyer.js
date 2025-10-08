@@ -318,7 +318,7 @@ function analyzeAndStructureLawyerData(esHits, lawyerName, esAggregations) {
     `${now.getFullYear() - 3}${("0" + (now.getMonth() + 1)).slice(-2)}${("0" + now.getDate()).slice(-2)}`,
     10
   );
-  console.log(`[Lawyer Service] 近三年閾值: ${threeYearsAgoNum}, 當前日期: ${now.toISOString()}`);
+  // console.log(`[Lawyer Service] 近三年閾值: ${threeYearsAgoNum}, 當前日期: ${now.toISOString()}`);
 
   // 這個循環會在後面的 map 操作中處理，這裡先移除避免重複
   const allCaseTypesCounter = {}; // 用於統計案件類型數量
@@ -403,14 +403,12 @@ function analyzeAndStructureLawyerData(esHits, lawyerName, esAggregations) {
       }
     }
 
-    console.log(`[Lawyer Service] 案件 ${source.JID}: JDATE=${source.JDATE}, JDATE_num=${source.JDATE_num}, caseDate=${caseDate}, 閾值=${threeYearsAgoNum}`);
+    // console.log(`[Lawyer Service] 案件 ${source.JID}: JDATE=${source.JDATE}, JDATE_num=${source.JDATE_num}, caseDate=${caseDate}, 閾值=${threeYearsAgoNum}`);
 
     // 統計近三年案件
     if (caseDate && !isNaN(caseDate) && caseDate >= threeYearsAgoNum) {
       resultData.stats.totalCasesLast3Years++;
-      console.log(`[Lawyer Service] ✅ 計入近三年案件: ${source.JID}, 日期: ${caseDate}`);
-    } else {
-      console.log(`[Lawyer Service] ❌ 未計入: ${source.JID}, caseDate=${caseDate}, isNaN=${isNaN(caseDate)}, 比較=${caseDate >= threeYearsAgoNum}`);
+      // console.log(`[Lawyer Service] ✅ 計入近三年案件: ${source.JID}, 日期: ${caseDate}`);
     }
 
     if (source.case_type) {
@@ -431,6 +429,7 @@ function analyzeAndStructureLawyerData(esHits, lawyerName, esAggregations) {
       // originalVerdictType: source.verdict_type, // 可選
       sideFromPerf: sideFromPerf, // 律師在此案件中的立場
       neutralOutcomeCode, // 用於勝率計算
+      lawyerPerfObject, // 🆕 包含完整的律師表現對象（包含 performance, level, partyType）
       // originalSource: source // 可選，用於調試
     };
   }).sort((a, b) => (b.dateNum || 0) - (a.dateNum || 0)); // 按日期倒序排序
