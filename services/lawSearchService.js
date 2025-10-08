@@ -722,6 +722,7 @@ export async function aiExplainLaw(lawName) {
         { role: "user", content: [{ type: "input_text", text: `請解析：${lawName}` }] }
       ],
       tools,
+      tool_choice: { type: "function", name: "emit_result" }, // ✅ 強制使用這個工具
       // 關鍵：保留 web_search；不使用 response_format 以免衝突
       reasoning: { effort: "low" },    // 減少推理 token
       max_output_tokens: 192,          // 限縮輸出長度
