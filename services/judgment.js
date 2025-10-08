@@ -137,7 +137,8 @@ export async function getCaseDetail(caseId) {
         'lawyer_performance',
         'trial_party_lawyers',
         'appeal_party_lawyers',
-        'disposition'
+        'disposition',
+        'summary_ai'
       ]
     });
 
