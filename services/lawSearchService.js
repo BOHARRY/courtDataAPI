@@ -679,7 +679,7 @@ export async function aiExplainLaw(lawName) {
 
     // 讓模型把結果丟進工具參數（而不是寫長文）
     const tools = [
-      { type: "web_search", user_location: { type: "approximate" }, search_context_size: "small" },
+      { type: "web_search", user_location: { type: "approximate" }, search_context_size: "low" },
       {
         type: "function",
         name: "emit_result",
