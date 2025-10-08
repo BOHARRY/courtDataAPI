@@ -173,7 +173,10 @@ function calculateEnhancedWinRates(cases) {
       roleStats.performance_details.push({
         performance: performance,
         outcome: performanceOutcome,
-        case_id: caseItem.id
+        case_id: caseItem.id,
+        title: caseItem.title,  // 🆕 添加案件標題
+        court: caseItem.court,  // 🆕 添加法院
+        date: caseItem.date     // 🆕 添加日期
       });
     }
 
