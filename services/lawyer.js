@@ -15,6 +15,194 @@ import {
 const ES_INDEX_NAME = 'search-boooook';
 
 /**
+ * 從案件中提取律師角色（使用新的 trial_party_lawyers 和 appeal_party_lawyers）
+ * @param {object} caseData - 案件數據
+ * @param {string} lawyerName - 律師名稱
+ * @returns {object|null} - { side: 'plaintiff'|'defendant', level: 'trial'|'appeal', party, partyType }
+ */
+function getLawyerRoleFromCase(caseData, lawyerName) {
+  // 優先檢查初審
+  if (caseData.trial_party_lawyers && Array.isArray(caseData.trial_party_lawyers)) {
+    for (const entry of caseData.trial_party_lawyers) {
+      if (entry.lawyers && Array.isArray(entry.lawyers) && entry.lawyers.includes(lawyerName)) {
+        return {
+          side: entry.side,           // "plaintiff" or "defendant"
+          level: 'trial',
+          party: entry.party,
+          partyType: entry.party_type
+        };
+      }
+    }
+  }
+
+  // 檢查上訴審
+  if (caseData.appeal_party_lawyers && Array.isArray(caseData.appeal_party_lawyers)) {
+    for (const entry of caseData.appeal_party_lawyers) {
+      if (entry.lawyers && Array.isArray(entry.lawyers) && entry.lawyers.includes(lawyerName)) {
+        return {
+          side: entry.appeal_role === 'appellant' ? 'plaintiff' : 'defendant',  // 簡化處理
+          level: 'appeal',
+          party: entry.party,
+          partyType: entry.party_type
+        };
+      }
+    }
+  }
+
+  // 回退到舊欄位
+  if (caseData.lawyers && Array.isArray(caseData.lawyers) && caseData.lawyers.includes(lawyerName)) {
+    return { side: 'plaintiff', level: 'trial', party: null, partyType: null };
+  }
+
+  if (caseData.lawyersdef && Array.isArray(caseData.lawyersdef) && caseData.lawyersdef.includes(lawyerName)) {
+    return { side: 'defendant', level: 'trial', party: null, partyType: null };
+  }
+
+  return null;
+}
+
+/**
+ * 從案件中提取律師表現評估（使用新的 lawyer_performance）
+ * @param {object} caseData - 案件數據
+ * @param {string} lawyerName - 律師名稱
+ * @returns {object|null} - { performance: 'Good'|'Fair'|'Poor', outcome, justification }
+ */
+function getLawyerPerformanceFromCase(caseData, lawyerName) {
+  if (caseData.lawyer_performance && Array.isArray(caseData.lawyer_performance)) {
+    const perf = caseData.lawyer_performance.find(p => p.lawyer === lawyerName);
+    if (perf) {
+      return {
+        performance: perf.performance,  // "Good", "Fair", "Poor"
+        outcome: perf.outcome,
+        justification: perf.justification
+      };
+    }
+  }
+  return null;
+}
+
+/**
+ * 獲取標準化的判決結果分類（使用 disposition.class）
+ * @param {object} caseData - 案件數據
+ * @returns {string} - 'win', 'partial_win', 'loss', 'settlement', 'procedural', 'unknown'
+ */
+function getDispositionClass(caseData) {
+  if (caseData.disposition && caseData.disposition.class) {
+    return caseData.disposition.class;
+  }
+
+  // 回退到舊的 verdict_type 判斷
+  const verdictType = caseData.verdict_type || '';
+  if (verdictType.includes('勝訴') && !verdictType.includes('部分')) return 'win';
+  if (verdictType.includes('部分勝訴')) return 'partial_win';
+  if (verdictType.includes('敗訴')) return 'loss';
+  if (verdictType.includes('和解')) return 'settlement';
+  if (verdictType.includes('駁回') || verdictType.includes('不受理')) return 'procedural';
+
+  return 'unknown';
+}
+
+/**
+ * 🆕 計算增強版的勝率統計（使用新的數據結構）
+ * @param {array} cases - 案件列表
+ * @returns {object} - 詳細的勝率統計
+ */
+function calculateEnhancedWinRates(cases) {
+  const stats = {
+    civil: {
+      total_cases: 0,
+      by_role: {
+        plaintiff: { total: 0, trial_level: 0, appeal_level: 0, outcomes: {}, performance: {}, client_types: {} },
+        defendant: { total: 0, trial_level: 0, appeal_level: 0, outcomes: {}, performance: {}, client_types: {} }
+      }
+    },
+    criminal: {
+      total_cases: 0,
+      by_role: {
+        defendant: { total: 0, trial_level: 0, appeal_level: 0, outcomes: {}, performance: {}, client_types: {} }
+      }
+    },
+    administrative: {
+      total_cases: 0,
+      by_role: {
+        plaintiff: { total: 0, trial_level: 0, appeal_level: 0, outcomes: {}, performance: {}, client_types: {} }
+      }
+    }
+  };
+
+  cases.forEach(caseItem => {
+    const mainType = caseItem.mainType || 'unknown';
+    const side = caseItem.sideFromPerf || 'unknown';
+    const outcome = caseItem.neutralOutcomeCode || 'unknown';
+    const performance = caseItem.lawyerPerfObject?.performance || 'unknown';
+    const level = caseItem.lawyerPerfObject?.level || 'trial';
+    const partyType = caseItem.lawyerPerfObject?.partyType || 'unknown';
+
+    // 確定案件類型
+    let caseType = null;
+    if (mainType === 'civil') caseType = 'civil';
+    else if (mainType === 'criminal') caseType = 'criminal';
+    else if (mainType === 'administrative') caseType = 'administrative';
+    else return; // 跳過未知類型
+
+    // 確保統計結構存在
+    if (!stats[caseType].by_role[side]) return; // 跳過不支持的角色
+
+    const roleStats = stats[caseType].by_role[side];
+
+    // 基本計數
+    stats[caseType].total_cases++;
+    roleStats.total++;
+
+    // 審級統計
+    if (level === 'trial') roleStats.trial_level++;
+    else if (level === 'appeal') roleStats.appeal_level++;
+
+    // 判決結果統計
+    if (!roleStats.outcomes[outcome]) roleStats.outcomes[outcome] = 0;
+    roleStats.outcomes[outcome]++;
+
+    // 律師表現統計
+    if (performance && performance !== 'unknown') {
+      const perfKey = performance.toLowerCase(); // 'Good' -> 'good'
+      if (!roleStats.performance[perfKey]) roleStats.performance[perfKey] = 0;
+      roleStats.performance[perfKey]++;
+    }
+
+    // 客戶類型統計
+    if (partyType && partyType !== 'unknown') {
+      if (!roleStats.client_types[partyType]) roleStats.client_types[partyType] = 0;
+      roleStats.client_types[partyType]++;
+    }
+  });
+
+  // 計算勝率
+  ['civil', 'criminal', 'administrative'].forEach(caseType => {
+    Object.keys(stats[caseType].by_role).forEach(role => {
+      const roleStats = stats[caseType].by_role[role];
+      const outcomes = roleStats.outcomes;
+
+      // 計算勝率（win + partial_win）/ (total - settlement - procedural)
+      const winCount = (outcomes.win || 0) + (outcomes.partial_win || 0);
+      const totalRelevant = roleStats.total - (outcomes.settlement || 0) - (outcomes.procedural || 0);
+
+      roleStats.win_rate = totalRelevant > 0 ? Math.round((winCount / totalRelevant) * 100) : 0;
+    });
+
+    // 計算整體勝率
+    const allRoles = Object.values(stats[caseType].by_role);
+    const totalWins = allRoles.reduce((sum, r) => sum + (r.outcomes.win || 0) + (r.outcomes.partial_win || 0), 0);
+    const totalRelevant = allRoles.reduce((sum, r) => sum + r.total - (r.outcomes.settlement || 0) - (r.outcomes.procedural || 0), 0);
+
+    stats[caseType].overall = totalRelevant > 0 ? Math.round((totalWins / totalRelevant) * 100) : 0;
+  });
+
+  console.log('[calculateEnhancedWinRates] 新統計結果:', JSON.stringify(stats, null, 2));
+
+  return stats;
+}
+
+/**
  * 搜尋律師並分析其案件數據。
  * @param {string} lawyerName - 律師名稱。
  * @returns {Promise<object>} 包含律師分析數據的物件。
@@ -111,56 +299,47 @@ function analyzeAndStructureLawyerData(esHits, lawyerName, esAggregations) {
     const source = hit._source || {};
     const mainType = getMainType(source); // utils/case-analyzer
 
-    let sideFromPerf = 'unknown';
+    // 🆕 使用新的輔助函數提取律師角色
+    const lawyerRole = getLawyerRoleFromCase(source, lawyerName);
+    const sideFromPerf = lawyerRole ? lawyerRole.side : 'unknown';
+
+    // 🆕 使用新的輔助函數提取律師表現
+    const lawyerPerformance = getLawyerPerformanceFromCase(source, lawyerName);
+
+    // 🆕 使用新的輔助函數獲取判決結果分類
+    const dispositionClass = getDispositionClass(source);
+
+    // 構建律師表現對象（保留舊邏輯以兼容）
     let perfVerdictText = null;
-    let lawyerPerfObject = null;
+    let lawyerPerfObject = {
+      side: sideFromPerf,
+      verdict: source.verdict_type,
+      dispositionClass: dispositionClass,  // 🆕 新增
+      performance: lawyerPerformance?.performance,  // 🆕 新增
+      level: lawyerRole?.level,  // 🆕 新增（trial/appeal）
+      partyType: lawyerRole?.partyType  // 🆕 新增（person/organization）
+    };
 
-    // 根據律師在 lawyers 或 lawyersdef 字段中的位置判斷立場
-    if (source.lawyers && Array.isArray(source.lawyers) && source.lawyers.includes(lawyerName)) {
-      sideFromPerf = 'plaintiff'; // 原告方律師
-
-      // 構建律師表現對象，包含多種評估信息
-      lawyerPerfObject = {
-        side: 'plaintiff',
-        verdict: source.verdict_type
-      };
-
-      // 如果有律師評估，使用原告方的評估
-      if (source.lawyer_assessment && source.lawyer_assessment.plaintiff_side_comment) {
-        perfVerdictText = source.lawyer_assessment.plaintiff_side_comment;
-        lawyerPerfObject.assessment = source.lawyer_assessment.plaintiff_side_comment;
-      }
-
-      // 如果有立場分析，使用原告方的結果
-      if (source.position_based_analysis && source.position_based_analysis.plaintiff_perspective) {
-        lawyerPerfObject.overall_result = source.position_based_analysis.plaintiff_perspective.overall_result;
-        if (!perfVerdictText) {
-          perfVerdictText = source.position_based_analysis.plaintiff_perspective.overall_result;
-        }
-      }
-
-    } else if (source.lawyersdef && Array.isArray(source.lawyersdef) && source.lawyersdef.includes(lawyerName)) {
-      sideFromPerf = 'defendant'; // 被告方律師
-
-      // 構建律師表現對象，包含多種評估信息
-      lawyerPerfObject = {
-        side: 'defendant',
-        verdict: source.verdict_type
-      };
-
-      // 如果有律師評估，使用被告方的評估
-      if (source.lawyer_assessment && source.lawyer_assessment.defendant_side_comment) {
-        perfVerdictText = source.lawyer_assessment.defendant_side_comment;
-        lawyerPerfObject.assessment = source.lawyer_assessment.defendant_side_comment;
-      }
-
-      // 如果有立場分析，使用被告方的結果
-      if (source.position_based_analysis && source.position_based_analysis.defendant_perspective) {
-        lawyerPerfObject.overall_result = source.position_based_analysis.defendant_perspective.overall_result;
-        if (!perfVerdictText) {
-          perfVerdictText = source.position_based_analysis.defendant_perspective.overall_result;
-        }
-      }
+    // 優先使用新的 lawyer_performance
+    if (lawyerPerformance) {
+      perfVerdictText = lawyerPerformance.outcome;
+      lawyerPerfObject.assessment = lawyerPerformance.justification?.join('; ');
+    }
+    // 回退到舊的 lawyer_assessment
+    else if (sideFromPerf === 'plaintiff' && source.lawyer_assessment?.plaintiff_side_comment) {
+      perfVerdictText = source.lawyer_assessment.plaintiff_side_comment;
+      lawyerPerfObject.assessment = source.lawyer_assessment.plaintiff_side_comment;
+    } else if (sideFromPerf === 'defendant' && source.lawyer_assessment?.defendant_side_comment) {
+      perfVerdictText = source.lawyer_assessment.defendant_side_comment;
+      lawyerPerfObject.assessment = source.lawyer_assessment.defendant_side_comment;
+    }
+    // 回退到 position_based_analysis
+    else if (sideFromPerf === 'plaintiff' && source.position_based_analysis?.plaintiff_perspective) {
+      lawyerPerfObject.overall_result = source.position_based_analysis.plaintiff_perspective.overall_result;
+      perfVerdictText = source.position_based_analysis.plaintiff_perspective.overall_result;
+    } else if (sideFromPerf === 'defendant' && source.position_based_analysis?.defendant_perspective) {
+      lawyerPerfObject.overall_result = source.position_based_analysis.defendant_perspective.overall_result;
+      perfVerdictText = source.position_based_analysis.defendant_perspective.overall_result;
     }
 
     // 如果沒有具體的律師評估，使用案件的整體判決作為參考
@@ -220,8 +399,14 @@ function analyzeAndStructureLawyerData(esHits, lawyerName, esAggregations) {
   //   console.log(`  ID: ${c.id}, mainType: ${c.mainType}, side: ${c.sideFromPerf}, outcome: ${c.neutralOutcomeCode}, desc: ${c.result}`);
   // });
 
-  // 計算詳細勝率
-  resultData.stats.detailedWinRates = calculateDetailedWinRates(resultData.cases, resultData.stats.detailedWinRates); // utils/win-rate-calculator
+  // 🆕 計算詳細勝率（使用新的數據結構）
+  resultData.stats.detailedWinRates = calculateEnhancedWinRates(resultData.cases);
+
+  // 保留舊的計算方式作為備份（如果新方式失敗）
+  if (!resultData.stats.detailedWinRates || Object.keys(resultData.stats.detailedWinRates).length === 0) {
+    console.log('[Lawyer Service] 新統計方式失敗，使用舊方式');
+    resultData.stats.detailedWinRates = calculateDetailedWinRates(resultData.cases, resultData.stats.detailedWinRates);
+  }
 
   // 統計最常見案件類型
   const sortedCommonCaseTypes = Object.entries(allCaseTypesCounter)
