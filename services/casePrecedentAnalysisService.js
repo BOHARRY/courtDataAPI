@@ -2693,10 +2693,13 @@ async function analyzeMainstreamPattern(caseDescription, mainStreamCases, mainPa
 
         const analysisResult = JSON.parse(response.choices[0].message.content);
 
-        // 確保引用格式正確
+        // 🔧 修正：確保引用格式與共同點歸納一致（包含 judgementId 和 originalText）
         const citations = {};
         mainStreamCases.forEach((case_, index) => {
-            citations[index + 1] = `${case_.title} (${case_.court} ${case_.year}年)`;
+            citations[index + 1] = {
+                judgementId: `${case_.title} (${case_.court} ${case_.year}年)`,
+                originalText: case_.summary_ai_full || case_.summary_ai || '無摘要'
+            };
         });
 
         analysisResult.citations = citations;
