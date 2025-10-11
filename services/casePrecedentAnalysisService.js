@@ -3,6 +3,7 @@ import esClient from '../config/elasticsearch.js';
 import { OpenAI } from 'openai';
 import { OPENAI_API_KEY, OPENAI_MODEL_NAME_CHAT } from '../config/environment.js';
 import admin from 'firebase-admin';
+import { analyzeVerdictFromPositionData, analyzeVerdictDistribution } from './verdictAnalysisService.js';
 
 const openai = new OpenAI({
     apiKey: OPENAI_API_KEY,
@@ -1212,8 +1213,8 @@ async function analyzeKeyFactors(cases, position = 'neutral') {
         console.log(`[analyzeKeyFactors] 案例 ${case_.id}: verdict=${verdict}, main_reasons_ai=`, reasons);
         console.log(`[analyzeKeyFactors] 🔍 數據路徑檢查: judgmentNodeData=`, !!case_.judgmentNodeData, 'source=', !!case_.source);
 
-        // 🚨 改進：使用精細化的勝負分類邏輯
-        const verdictAnalysis = analyzeVerdictOutcome(verdict, position);
+        // ✅ 使用 position_based_analysis 數據判斷勝負
+        const verdictAnalysis = analyzeVerdictFromPositionData(case_, position);
         const isWinCase = verdictAnalysis.isWin;
         const isLoseCase = verdictAnalysis.isLose;
         const isPartialCase = verdictAnalysis.isPartial;
@@ -1302,39 +1303,7 @@ async function analyzeKeyFactors(cases, position = 'neutral') {
     };
 }
 
-/**
- * 分析判決結果分布並檢測異常
- */
-function analyzeVerdictDistribution(cases) {
-    const verdictStats = {};
-    const totalCases = cases.length;
-    
-    // 統計各種判決結果
-    cases.forEach(case_ => {
-        const verdict = case_.verdictType || '未知';
-        verdictStats[verdict] = (verdictStats[verdict] || 0) + 1;
-    });
-    
-    // 計算百分比並識別異常
-    const distribution = Object.entries(verdictStats).map(([verdict, count]) => ({
-        verdict,
-        count,
-        percentage: Math.round((count / totalCases) * 100)
-    })).sort((a, b) => b.count - a.count);
-    
-    // 找出主流模式（最常見的結果）
-    const mainPattern = distribution[0];
-    
-    // 找出異常模式（低於 10% 的結果）
-    const anomalies = distribution.filter(item => item.percentage < 10 && item.count > 0);
-    
-    return {
-        totalCases,
-        distribution,
-        mainPattern,
-        anomalies
-    };
-}
+// ✅ analyzeVerdictDistribution() 已移至 verdictAnalysisService.js
 
 /**
  * 🆕 使用完整數據分析勝負關鍵因素
@@ -1360,8 +1329,8 @@ async function analyzeKeyFactorsWithFullData(casesWithFullData, position = 'neut
             source_main_reasons: case_.source?.main_reasons_ai
         });
 
-        // 🚨 改進：使用精細化的勝負分類邏輯
-        const verdictAnalysis = analyzeVerdictOutcome(verdict, position);
+        // ✅ 使用 position_based_analysis 數據判斷勝負
+        const verdictAnalysis = analyzeVerdictFromPositionData(case_, position);
         const isWinCase = verdictAnalysis.isWin;
         const isLoseCase = verdictAnalysis.isLose;
         const isPartialCase = verdictAnalysis.isPartial;
@@ -1499,69 +1468,20 @@ async function analyzeKeyFactorsWithFullData(casesWithFullData, position = 'neut
 }
 
 /**
- * 🆕 精細化判決結果分析 - 善用結構化 verdict_type
+ * ❌ 已廢棄: analyzeVerdictOutcome()
+ *
+ * 此函數已移至 verdictAnalysisService.js 並被 analyzeVerdictFromPositionData() 替代。
+ *
+ * 舊邏輯存在嚴重錯誤：
+ * - 將所有 "部分勝訴部分敗訴" 案例都標記為 isWin = true
+ * - 導致被告分析勝率虛高 (96% 而非實際的 31.2%)
+ *
+ * 根據 ES 查詢驗證 (2025-10-11):
+ * - "部分勝訴部分敗訴" 案例中，只有 3.3% 是被告的 major_victory
+ * - 58.6% 是 partial_success，38.1% 是 major_defeat
+ *
+ * @deprecated 使用 analyzeVerdictFromPositionData() 替代
  */
-function analyzeVerdictOutcome(verdict, position) {
-    // 🎯 基於結構化的 verdict_type 進行精確分類
-    const result = {
-        isWin: false,
-        isLose: false,
-        isPartial: false,
-        winRate: 0, // 勝訴程度 0-100%
-        category: 'unknown'
-    };
-
-    // 🔍 民事案件的精細分類
-    if (verdict === '原告勝訴') {
-        result.category = 'full_win';
-        result.winRate = 100;
-        if (position === 'plaintiff') {
-            result.isWin = true;
-        } else if (position === 'defendant') {
-            result.isLose = true;
-        }
-    } else if (verdict === '原告敗訴') {
-        result.category = 'full_lose';
-        result.winRate = 0;
-        if (position === 'plaintiff') {
-            result.isLose = true;
-        } else if (position === 'defendant') {
-            result.isWin = true;
-        }
-    } else if (verdict === '部分勝訴部分敗訴') {
-        // 🎯 最有參考價值的判決類型！
-        result.category = 'partial_win';
-        result.isPartial = true;
-        result.winRate = 50; // 可以後續根據具體內容調整
-
-        // 部分勝訴對雙方都有參考價值
-        if (position === 'plaintiff') {
-            result.isWin = true; // 原告視角：部分勝訴仍算成功
-        } else if (position === 'defendant') {
-            result.isWin = true; // 被告視角：避免完全敗訴也算成功
-        }
-    } else if (verdict === '上訴駁回') {
-        // 需要根據上訴方判斷
-        result.category = 'appeal_rejected';
-        result.winRate = 0; // 上訴方敗訴
-        // 這裡可以根據具體情況進一步分析
-        result.isLose = true;
-    } else if (verdict === '和解成立') {
-        result.category = 'settlement';
-        result.isPartial = true;
-        result.winRate = 50; // 和解通常是雙方妥協
-    } else if (verdict.includes('駁回')) {
-        result.category = 'rejected';
-        result.winRate = 0;
-        if (position === 'plaintiff') {
-            result.isLose = true;
-        } else if (position === 'defendant') {
-            result.isWin = true;
-        }
-    }
-
-    return result;
-}
 
 /**
  * 🆕 使用 GPT-4o mini 合併語義相似的理由
