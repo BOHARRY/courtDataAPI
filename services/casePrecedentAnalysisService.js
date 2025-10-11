@@ -1339,7 +1339,7 @@ async function analyzeKeyFactors(cases, position = 'neutral') {
                 description: `${percentage}% 的勝訴案例具備此要素`
             };
         })
-        .filter(item => item.count >= 2) // 至少出現2次
+        .filter(item => item.count >= 1) // ✅ 降低閾值：至少出現1次（用於調試）
         .sort((a, b) => b.percentage - a.percentage)
         .slice(0, 5); // 取前5名
 
