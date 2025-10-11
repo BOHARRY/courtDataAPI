@@ -221,16 +221,14 @@ const verdictAnalysis = analyzeVerdictFromPositionData(case_, position);
 
 ## 🔧 錯誤修復 (2025-10-11 下午)
 
-### **問題**: 前端報錯 `Cannot read properties of undefined (reading 'length')`
+### **問題 1**: 前端報錯 `Cannot read properties of undefined (reading 'length')`
 
 **原因**:
 - `analyzeVerdictFromPositionData()` 在缺少 `position_based_analysis` 數據時會拋出異常
 - 但在 `analyzeKeyFactors()` 和 `analyzeKeyFactorsWithFullData()` 中沒有錯誤處理
 - 導致後續代碼無法執行，前端收到不完整的數據
 
-**修復**:
-在兩處調用 `analyzeVerdictFromPositionData()` 的地方添加 try-catch 錯誤處理：
-
+**修復 1.1**: 添加 try-catch 錯誤處理
 ```javascript
 // Line 1217-1224 (analyzeKeyFactors)
 let verdictAnalysis;
@@ -241,7 +239,7 @@ try {
     return; // 跳過此案例
 }
 
-// Line 1341-1348 (analyzeKeyFactorsWithFullData)
+// Line 1359-1366 (analyzeKeyFactorsWithFullData)
 let verdictAnalysis;
 try {
     verdictAnalysis = analyzeVerdictFromPositionData(case_, position);
@@ -251,10 +249,38 @@ try {
 }
 ```
 
+**修復 1.2**: 添加空數據檢查
+```javascript
+// Line 1247-1263 (analyzeKeyFactors)
+if (winCases.length === 0 && loseCases.length === 0) {
+    console.log(`[analyzeKeyFactors] ⚠️ 所有案例都缺少 position_based_analysis 數據，無法進行分析`);
+    return {
+        dataStatus: 'insufficient',
+        message: '所有案例都缺少立場分析數據，無法進行統計分析',
+        winFactors: [],
+        loseFactors: [],
+        factorAnalysis: null
+    };
+}
+
+// Line 1393-1409 (analyzeKeyFactorsWithFullData)
+if (winCases.length === 0 && loseCases.length === 0) {
+    console.log(`[analyzeKeyFactorsWithFullData] ⚠️ 所有案例都缺少 position_based_analysis 數據，無法進行分析`);
+    return {
+        dataStatus: 'insufficient',
+        message: '所有案例都缺少立場分析數據，無法進行統計分析',
+        winFactors: [],
+        loseFactors: [],
+        factorAnalysis: null
+    };
+}
+```
+
 **效果**:
-- ✅ 如果案例缺少 `position_based_analysis` 數據，會跳過該案例而不是拋出異常
-- ✅ 其他案例仍然可以正常分析
-- ✅ 前端不會收到錯誤，可以正常顯示分析結果
+- ✅ 如果單個案例缺少數據，會跳過該案例而不是拋出異常
+- ✅ 如果所有案例都缺少數據，會返回 `dataStatus: 'insufficient'`
+- ✅ 前端可以正常處理 `dataStatus: 'insufficient'` 的情況
+- ✅ 避免 `undefined.length` 錯誤
 
 ---
 

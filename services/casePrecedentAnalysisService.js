@@ -1247,6 +1247,24 @@ async function analyzeKeyFactors(cases, position = 'neutral') {
         });
     });
 
+    // ✅ 檢查是否有有效的分析數據
+    if (winCases.length === 0 && loseCases.length === 0) {
+        console.log(`[analyzeKeyFactors] ⚠️ 所有案例都缺少 position_based_analysis 數據，無法進行分析`);
+        return {
+            dataStatus: 'insufficient',
+            message: '所有案例都缺少立場分析數據，無法進行統計分析',
+            suggestion: '建議：1) 檢查資料庫數據完整性 2) 聯繫技術支援',
+            availableData: {
+                caseCount: cases.length,
+                dataCompleteness: `0/${cases.length}`,
+                position: position
+            },
+            winFactors: [],
+            loseFactors: [],
+            factorAnalysis: null
+        };
+    }
+
     // 統計勝訴因素
     const winReasonStats = {};
     const loseReasonStats = {};
@@ -1373,6 +1391,24 @@ async function analyzeKeyFactorsWithFullData(casesWithFullData, position = 'neut
     });
 
     console.log(`[analyzeKeyFactorsWithFullData] 收集到 ${allReasons.length} 個理由，勝訴案例: ${winCases.length}，敗訴案例: ${loseCases.length}`);
+
+    // ✅ 檢查是否有有效的分析數據
+    if (winCases.length === 0 && loseCases.length === 0) {
+        console.log(`[analyzeKeyFactorsWithFullData] ⚠️ 所有案例都缺少 position_based_analysis 數據，無法進行分析`);
+        return {
+            dataStatus: 'insufficient',
+            message: '所有案例都缺少立場分析數據，無法進行統計分析',
+            suggestion: '建議：1) 檢查資料庫數據完整性 2) 聯繫技術支援',
+            availableData: {
+                caseCount: casesWithFullData.length,
+                dataCompleteness: `0/${casesWithFullData.length}`,
+                position: position
+            },
+            winFactors: [],
+            loseFactors: [],
+            factorAnalysis: null
+        };
+    }
 
     // 🆕 語義合併相似理由
     const mergedWinFactors = winCases.length > 0 ? await mergeSemanticReasons(winCases.map(c => c.reason), 'win') : {};
