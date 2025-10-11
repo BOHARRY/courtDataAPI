@@ -1781,9 +1781,17 @@ async function executeAnalysisInBackground(taskId, analysisData, userId) {
         try {
             console.log(`[casePrecedentAnalysisService] 🎯 開始勝負因素分析，立場: ${analysisData.position || 'neutral'}`);
             keyFactorsAnalysis = await analyzeKeyFactors(similarCases, analysisData.position || 'neutral');
-            console.log(`[casePrecedentAnalysisService] 勝負因素分析完成，勝訴因素: ${keyFactorsAnalysis.winFactors.length} 個，敗訴因素: ${keyFactorsAnalysis.loseFactors.length} 個`);
-            console.log(`[casePrecedentAnalysisService] 🧪 勝訴因素詳情:`, keyFactorsAnalysis.winFactors);
-            console.log(`[casePrecedentAnalysisService] 🧪 敗訴因素詳情:`, keyFactorsAnalysis.loseFactors);
+
+            // ✅ 檢查是否返回了有效的分析結果
+            if (keyFactorsAnalysis && keyFactorsAnalysis.dataStatus === 'insufficient') {
+                console.log(`[casePrecedentAnalysisService] ⚠️ 勝負因素分析數據不足: ${keyFactorsAnalysis.message}`);
+            } else if (keyFactorsAnalysis) {
+                console.log(`[casePrecedentAnalysisService] 勝負因素分析完成，勝訴因素: ${keyFactorsAnalysis.winFactors?.length || 0} 個，敗訴因素: ${keyFactorsAnalysis.loseFactors?.length || 0} 個`);
+                console.log(`[casePrecedentAnalysisService] 🧪 勝訴因素詳情:`, keyFactorsAnalysis.winFactors);
+                console.log(`[casePrecedentAnalysisService] 🧪 敗訴因素詳情:`, keyFactorsAnalysis.loseFactors);
+            } else {
+                console.log(`[casePrecedentAnalysisService] ⚠️ 勝負因素分析返回 null 或 undefined`);
+            }
         } catch (error) {
             console.error(`[casePrecedentAnalysisService] ❌ 勝負因素分析失敗:`, error);
             keyFactorsAnalysis = null;
@@ -1792,7 +1800,7 @@ async function executeAnalysisInBackground(taskId, analysisData, userId) {
         // 3. 分析異常案例 - 暫時跳過 AI 分析避免超時
         let anomalyAnalysis = null;
         let anomalyDetails = {};
-        if (verdictAnalysis.anomalies.length > 0) {
+        if (verdictAnalysis && verdictAnalysis.anomalies && verdictAnalysis.anomalies.length > 0) {
             // 簡化的異常分析，不調用 OpenAI
             anomalyAnalysis = {
                 keyDifferences: ["案件事實差異", "法律適用差異", "舉證程度差異"],
