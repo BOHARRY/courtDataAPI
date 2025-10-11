@@ -105,11 +105,22 @@ export function analyzeVerdictDistributionByPosition(cases, position) {
         'major_defeat': position === 'plaintiff' ? '原告重大敗訴' : '被告重大敗訴'
     };
 
+    // 🔍 調試計數器
+    const debugCounter = {
+        'major_victory': 0,
+        'partial_success': 0,
+        'major_defeat': 0,
+        '未知': 0
+    };
+
     cases.forEach(case_ => {
         // 從 position_based_analysis 獲取 overall_result
         const overallResult = case_.positionAnalysis?.[positionKey]?.overall_result ||
                              case_.source?.position_based_analysis?.[positionKey]?.overall_result ||
                              '未知';
+
+        // 🔍 調試計數
+        debugCounter[overallResult] = (debugCounter[overallResult] || 0) + 1;
 
         const label = resultLabels[overallResult] || overallResult;
 
@@ -129,6 +140,10 @@ export function analyzeVerdictDistributionByPosition(cases, position) {
             year: case_.year
         });
     });
+
+    // 🔍 輸出調試信息
+    console.log(`[analyzeVerdictDistributionByPosition] 🔍 overall_result 分布 (${position}):`, debugCounter);
+    console.log(`[analyzeVerdictDistributionByPosition] 🔍 中文標籤分布:`, Object.keys(verdictStats).map(label => `${label}: ${verdictStats[label].count}`));
 
     // 計算百分比
     Object.keys(verdictStats).forEach(label => {
