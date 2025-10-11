@@ -3089,13 +3089,13 @@ async function executeMainstreamAnalysisInBackground(taskId, originalResult, use
             completedAt: admin.firestore.FieldValue.serverTimestamp(),
             result: {
                 report: analysisResult,
-                analyzedCount: mainStreamCases.length,
+                analyzedCount: criticalCases.length,  // ✅ 修復：使用 criticalCases.length
                 mainPattern: mainPattern,
                 originalCaseDescription: analysisParams.caseDescription
             }
         });
 
-        console.log(`[casePrecedentAnalysisService] 主流判決分析完成，任務ID: ${taskId}`);
+        console.log(`[casePrecedentAnalysisService] 重大判決分析完成，任務ID: ${taskId}`);
 
     } catch (error) {
         console.error(`[casePrecedentAnalysisService] 主流判決分析失敗，任務ID: ${taskId}`, error);
