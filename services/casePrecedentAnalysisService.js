@@ -666,19 +666,31 @@ async function performMultiAngleSearch(searchAngles, courtLevel, caseType, thres
                 // 篩選並標記來源角度
                 const filteredResults = hits
                     .filter(hit => (hit._score || 0) >= minScore)
-                    .map(hit => ({
-                        id: hit._source?.JID || 'unknown',
-                        title: hit._source?.JTITLE || '無標題',
-                        verdictType: hit._source?.verdict_type || 'unknown',
-                        court: hit._source?.court || '未知法院',
-                        year: hit._source?.JYEAR || '未知年份',
-                        similarity: hit._score || 0,
-                        sourceAngle: angleName,
-                        angleWeight: config.weight,
-                        originalSimilarity: hit._score || 0,
-                        positionAnalysis: hit._source?.position_based_analysis || null, // 🆕 立場分析資料
-                        source: hit._source // 🆕 完整的 source 數據，包含 main_reasons_ai
-                    }));
+                    .map((hit, index) => {
+                        // 🔍 詳細日誌：檢查前 3 個案例的 position_based_analysis
+                        if (index < 3) {
+                            console.log(`[performMultiAngleSearch] 🔍 案例 ${index + 1} (${hit._source?.JID}):`);
+                            console.log(`  - position_based_analysis 存在: ${!!hit._source?.position_based_analysis}`);
+                            if (hit._source?.position_based_analysis) {
+                                console.log(`  - defendant_perspective.overall_result: ${hit._source.position_based_analysis.defendant_perspective?.overall_result}`);
+                                console.log(`  - plaintiff_perspective.overall_result: ${hit._source.position_based_analysis.plaintiff_perspective?.overall_result}`);
+                            }
+                        }
+
+                        return {
+                            id: hit._source?.JID || 'unknown',
+                            title: hit._source?.JTITLE || '無標題',
+                            verdictType: hit._source?.verdict_type || 'unknown',
+                            court: hit._source?.court || '未知法院',
+                            year: hit._source?.JYEAR || '未知年份',
+                            similarity: hit._score || 0,
+                            sourceAngle: angleName,
+                            angleWeight: config.weight,
+                            originalSimilarity: hit._score || 0,
+                            positionAnalysis: hit._source?.position_based_analysis || null, // 🆕 立場分析資料
+                            source: hit._source // 🆕 完整的 source 數據，包含 main_reasons_ai
+                        };
+                    });
 
                 return {
                     angleName,
@@ -807,29 +819,47 @@ function mergeMultiAngleResults(searchResults, userInput) {
         console.log(`[casePrecedentAnalysisService] 🎯 智能合併完成: 處理 ${totalProcessed} 個結果，優化後 ${sortedResults.length} 個`);
         console.log(`[casePrecedentAnalysisService] 📊 高價值案例: ${sortedResults.filter(r => r.isIntersection).length} 個多角度命中`);
 
-        return sortedResults.map(item => ({
-            id: item.case.id,
-            title: item.case.title,
-            verdictType: item.case.verdictType,
-            court: item.case.court,
-            year: item.case.year,
-            similarity: item.maxSimilarity,
-            // 🚨 修復：保留完整的 source 數據
-            source: item.case.source, // 🆕 包含 main_reasons_ai 等完整數據
-            positionAnalysis: item.case.positionAnalysis, // 🆕 立場分析數據
-            // 🆕 增強的多角度分析數據
-            multiAngleData: {
-                appearances: item.appearances,
-                sourceAngles: item.sourceAngles,
-                totalScore: item.totalScore,
-                isIntersection: item.isIntersection,
-                angleScores: item.angleScores,
-                // 🆕 律師價值數據
-                lawyerValue: item.lawyerValue,
-                finalScore: item.finalScore,
-                recommendationReason: generateRecommendationReason(item)
+        const mergedResults = sortedResults.map((item, index) => {
+            // 🔍 詳細日誌：檢查前 3 個合併後的案例
+            if (index < 3) {
+                console.log(`[mergeMultiAngleResults] 🔍 合併後案例 ${index + 1} (${item.case.id}):`);
+                console.log(`  - item.case.positionAnalysis 存在: ${!!item.case.positionAnalysis}`);
+                console.log(`  - item.case.source?.position_based_analysis 存在: ${!!item.case.source?.position_based_analysis}`);
+                if (item.case.positionAnalysis) {
+                    console.log(`  - positionAnalysis 內容:`, JSON.stringify(item.case.positionAnalysis, null, 2));
+                }
             }
-        }));
+
+            return {
+                id: item.case.id,
+                title: item.case.title,
+                verdictType: item.case.verdictType,
+                court: item.case.court,
+                year: item.case.year,
+                similarity: item.maxSimilarity,
+                // 🚨 修復：保留完整的 source 數據
+                source: item.case.source, // 🆕 包含 main_reasons_ai 等完整數據
+                positionAnalysis: item.case.positionAnalysis, // 🆕 立場分析數據
+                // 🆕 增強的多角度分析數據
+                multiAngleData: {
+                    appearances: item.appearances,
+                    sourceAngles: item.sourceAngles,
+                    totalScore: item.totalScore,
+                    isIntersection: item.isIntersection,
+                    angleScores: item.angleScores,
+                    // 🆕 律師價值數據
+                    lawyerValue: item.lawyerValue,
+                    finalScore: item.finalScore,
+                    recommendationReason: generateRecommendationReason(item)
+                }
+            };
+        });
+
+        // 🔍 最終檢查：確認返回的數據中有 positionAnalysis
+        const withPositionAnalysis = mergedResults.filter(r => r.positionAnalysis).length;
+        console.log(`[mergeMultiAngleResults] 🔍 最終檢查: ${withPositionAnalysis}/${mergedResults.length} 個案例有 positionAnalysis 數據`);
+
+        return mergedResults;
 
     } catch (error) {
         console.error('[casePrecedentAnalysisService] 結果合併失敗:', error);
@@ -1213,13 +1243,31 @@ async function analyzeKeyFactors(cases, position = 'neutral') {
         console.log(`[analyzeKeyFactors] 案例 ${case_.id}: verdict=${verdict}, main_reasons_ai=`, reasons);
         console.log(`[analyzeKeyFactors] 🔍 數據路徑檢查: judgmentNodeData=`, !!case_.judgmentNodeData, 'source=', !!case_.source);
 
+        // 🔍 詳細檢查 position_based_analysis 數據
+        console.log(`[analyzeKeyFactors] 🔍 position_based_analysis 檢查:`);
+        console.log(`  - case_.positionAnalysis 存在: ${!!case_.positionAnalysis}`);
+        console.log(`  - case_.source?.position_based_analysis 存在: ${!!case_.source?.position_based_analysis}`);
+        if (case_.positionAnalysis) {
+            console.log(`  - positionAnalysis 內容:`, JSON.stringify(case_.positionAnalysis, null, 2));
+        }
+        if (case_.source?.position_based_analysis) {
+            console.log(`  - source.position_based_analysis 內容:`, JSON.stringify(case_.source.position_based_analysis, null, 2));
+        }
+
         // ✅ 使用 position_based_analysis 數據判斷勝負
         let verdictAnalysis;
         try {
             verdictAnalysis = analyzeVerdictFromPositionData(case_, position);
+            console.log(`[analyzeKeyFactors] ✅ 案例 ${case_.id} 勝負分析成功:`, {
+                isWin: verdictAnalysis.isWin,
+                isPartialWin: verdictAnalysis.isPartialWin,
+                isLose: verdictAnalysis.isLose,
+                overallResult: verdictAnalysis.overallResult
+            });
         } catch (error) {
             // 如果缺少 position_based_analysis 數據，跳過此案例
             console.warn(`[analyzeKeyFactors] ⚠️ 案例 ${case_.id} 缺少 position_based_analysis 數據，跳過分析`);
+            console.warn(`[analyzeKeyFactors] ⚠️ 錯誤詳情:`, error.message);
             return; // 跳過此案例
         }
 
