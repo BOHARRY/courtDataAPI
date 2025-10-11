@@ -87,8 +87,75 @@ export function analyzeVerdictFromPositionData(case_, position) {
 }
 
 /**
- * 分析判決分布
- * 
+ * 分析判決分布（基於 overall_result）
+ *
+ * @param {Array} cases - 案例列表
+ * @param {String} position - 立場 ('plaintiff' 或 'defendant')
+ * @returns {Object} 判決分布統計
+ */
+export function analyzeVerdictDistributionByPosition(cases, position) {
+    const positionKey = position === 'plaintiff' ? 'plaintiff_perspective' : 'defendant_perspective';
+    const verdictStats = {};
+    const totalCases = cases.length;
+
+    // ✅ 定義 overall_result 的中文標籤
+    const resultLabels = {
+        'major_victory': position === 'plaintiff' ? '原告重大勝訴' : '被告重大勝訴',
+        'partial_success': position === 'plaintiff' ? '原告部分勝訴' : '被告部分勝訴',
+        'major_defeat': position === 'plaintiff' ? '原告重大敗訴' : '被告重大敗訴'
+    };
+
+    cases.forEach(case_ => {
+        // 從 position_based_analysis 獲取 overall_result
+        const overallResult = case_.positionAnalysis?.[positionKey]?.overall_result ||
+                             case_.source?.position_based_analysis?.[positionKey]?.overall_result ||
+                             '未知';
+
+        const label = resultLabels[overallResult] || overallResult;
+
+        if (!verdictStats[label]) {
+            verdictStats[label] = {
+                count: 0,
+                percentage: 0,
+                cases: [],
+                overallResult: overallResult  // 保留原始值
+            };
+        }
+        verdictStats[label].count++;
+        verdictStats[label].cases.push({
+            id: case_.id,
+            title: case_.title,
+            court: case_.court,
+            year: case_.year
+        });
+    });
+
+    // 計算百分比
+    Object.keys(verdictStats).forEach(label => {
+        verdictStats[label].percentage = Math.round((verdictStats[label].count / totalCases) * 100);
+    });
+
+    // 排序（按數量降序）
+    const sortedVerdicts = Object.entries(verdictStats)
+        .sort((a, b) => b[1].count - a[1].count)
+        .reduce((acc, [label, stats]) => {
+            acc[label] = stats;
+            return acc;
+        }, {});
+
+    return {
+        total: totalCases,
+        distribution: sortedVerdicts,
+        mostCommon: Object.keys(sortedVerdicts)[0] || '未知',
+        mostCommonCount: sortedVerdicts[Object.keys(sortedVerdicts)[0]]?.count || 0,
+        position: position  // 記錄立場
+    };
+}
+
+/**
+ * 分析判決分布（基於 verdict_type）
+ * ⚠️ 此函數用於向後兼容，建議使用 analyzeVerdictDistributionByPosition
+ *
  * @param {Array} cases - 案例列表
  * @returns {Object} 判決分布統計
  */

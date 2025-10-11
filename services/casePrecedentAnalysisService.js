@@ -3,7 +3,7 @@ import esClient from '../config/elasticsearch.js';
 import { OpenAI } from 'openai';
 import { OPENAI_API_KEY, OPENAI_MODEL_NAME_CHAT } from '../config/environment.js';
 import admin from 'firebase-admin';
-import { analyzeVerdictFromPositionData, analyzeVerdictDistribution } from './verdictAnalysisService.js';
+import { analyzeVerdictFromPositionData, analyzeVerdictDistribution, analyzeVerdictDistributionByPosition } from './verdictAnalysisService.js';
 
 const openai = new OpenAI({
     apiKey: OPENAI_API_KEY,
@@ -340,7 +340,7 @@ function generateStrategicInsights(similarCases, position, verdictAnalysis) {
 
     const positionLabel = position === 'plaintiff' ? '原告方' : '被告方';
 
-    // ✅ 修正：計算所有有利結果（major_victory + partial_success）
+    // ✅ 修復：只計算 major_victory 作為成功（與 generatePositionStats 一致）
     const majorVictoryCount = casesWithPositionData.filter(c =>
         c.positionAnalysis[positionKey].overall_result === 'major_victory'
     ).length;
@@ -349,15 +349,22 @@ function generateStrategicInsights(similarCases, position, verdictAnalysis) {
         c.positionAnalysis[positionKey].overall_result === 'partial_success'
     ).length;
 
-    const totalSuccessCount = majorVictoryCount + partialSuccessCount;
-    const successRate = Math.round((totalSuccessCount / casesWithPositionData.length) * 100);
+    const majorDefeatCount = casesWithPositionData.filter(c =>
+        c.positionAnalysis[positionKey].overall_result === 'major_defeat'
+    ).length;
 
-    // ✅ 根據成功率動態生成描述
+    // ✅ 成功率 = 只計算 major_victory
+    const successRate = Math.round((majorVictoryCount / casesWithPositionData.length) * 100);
+
+    // ✅ 根據實際數據生成描述
     let successDescription = '';
-    if (majorVictoryCount > 0 && partialSuccessCount > 0) {
-        successDescription = `(重大勝訴 ${majorVictoryCount} 件，部分勝訴 ${partialSuccessCount} 件)`;
-    } else if (majorVictoryCount > 0) {
-        successDescription = `(重大勝訴 ${majorVictoryCount} 件)`;
+    if (majorVictoryCount > 0) {
+        successDescription = `(重大勝訴 ${majorVictoryCount} 件`;
+        if (partialSuccessCount > 0) {
+            successDescription += `，部分勝訴 ${partialSuccessCount} 件)`;
+        } else {
+            successDescription += ')';
+        }
     } else if (partialSuccessCount > 0) {
         successDescription = `(部分勝訴 ${partialSuccessCount} 件)`;
     } else {
@@ -367,7 +374,10 @@ function generateStrategicInsights(similarCases, position, verdictAnalysis) {
     return {
         type: position,
         positionLabel,
-        successRate,
+        successRate,  // 只計算 major_victory
+        majorVictoryCount,
+        partialSuccessCount,
+        majorDefeatCount,
         insights: [
             `${positionLabel}成功率：${successRate}% ${successDescription}`,
             successStrategies.length > 0 ?
@@ -1823,10 +1833,11 @@ async function executeAnalysisInBackground(taskId, analysisData, userId) {
             title: c.title
         })));
 
-        const verdictAnalysis = analyzeVerdictDistribution(similarCases);
+        // ✅ 使用新的判決分布分析（基於 overall_result）
+        const position = analysisData.position || 'defendant';  // 預設為被告
+        const verdictAnalysis = analyzeVerdictDistributionByPosition(similarCases, position);
         logMemoryUsage('After-VerdictAnalysis');
-        // ✅ 修復: 使用正確的數據結構
-        console.log(`[casePrecedentAnalysisService] 判決分布分析完成，主流模式: ${verdictAnalysis.mostCommon} (${verdictAnalysis.distribution?.[verdictAnalysis.mostCommon]?.percentage}%)`);
+        console.log(`[casePrecedentAnalysisService] 判決分布分析完成 (${position})，主流模式: ${verdictAnalysis.mostCommon} (${verdictAnalysis.distribution?.[verdictAnalysis.mostCommon]?.percentage}%)`);
         console.log(`[casePrecedentAnalysisService] 判決分布:`, verdictAnalysis.distribution);
 
         // 🆕 2.5. 分析勝負關鍵因素排名
@@ -1951,7 +1962,13 @@ ${smartRecommendations.nextSteps.map(step => `• ${step}`).join('\n')}`;
                     strategicInsights: generateStrategicInsights(similarCases, analysisData.position || 'neutral', verdictAnalysis)
                 },
 
-                verdictDistribution: verdictAnalysis.distribution,
+                // ✅ 修復: 將 distribution 對象轉換為前端期望的數組格式
+                verdictDistribution: Object.entries(verdictAnalysis.distribution || {}).map(([verdict, stats]) => ({
+                    verdict: verdict,
+                    percentage: stats.percentage || 0,
+                    count: stats.count || 0,
+                    overallResult: stats.overallResult  // 保留原始 overall_result 值
+                })),
                 // ✅ 修復: 構建 mainPattern 和 anomalies 以符合前端期望
                 mainPattern: {
                     verdict: verdictAnalysis.mostCommon || '未知',
