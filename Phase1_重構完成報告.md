@@ -219,6 +219,45 @@ const verdictAnalysis = analyzeVerdictFromPositionData(case_, position);
 
 ---
 
+## 🔧 錯誤修復 (2025-10-11 下午)
+
+### **問題**: 前端報錯 `Cannot read properties of undefined (reading 'length')`
+
+**原因**:
+- `analyzeVerdictFromPositionData()` 在缺少 `position_based_analysis` 數據時會拋出異常
+- 但在 `analyzeKeyFactors()` 和 `analyzeKeyFactorsWithFullData()` 中沒有錯誤處理
+- 導致後續代碼無法執行，前端收到不完整的數據
+
+**修復**:
+在兩處調用 `analyzeVerdictFromPositionData()` 的地方添加 try-catch 錯誤處理：
+
+```javascript
+// Line 1217-1224 (analyzeKeyFactors)
+let verdictAnalysis;
+try {
+    verdictAnalysis = analyzeVerdictFromPositionData(case_, position);
+} catch (error) {
+    console.warn(`[analyzeKeyFactors] ⚠️ 案例 ${case_.id} 缺少 position_based_analysis 數據，跳過分析`);
+    return; // 跳過此案例
+}
+
+// Line 1341-1348 (analyzeKeyFactorsWithFullData)
+let verdictAnalysis;
+try {
+    verdictAnalysis = analyzeVerdictFromPositionData(case_, position);
+} catch (error) {
+    console.warn(`[analyzeKeyFactorsWithFullData] ⚠️ 案例 ${case_.id} 缺少 position_based_analysis 數據，跳過分析`);
+    return; // 跳過此案例
+}
+```
+
+**效果**:
+- ✅ 如果案例缺少 `position_based_analysis` 數據，會跳過該案例而不是拋出異常
+- ✅ 其他案例仍然可以正常分析
+- ✅ 前端不會收到錯誤，可以正常顯示分析結果
+
+---
+
 ## 🎉 總結
 
 Phase 1 重構已成功完成!
@@ -229,8 +268,9 @@ Phase 1 重構已成功完成!
 - ✅ 創建了獨立的 `verdictAnalysisService.js` 模組
 - ✅ 所有測試通過，代碼質量提升
 - ✅ 主服務減少 ~100 行代碼，提高可維護性
+- ✅ 添加錯誤處理，提高系統穩定性
 
-**重構負責人**: AI Assistant  
-**完成日期**: 2025-10-11  
-**狀態**: ✅ 完成並測試通過
+**重構負責人**: AI Assistant
+**完成日期**: 2025-10-11
+**狀態**: ✅ 完成並測試通過 (含錯誤修復)
 

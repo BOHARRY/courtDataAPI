@@ -1214,7 +1214,15 @@ async function analyzeKeyFactors(cases, position = 'neutral') {
         console.log(`[analyzeKeyFactors] 🔍 數據路徑檢查: judgmentNodeData=`, !!case_.judgmentNodeData, 'source=', !!case_.source);
 
         // ✅ 使用 position_based_analysis 數據判斷勝負
-        const verdictAnalysis = analyzeVerdictFromPositionData(case_, position);
+        let verdictAnalysis;
+        try {
+            verdictAnalysis = analyzeVerdictFromPositionData(case_, position);
+        } catch (error) {
+            // 如果缺少 position_based_analysis 數據，跳過此案例
+            console.warn(`[analyzeKeyFactors] ⚠️ 案例 ${case_.id} 缺少 position_based_analysis 數據，跳過分析`);
+            return; // 跳過此案例
+        }
+
         const isWinCase = verdictAnalysis.isWin;
         const isLoseCase = verdictAnalysis.isLose;
         const isPartialCase = verdictAnalysis.isPartial;
@@ -1330,7 +1338,15 @@ async function analyzeKeyFactorsWithFullData(casesWithFullData, position = 'neut
         });
 
         // ✅ 使用 position_based_analysis 數據判斷勝負
-        const verdictAnalysis = analyzeVerdictFromPositionData(case_, position);
+        let verdictAnalysis;
+        try {
+            verdictAnalysis = analyzeVerdictFromPositionData(case_, position);
+        } catch (error) {
+            // 如果缺少 position_based_analysis 數據，跳過此案例
+            console.warn(`[analyzeKeyFactorsWithFullData] ⚠️ 案例 ${case_.id} 缺少 position_based_analysis 數據，跳過分析`);
+            return; // 跳過此案例
+        }
+
         const isWinCase = verdictAnalysis.isWin;
         const isLoseCase = verdictAnalysis.isLose;
         const isPartialCase = verdictAnalysis.isPartial;
