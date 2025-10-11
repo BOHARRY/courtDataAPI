@@ -1,0 +1,340 @@
+補充查詢 1: 總體數據統計 (修復版)
+{
+  "took": 14,
+  "timed_out": false,
+  "_shards": {
+    "total": 3,
+    "successful": 3,
+    "skipped": 0,
+    "failed": 0
+  },
+  "hits": {
+    "total": {
+      "value": 10519,
+      "relation": "eq"
+    },
+    "max_score": null,
+    "hits": []
+  },
+  "aggregations": {
+    "has_position_based_analysis": {
+      "doc_count": 10519
+    },
+    "has_defendant_perspective": {
+      "doc_count": 10519
+    },
+    "has_plaintiff_overall_result": {
+      "doc_count": 10519
+    },
+    "has_plaintiff_perspective": {
+      "doc_count": 10519
+    },
+    "has_defendant_overall_result": {
+      "doc_count": 10519
+    }
+  }
+}
+
+=============
+
+補充查詢 2: 民事案件的立場分析完整性 (修復版)
+
+{
+  "took": 9,
+  "timed_out": false,
+  "_shards": {
+    "total": 3,
+    "successful": 3,
+    "skipped": 0,
+    "failed": 0
+  },
+  "hits": {
+    "total": {
+      "value": 10515,
+      "relation": "eq"
+    },
+    "max_score": null,
+    "hits": []
+  },
+  "aggregations": {
+    "civil_defendant_overall_result": {
+      "doc_count_error_upper_bound": 0,
+      "sum_other_doc_count": 0,
+      "buckets": [
+        {
+          "key": "major_defeat",
+          "doc_count": 4598
+        },
+        {
+          "key": "major_victory",
+          "doc_count": 3278
+        },
+        {
+          "key": "partial_success",
+          "doc_count": 2639
+        }
+      ]
+    },
+    "civil_plaintiff_overall_result": {
+      "doc_count_error_upper_bound": 0,
+      "sum_other_doc_count": 0,
+      "buckets": [
+        {
+          "key": "partial_success",
+          "doc_count": 3710
+        },
+        {
+          "key": "major_victory",
+          "doc_count": 3461
+        },
+        {
+          "key": "major_defeat",
+          "doc_count": 3344
+        }
+      ]
+    },
+    "civil_with_position_analysis": {
+      "doc_count": 10515
+    }
+  }
+}
+
+===============
+
+補充查詢 3: 地方法院民事案件的詳細分析 (修復版)
+
+{
+  "took": 13,
+  "timed_out": false,
+  "_shards": {
+    "total": 3,
+    "successful": 3,
+    "skipped": 0,
+    "failed": 0
+  },
+  "hits": {
+    "total": {
+      "value": 8775,
+      "relation": "eq"
+    },
+    "max_score": null,
+    "hits": []
+  },
+  "aggregations": {
+    "verdict_type_distribution": {
+      "doc_count_error_upper_bound": 0,
+      "sum_other_doc_count": 0,
+      "buckets": [
+        {
+          "key": "部分勝訴部分敗訴",
+          "doc_count": 3180
+        },
+        {
+          "key": "原告勝訴",
+          "doc_count": 2836
+        },
+        {
+          "key": "原告敗訴",
+          "doc_count": 2154
+        },
+        {
+          "key": "上訴駁回",
+          "doc_count": 344
+        },
+        {
+          "key": "原判決廢棄改判",
+          "doc_count": 187
+        },
+        {
+          "key": "其他複合主文",
+          "doc_count": 45
+        },
+        {
+          "key": "程序駁回",
+          "doc_count": 23
+        },
+        {
+          "key": "原判決廢棄發回",
+          "doc_count": 4
+        },
+        {
+          "key": "原告部分勝訴",
+          "doc_count": 2
+        }
+      ]
+    },
+    "with_position_analysis": {
+      "doc_count": 8775,
+      "defendant_overall_result": {
+        "doc_count_error_upper_bound": 0,
+        "sum_other_doc_count": 0,
+        "buckets": [
+          {
+            "key": "major_defeat",
+            "doc_count": 4064
+          },
+          {
+            "key": "major_victory",
+            "doc_count": 2546
+          },
+          {
+            "key": "partial_success",
+            "doc_count": 2165
+          }
+        ]
+      },
+      "plaintiff_overall_result": {
+        "doc_count_error_upper_bound": 0,
+        "sum_other_doc_count": 0,
+        "buckets": [
+          {
+            "key": "partial_success",
+            "doc_count": 3184
+          },
+          {
+            "key": "major_victory",
+            "doc_count": 3038
+          },
+          {
+            "key": "major_defeat",
+            "doc_count": 2553
+          }
+        ]
+      },
+      "plaintiff_case_value": {
+        "doc_count_error_upper_bound": 0,
+        "sum_other_doc_count": 0,
+        "buckets": [
+          {
+            "key": "positive_precedent",
+            "doc_count": 3810
+          },
+          {
+            "key": "negative_precedent",
+            "doc_count": 2554
+          },
+          {
+            "key": "neutral_precedent",
+            "doc_count": 2411
+          }
+        ]
+      },
+      "defendant_case_value": {
+        "doc_count_error_upper_bound": 0,
+        "sum_other_doc_count": 0,
+        "buckets": [
+          {
+            "key": "negative_example",
+            "doc_count": 4060
+          },
+          {
+            "key": "model_defense",
+            "doc_count": 2828
+          },
+          {
+            "key": "neutral_example",
+            "doc_count": 1887
+          }
+        ]
+      }
+    }
+  }
+}
+
+======
+
+補充查詢 4: 檢查缺少立場分析的案例 (修復版)
+
+{
+  "took": 18,
+  "timed_out": false,
+  "_shards": {
+    "total": 3,
+    "successful": 3,
+    "skipped": 0,
+    "failed": 0
+  },
+  "hits": {
+    "total": {
+      "value": 0,
+      "relation": "eq"
+    },
+    "max_score": null,
+    "hits": []
+  },
+  "aggregations": {
+    "missing_by_year": {
+      "doc_count_error_upper_bound": 0,
+      "sum_other_doc_count": 0,
+      "buckets": []
+    },
+    "missing_by_verdict_type": {
+      "doc_count_error_upper_bound": 0,
+      "sum_other_doc_count": 0,
+      "buckets": []
+    }
+  }
+}
+
+==============
+
+補充查詢 5: 檢查 case_value 的所有可能值
+
+{
+  "took": 1,
+  "timed_out": false,
+  "_shards": {
+    "total": 3,
+    "successful": 3,
+    "skipped": 0,
+    "failed": 0
+  },
+  "hits": {
+    "total": {
+      "value": 10000,
+      "relation": "gte"
+    },
+    "max_score": null,
+    "hits": []
+  },
+  "aggregations": {
+    "all_plaintiff_case_value": {
+      "doc_count_error_upper_bound": 0,
+      "sum_other_doc_count": 0,
+      "buckets": [
+        {
+          "key": "positive_precedent",
+          "doc_count": 4360
+        },
+        {
+          "key": "negative_precedent",
+          "doc_count": 3339
+        },
+        {
+          "key": "neutral_precedent",
+          "doc_count": 2820
+        }
+      ]
+    },
+    "all_defendant_case_value": {
+      "doc_count_error_upper_bound": 0,
+      "sum_other_doc_count": 0,
+      "buckets": [
+        {
+          "key": "negative_example",
+          "doc_count": 4600
+        },
+        {
+          "key": "model_defense",
+          "doc_count": 3644
+        },
+        {
+          "key": "neutral_example",
+          "doc_count": 2275
+        }
+      ]
+    }
+  }
+}
+
+======

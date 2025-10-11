@@ -1,0 +1,777 @@
+查詢 1: 總體數據統計
+{
+  "error": {
+    "root_cause": [
+      {
+        "type": "illegal_argument_exception",
+        "reason": "Fielddata access on the _id field is disallowed, you can re-enable it by updating the dynamic cluster setting: indices.id_field_data.enabled"
+      }
+    ],
+    "type": "search_phase_execution_exception",
+    "reason": "all shards failed",
+    "phase": "query",
+    "grouped": true,
+    "failed_shards": [
+      {
+        "shard": 0,
+        "index": "search-boooook",
+        "node": "yoqBKAefTGi26BEmN-RV7A",
+        "reason": {
+          "type": "illegal_argument_exception",
+          "reason": "Fielddata access on the _id field is disallowed, you can re-enable it by updating the dynamic cluster setting: indices.id_field_data.enabled"
+        }
+      }
+    ],
+    "caused_by": {
+      "type": "illegal_argument_exception",
+      "reason": "Fielddata access on the _id field is disallowed, you can re-enable it by updating the dynamic cluster setting: indices.id_field_data.enabled",
+      "caused_by": {
+        "type": "illegal_argument_exception",
+        "reason": "Fielddata access on the _id field is disallowed, you can re-enable it by updating the dynamic cluster setting: indices.id_field_data.enabled"
+      }
+    }
+  },
+  "status": 400
+}
+
+============
+
+查詢 2: overall_result 值的分布
+
+{
+  "took": 10,
+  "timed_out": false,
+  "_shards": {
+    "total": 3,
+    "successful": 3,
+    "skipped": 0,
+    "failed": 0
+  },
+  "hits": {
+    "total": {
+      "value": 10000,
+      "relation": "gte"
+    },
+    "max_score": null,
+    "hits": []
+  },
+  "aggregations": {
+    "plaintiff_overall_result_distribution": {
+      "doc_count_error_upper_bound": 0,
+      "sum_other_doc_count": 0,
+      "buckets": [
+        {
+          "key": "partial_success",
+          "doc_count": 3710
+        },
+        {
+          "key": "major_victory",
+          "doc_count": 3461
+        },
+        {
+          "key": "major_defeat",
+          "doc_count": 3348
+        }
+      ]
+    },
+    "defendant_overall_result_distribution": {
+      "doc_count_error_upper_bound": 0,
+      "sum_other_doc_count": 0,
+      "buckets": [
+        {
+          "key": "major_defeat",
+          "doc_count": 4598
+        },
+        {
+          "key": "major_victory",
+          "doc_count": 3282
+        },
+        {
+          "key": "partial_success",
+          "doc_count": 2639
+        }
+      ]
+    }
+  }
+}
+
+
+=================
+
+查詢 3: case_value 值的分布
+
+{
+  "took": 6,
+  "timed_out": false,
+  "_shards": {
+    "total": 3,
+    "successful": 3,
+    "skipped": 0,
+    "failed": 0
+  },
+  "hits": {
+    "total": {
+      "value": 10000,
+      "relation": "gte"
+    },
+    "max_score": null,
+    "hits": []
+  },
+  "aggregations": {
+    "plaintiff_case_value_distribution": {
+      "doc_count_error_upper_bound": 0,
+      "sum_other_doc_count": 0,
+      "buckets": [
+        {
+          "key": "positive_precedent",
+          "doc_count": 4360
+        },
+        {
+          "key": "negative_precedent",
+          "doc_count": 3339
+        },
+        {
+          "key": "neutral_precedent",
+          "doc_count": 2820
+        }
+      ]
+    },
+    "defendant_case_value_distribution": {
+      "doc_count_error_upper_bound": 0,
+      "sum_other_doc_count": 0,
+      "buckets": [
+        {
+          "key": "negative_example",
+          "doc_count": 4600
+        },
+        {
+          "key": "model_defense",
+          "doc_count": 3644
+        },
+        {
+          "key": "neutral_example",
+          "doc_count": 2275
+        }
+      ]
+    }
+  }
+}
+
+==================
+
+查詢 4: 民事案件的立場分析完整性
+
+{
+  "error": {
+    "root_cause": [
+      {
+        "type": "illegal_argument_exception",
+        "reason": "Fielddata access on the _id field is disallowed, you can re-enable it by updating the dynamic cluster setting: indices.id_field_data.enabled"
+      }
+    ],
+    "type": "search_phase_execution_exception",
+    "reason": "all shards failed",
+    "phase": "query",
+    "grouped": true,
+    "failed_shards": [
+      {
+        "shard": 0,
+        "index": "search-boooook",
+        "node": "yoqBKAefTGi26BEmN-RV7A",
+        "reason": {
+          "type": "illegal_argument_exception",
+          "reason": "Fielddata access on the _id field is disallowed, you can re-enable it by updating the dynamic cluster setting: indices.id_field_data.enabled"
+        }
+      }
+    ],
+    "caused_by": {
+      "type": "illegal_argument_exception",
+      "reason": "Fielddata access on the _id field is disallowed, you can re-enable it by updating the dynamic cluster setting: indices.id_field_data.enabled",
+      "caused_by": {
+        "type": "illegal_argument_exception",
+        "reason": "Fielddata access on the _id field is disallowed, you can re-enable it by updating the dynamic cluster setting: indices.id_field_data.enabled"
+      }
+    }
+  },
+  "status": 400
+}
+
+==============
+
+查詢 5: 立場導向向量欄位的存在性
+
+{
+  "took": 25,
+  "timed_out": false,
+  "_shards": {
+    "total": 3,
+    "successful": 3,
+    "skipped": 0,
+    "failed": 0
+  },
+  "hits": {
+    "total": {
+      "value": 10000,
+      "relation": "gte"
+    },
+    "max_score": null,
+    "hits": []
+  },
+  "aggregations": {
+    "has_plaintiff_combined_vector": {
+      "doc_count": 10519
+    },
+    "has_defendant_combined_text": {
+      "doc_count": 10517
+    },
+    "has_defendant_combined_vector": {
+      "doc_count": 10517
+    },
+    "has_replicable_strategies_vector": {
+      "doc_count": 10519
+    },
+    "has_plaintiff_combined_text": {
+      "doc_count": 10519
+    }
+  }
+}
+
+======================
+
+查詢 6: 地方法院民事案件的詳細分析
+
+{
+  "error": {
+    "root_cause": [
+      {
+        "type": "illegal_argument_exception",
+        "reason": "Fielddata access on the _id field is disallowed, you can re-enable it by updating the dynamic cluster setting: indices.id_field_data.enabled"
+      }
+    ],
+    "type": "search_phase_execution_exception",
+    "reason": "all shards failed",
+    "phase": "query",
+    "grouped": true,
+    "failed_shards": [
+      {
+        "shard": 0,
+        "index": "search-boooook",
+        "node": "yoqBKAefTGi26BEmN-RV7A",
+        "reason": {
+          "type": "illegal_argument_exception",
+          "reason": "Fielddata access on the _id field is disallowed, you can re-enable it by updating the dynamic cluster setting: indices.id_field_data.enabled"
+        }
+      }
+    ],
+    "caused_by": {
+      "type": "illegal_argument_exception",
+      "reason": "Fielddata access on the _id field is disallowed, you can re-enable it by updating the dynamic cluster setting: indices.id_field_data.enabled",
+      "caused_by": {
+        "type": "illegal_argument_exception",
+        "reason": "Fielddata access on the _id field is disallowed, you can re-enable it by updating the dynamic cluster setting: indices.id_field_data.enabled"
+      }
+    }
+  },
+  "status": 400
+}
+
+===================
+
+查詢 7: 抽樣檢查 - 獲取 5 個完整案例
+
+{
+  "took": 20,
+  "timed_out": false,
+  "_shards": {
+    "total": 3,
+    "successful": 3,
+    "skipped": 0,
+    "failed": 0
+  },
+  "hits": {
+    "total": {
+      "value": 10000,
+      "relation": "gte"
+    },
+    "max_score": 1.0007105,
+    "hits": [
+      {
+        "_index": "search-boooook",
+        "_id": "PCDV,112,重訴,667,20250509,1",
+        "_score": 1.0007105,
+        "_source": {
+          "JID": "PCDV,112,重訴,667,20250509,1",
+          "JTITLE": "返還借款",
+          "court": "台灣新北地方法院",
+          "verdict_type": "原告勝訴",
+          "position_based_analysis": {
+            "plaintiff_perspective": {
+              "overall_result": "major_victory",
+              "case_value": "positive_precedent"
+            },
+            "defendant_perspective": {
+              "overall_result": "major_defeat",
+              "case_value": "negative_example"
+            }
+          },
+          "plaintiff_combined_text": "需確保有充分的證據支持借貸關係的存在 | 充分準備證據以支持借貸關係的存在 ; 理解並運用法律條文以確保繼承人責任的成立 | 成功證明消費借貸契約的成立 ; 有效運用證人證詞及資金流向作為證據 ; 成功主張繼承人於遺產範圍內的返還責任",
+          "defendant_combined_text": "未能有效反駁借貸關係的存在 ; 未能提供足夠證據支持抗辯"
+        }
+      },
+      {
+        "_index": "search-boooook",
+        "_id": "PCDV,112,重訴,757,20250516,1",
+        "_score": 1.0007105,
+        "_source": {
+          "JID": "PCDV,112,重訴,757,20250516,1",
+          "JTITLE": "給付工資款項等",
+          "court": "台灣新北地方法院",
+          "verdict_type": "原告敗訴",
+          "position_based_analysis": {
+            "plaintiff_perspective": {
+              "overall_result": "major_defeat",
+              "case_value": "negative_precedent"
+            },
+            "defendant_perspective": {
+              "overall_result": "major_victory",
+              "case_value": "model_defense"
+            }
+          },
+          "plaintiff_combined_text": "在證據不充分的情況下提起訴訟可能導致敗訴 | 未能提供雙方簽署確認的證據 ; 自承為承攬關係且有佐證 ; 未能舉證工程已完成 | 確保所有關鍵文件均經雙方簽署確認 ; 避免在其他法律程序中自承不利於己的事實 ; 在提起訴訟前確保有充分證據支持主張",
+          "defendant_combined_text": "提供發票、報價單及對話紀錄等佐證 ; 利用原告在刑事案件中的自承作為抗辯依據 | 準備充分的書面證據 ; 利用對方在其他法律程序中的不利陳述 ; 清晰界定雙方關係性質"
+        }
+      },
+      {
+        "_index": "search-boooook",
+        "_id": "PCDV,112,重訴,788,20250526,2",
+        "_score": 1.0007105,
+        "_source": {
+          "JID": "PCDV,112,重訴,788,20250526,2",
+          "JTITLE": "確認債權存在",
+          "court": "台灣新北地方法院",
+          "verdict_type": "原告敗訴",
+          "position_based_analysis": {
+            "plaintiff_perspective": {
+              "overall_result": "major_defeat",
+              "case_value": "negative_precedent"
+            },
+            "defendant_perspective": {
+              "overall_result": "major_victory",
+              "case_value": "model_defense"
+            }
+          },
+          "plaintiff_combined_text": "未充分舉證可能導致訴訟失敗 | 未能提供足夠證據證明玉王公司對被告有消費借貸或契約所生債權 ; 分類帳僅為會計紀錄，證明力不足 ; 協調會證詞為單方陳述，不具證據力 ; 都更契約履行情形不明，難以確認債權存在 | 必須準備充分且具體的證據以支持債權存在的主張 ; 單方陳述和會計紀錄不足以作為有力證據 ; 需清楚界定契約履行的具體情形",
+          "defendant_combined_text": "強調原告未能提供足夠證據支持其主張 ; 指出分類帳和協調會證詞的證據力不足 ; 證明款項受領有契約原因，非不當得利 | 質疑原告證據的充分性和證明力 ; 強調合同履行的合法性和合理性"
+        }
+      },
+      {
+        "_index": "search-boooook",
+        "_id": "PCDV,113,保險,22,20250529,2",
+        "_score": 1.0007105,
+        "_source": {
+          "JID": "PCDV,113,保險,22,20250529,2",
+          "JTITLE": "給付保險金",
+          "court": "台灣新北地方法院",
+          "verdict_type": "原告敗訴",
+          "position_based_analysis": {
+            "plaintiff_perspective": {
+              "overall_result": "major_defeat",
+              "case_value": "negative_precedent"
+            },
+            "defendant_perspective": {
+              "overall_result": "major_victory",
+              "case_value": "model_defense"
+            }
+          },
+          "plaintiff_combined_text": "投保前未如實告知已知的健康狀況可能導致保險理賠失敗 | 未能證明ASD於投保後才確診 ; 未能有效反駁被告關於ASD表徵已存在的主張 | 投保時應如實告知已知的健康狀況 ; 確保對疾病的定義和保險契約的條款有清晰的理解",
+          "defendant_combined_text": "成功證明原告於投保前已有ASD表徵 ; 有效引用保險法第127條來支持抗辯 | 詳細檢視投保前的健康紀錄 ; 利用法律條款如保險法第127條來支持抗辯"
+        }
+      },
+      {
+        "_index": "search-boooook",
+        "_id": "PCDV,113,勞簡,164,20250505,1",
+        "_score": 1.0007105,
+        "_source": {
+          "JID": "PCDV,113,勞簡,164,20250505,1",
+          "JTITLE": "給付扣押款",
+          "court": "台灣新北地方法院",
+          "verdict_type": "原告勝訴",
+          "position_based_analysis": {
+            "plaintiff_perspective": {
+              "overall_result": "major_victory",
+              "case_value": "positive_precedent"
+            },
+            "defendant_perspective": {
+              "overall_result": "major_defeat",
+              "case_value": "negative_example"
+            }
+          },
+          "plaintiff_combined_text": "被告若到庭並提出抗辯，可能增加訴訟不確定性 | 確保移轉命令的合法性和有效送達 ; 準備充分的證據支持請求 ; 利用被告未到庭的情況，依據法律視為自認 | 依據合法的移轉命令請求給付 ; 提供充分證據支持請求 ; 被告未到庭，視為自認",
+          "defendant_combined_text": "未到庭或提出書狀進行抗辯 ; 未對原告的主張進行任何爭執"
+        }
+      }
+    ]
+  }
+}
+
+====================
+
+查詢 8: 檢查 "部分勝訴部分敗訴" 案例的立場分析
+
+{
+  "took": 32,
+  "timed_out": false,
+  "_shards": {
+    "total": 3,
+    "successful": 3,
+    "skipped": 0,
+    "failed": 0
+  },
+  "hits": {
+    "total": {
+      "value": 3256,
+      "relation": "eq"
+    },
+    "max_score": 2.2090967,
+    "hits": [
+      {
+        "_index": "search-boooook",
+        "_id": "MLDV,113,苗簡,748,20250529,2",
+        "_score": 2.2090967,
+        "_source": {
+          "JID": "MLDV,113,苗簡,748,20250529,2",
+          "JTITLE": "分割共有物",
+          "verdict_type": "部分勝訴部分敗訴",
+          "position_based_analysis": {
+            "plaintiff_perspective": {
+              "overall_result": "major_victory",
+              "case_value": "positive_precedent"
+            },
+            "defendant_perspective": {
+              "overall_result": "partial_success",
+              "case_value": "neutral_example"
+            }
+          }
+        }
+      },
+      {
+        "_index": "search-boooook",
+        "_id": "MLDV,113,訴,592,20250515,1",
+        "_score": 2.2090967,
+        "_source": {
+          "JID": "MLDV,113,訴,592,20250515,1",
+          "JTITLE": "侵權行為損害賠償",
+          "verdict_type": "部分勝訴部分敗訴",
+          "position_based_analysis": {
+            "plaintiff_perspective": {
+              "overall_result": "partial_success",
+              "case_value": "positive_precedent"
+            },
+            "defendant_perspective": {
+              "overall_result": "major_defeat",
+              "case_value": "negative_example"
+            }
+          }
+        }
+      },
+      {
+        "_index": "search-boooook",
+        "_id": "MLDV,113,重家繼訴,4,20250515,1",
+        "_score": 2.2090967,
+        "_source": {
+          "JID": "MLDV,113,重家繼訴,4,20250515,1",
+          "JTITLE": "扣減特留分等",
+          "verdict_type": "部分勝訴部分敗訴",
+          "position_based_analysis": {
+            "plaintiff_perspective": {
+              "overall_result": "partial_success",
+              "case_value": "neutral_precedent"
+            },
+            "defendant_perspective": {
+              "overall_result": "partial_success",
+              "case_value": "neutral_example"
+            }
+          }
+        }
+      },
+      {
+        "_index": "search-boooook",
+        "_id": "MLDV,113,重訴,58,20250507,1",
+        "_score": 2.2090967,
+        "_source": {
+          "JID": "MLDV,113,重訴,58,20250507,1",
+          "JTITLE": "拆屋還地等",
+          "verdict_type": "部分勝訴部分敗訴",
+          "position_based_analysis": {
+            "plaintiff_perspective": {
+              "overall_result": "major_victory",
+              "case_value": "positive_precedent"
+            },
+            "defendant_perspective": {
+              "overall_result": "major_defeat",
+              "case_value": "negative_example"
+            }
+          }
+        }
+      },
+      {
+        "_index": "search-boooook",
+        "_id": "MLDV,114,訴,110,20250527,1",
+        "_score": 2.2090967,
+        "_source": {
+          "JID": "MLDV,114,訴,110,20250527,1",
+          "JTITLE": "侵權行為損害賠償",
+          "verdict_type": "部分勝訴部分敗訴",
+          "position_based_analysis": {
+            "plaintiff_perspective": {
+              "overall_result": "partial_success",
+              "case_value": "neutral_precedent"
+            },
+            "defendant_perspective": {
+              "overall_result": "major_victory",
+              "case_value": "model_defense"
+            }
+          }
+        }
+      },
+      {
+        "_index": "search-boooook",
+        "_id": "MLDV,114,訴,119,20250509,1",
+        "_score": 2.2090967,
+        "_source": {
+          "JID": "MLDV,114,訴,119,20250509,1",
+          "JTITLE": "塗銷分割繼承登記等",
+          "verdict_type": "部分勝訴部分敗訴",
+          "position_based_analysis": {
+            "plaintiff_perspective": {
+              "overall_result": "partial_success",
+              "case_value": "neutral_precedent"
+            },
+            "defendant_perspective": {
+              "overall_result": "major_defeat",
+              "case_value": "negative_example"
+            }
+          }
+        }
+      },
+      {
+        "_index": "search-boooook",
+        "_id": "MLDV,114,訴,189,20250529,1",
+        "_score": 2.2090967,
+        "_source": {
+          "JID": "MLDV,114,訴,189,20250529,1",
+          "JTITLE": "遷讓房屋等",
+          "verdict_type": "部分勝訴部分敗訴",
+          "position_based_analysis": {
+            "plaintiff_perspective": {
+              "overall_result": "major_victory",
+              "case_value": "positive_precedent"
+            },
+            "defendant_perspective": {
+              "overall_result": "major_defeat",
+              "case_value": "negative_example"
+            }
+          }
+        }
+      },
+      {
+        "_index": "search-boooook",
+        "_id": "TPDV,113,訴,1008,20250528,3",
+        "_score": 2.2090967,
+        "_source": {
+          "JID": "TPDV,113,訴,1008,20250528,3",
+          "JTITLE": "損害賠償",
+          "verdict_type": "部分勝訴部分敗訴",
+          "position_based_analysis": {
+            "plaintiff_perspective": {
+              "overall_result": "partial_success",
+              "case_value": "neutral_precedent"
+            },
+            "defendant_perspective": {
+              "overall_result": "partial_success",
+              "case_value": "neutral_example"
+            }
+          }
+        }
+      },
+      {
+        "_index": "search-boooook",
+        "_id": "TPDV,113,訴,148,20250505,3",
+        "_score": 2.2090967,
+        "_source": {
+          "JID": "TPDV,113,訴,148,20250505,3",
+          "JTITLE": "損害賠償",
+          "verdict_type": "部分勝訴部分敗訴",
+          "position_based_analysis": {
+            "plaintiff_perspective": {
+              "overall_result": "partial_success",
+              "case_value": "neutral_precedent"
+            },
+            "defendant_perspective": {
+              "overall_result": "partial_success",
+              "case_value": "neutral_example"
+            }
+          }
+        }
+      },
+      {
+        "_index": "search-boooook",
+        "_id": "TPDV,113,訴,1486,20250509,1",
+        "_score": 2.2090967,
+        "_source": {
+          "JID": "TPDV,113,訴,1486,20250509,1",
+          "JTITLE": "債務人異議之訴",
+          "verdict_type": "部分勝訴部分敗訴",
+          "position_based_analysis": {
+            "plaintiff_perspective": {
+              "overall_result": "partial_success",
+              "case_value": "neutral_precedent"
+            },
+            "defendant_perspective": {
+              "overall_result": "partial_success",
+              "case_value": "neutral_example"
+            }
+          }
+        }
+      }
+    ]
+  },
+  "aggregations": {
+    "defendant_overall_result_in_partial_verdict": {
+      "doc_count_error_upper_bound": 0,
+      "sum_other_doc_count": 0,
+      "buckets": [
+        {
+          "key": "partial_success",
+          "doc_count": 1908
+        },
+        {
+          "key": "major_defeat",
+          "doc_count": 1241
+        },
+        {
+          "key": "major_victory",
+          "doc_count": 107
+        }
+      ]
+    },
+    "plaintiff_overall_result_in_partial_verdict": {
+      "doc_count_error_upper_bound": 0,
+      "sum_other_doc_count": 0,
+      "buckets": [
+        {
+          "key": "partial_success",
+          "doc_count": 3018
+        },
+        {
+          "key": "major_victory",
+          "doc_count": 139
+        },
+        {
+          "key": "major_defeat",
+          "doc_count": 99
+        }
+      ]
+    }
+  }
+}
+
+===================
+
+查詢 9: 檢查缺少立場分析的案例
+
+{
+  "error": {
+    "root_cause": [
+      {
+        "type": "illegal_argument_exception",
+        "reason": "Fielddata access on the _id field is disallowed, you can re-enable it by updating the dynamic cluster setting: indices.id_field_data.enabled"
+      }
+    ],
+    "type": "search_phase_execution_exception",
+    "reason": "all shards failed",
+    "phase": "query",
+    "grouped": true,
+    "failed_shards": [
+      {
+        "shard": 0,
+        "index": "search-boooook",
+        "node": "yoqBKAefTGi26BEmN-RV7A",
+        "reason": {
+          "type": "illegal_argument_exception",
+          "reason": "Fielddata access on the _id field is disallowed, you can re-enable it by updating the dynamic cluster setting: indices.id_field_data.enabled"
+        }
+      }
+    ],
+    "caused_by": {
+      "type": "illegal_argument_exception",
+      "reason": "Fielddata access on the _id field is disallowed, you can re-enable it by updating the dynamic cluster setting: indices.id_field_data.enabled",
+      "caused_by": {
+        "type": "illegal_argument_exception",
+        "reason": "Fielddata access on the _id field is disallowed, you can re-enable it by updating the dynamic cluster setting: indices.id_field_data.enabled"
+      }
+    }
+  },
+  "status": 400
+}
+
+====================
+
+查詢 10: 檢查 overall_result 的所有可能值
+
+{
+  "took": 1,
+  "timed_out": false,
+  "_shards": {
+    "total": 3,
+    "successful": 3,
+    "skipped": 0,
+    "failed": 0
+  },
+  "hits": {
+    "total": {
+      "value": 10000,
+      "relation": "gte"
+    },
+    "max_score": null,
+    "hits": []
+  },
+  "aggregations": {
+    "all_defendant_overall_result_values": {
+      "doc_count_error_upper_bound": 0,
+      "sum_other_doc_count": 0,
+      "buckets": [
+        {
+          "key": "major_defeat",
+          "doc_count": 4598
+        },
+        {
+          "key": "major_victory",
+          "doc_count": 3282
+        },
+        {
+          "key": "partial_success",
+          "doc_count": 2639
+        }
+      ]
+    },
+    "all_plaintiff_overall_result_values": {
+      "doc_count_error_upper_bound": 0,
+      "sum_other_doc_count": 0,
+      "buckets": [
+        {
+          "key": "partial_success",
+          "doc_count": 3710
+        },
+        {
+          "key": "major_victory",
+          "doc_count": 3461
+        },
+        {
+          "key": "major_defeat",
+          "doc_count": 3348
+        }
+      ]
+    }
+  }
+}
