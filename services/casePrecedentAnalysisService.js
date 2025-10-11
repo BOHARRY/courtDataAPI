@@ -255,17 +255,16 @@ function generatePositionStats(similarCases, position) {
     }
 
     // 計算立場導向統計
+    // ✅ 修復: 只有 major_victory 才算成功，不應該用 case_value 判斷
+    // case_value (model_defense, neutral_example, negative_example) 只是案例的參考價值，不代表勝負
     const successCases = casesWithPositionData.filter(c => {
         const analysis = c.positionAnalysis[positionKey];
-        return analysis.overall_result === 'major_victory' ||
-               analysis.case_value === 'positive_precedent' ||
-               analysis.case_value === 'model_defense';
+        return analysis.overall_result === 'major_victory';
     });
 
     const riskCases = casesWithPositionData.filter(c => {
         const analysis = c.positionAnalysis[positionKey];
-        return analysis.overall_result === 'major_defeat' ||
-               analysis.case_value === 'negative_precedent';
+        return analysis.overall_result === 'major_defeat';
     });
 
     const successRate = Math.round((successCases.length / casesWithPositionData.length) * 100);
