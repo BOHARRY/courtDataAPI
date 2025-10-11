@@ -150,9 +150,20 @@ export function analyzeVerdictDistributionByPosition(cases, position) {
         verdictStats[label].percentage = Math.round((verdictStats[label].count / totalCases) * 100);
     });
 
-    // 排序（按數量降序）
+    // ✅ 排序邏輯：按照 major_victory > partial_success > major_defeat 的順序
+    // 這樣律師可以清楚看到：重大勝訴 > 部分勝訴 > 重大敗訴
+    const orderPriority = {
+        'major_victory': 1,
+        'partial_success': 2,
+        'major_defeat': 3
+    };
+
     const sortedVerdicts = Object.entries(verdictStats)
-        .sort((a, b) => b[1].count - a[1].count)
+        .sort((a, b) => {
+            const priorityA = orderPriority[a[1].overallResult] || 999;
+            const priorityB = orderPriority[b[1].overallResult] || 999;
+            return priorityA - priorityB;  // 按優先級排序
+        })
         .reduce((acc, [label, stats]) => {
             acc[label] = stats;
             return acc;

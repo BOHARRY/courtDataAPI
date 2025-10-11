@@ -353,40 +353,52 @@ function generateStrategicInsights(similarCases, position, verdictAnalysis) {
         c.positionAnalysis[positionKey].overall_result === 'major_defeat'
     ).length;
 
-    // ✅ 成功率 = 只計算 major_victory
-    const successRate = Math.round((majorVictoryCount / casesWithPositionData.length) * 100);
+    // ✅ 計算各種比例
+    const majorVictoryRate = Math.round((majorVictoryCount / casesWithPositionData.length) * 100);
+    const partialSuccessRate = Math.round((partialSuccessCount / casesWithPositionData.length) * 100);
+    const majorDefeatRate = Math.round((majorDefeatCount / casesWithPositionData.length) * 100);
 
-    // ✅ 根據實際數據生成描述
-    let successDescription = '';
-    if (majorVictoryCount > 0) {
-        successDescription = `(重大勝訴 ${majorVictoryCount} 件`;
-        if (partialSuccessCount > 0) {
-            successDescription += `，部分勝訴 ${partialSuccessCount} 件)`;
-        } else {
-            successDescription += ')';
-        }
-    } else if (partialSuccessCount > 0) {
-        successDescription = `(部分勝訴 ${partialSuccessCount} 件)`;
+    // ✅ 生成清晰的洞察文案（按照重大勝訴 > 部分勝訴 > 重大敗訴的順序）
+    const insights = [];
+
+    // 第一行：重大勝訴率
+    insights.push(`${positionLabel}重大勝訴率：${majorVictoryRate}% (${majorVictoryCount} 件)`);
+
+    // 第二行：部分勝訴率（如果有）
+    if (partialSuccessCount > 0) {
+        insights.push(`${positionLabel}部分勝訴率：${partialSuccessRate}% (${partialSuccessCount} 件)`);
+    }
+
+    // 第三行：重大敗訴率（如果有）
+    if (majorDefeatCount > 0) {
+        insights.push(`${positionLabel}重大敗訴率：${majorDefeatRate}% (${majorDefeatCount} 件)`);
+    }
+
+    // 第四行：關鍵成功策略
+    if (successStrategies.length > 0) {
+        insights.push(`關鍵成功策略：${[...new Set(successStrategies)].slice(0, 3).join('、')}`);
     } else {
-        successDescription = `(無明顯有利結果)`;
+        insights.push('成功策略數據不足');
+    }
+
+    // 第五行：主要風險因素
+    if (riskFactors.length > 0) {
+        insights.push(`主要風險因素：${[...new Set(riskFactors)].slice(0, 3).join('、')}`);
+    } else {
+        insights.push('風險因素數據不足');
     }
 
     return {
         type: position,
         positionLabel,
-        successRate,  // 只計算 major_victory
+        successRate: majorVictoryRate,  // 只計算 major_victory
         majorVictoryCount,
+        majorVictoryRate,
         partialSuccessCount,
+        partialSuccessRate,
         majorDefeatCount,
-        insights: [
-            `${positionLabel}成功率：${successRate}% ${successDescription}`,
-            successStrategies.length > 0 ?
-                `關鍵成功策略：${[...new Set(successStrategies)].slice(0, 3).join('、')}` :
-                '成功策略數據不足',
-            riskFactors.length > 0 ?
-                `主要風險因素：${[...new Set(riskFactors)].slice(0, 3).join('、')}` :
-                '風險因素數據不足'
-        ]
+        majorDefeatRate,
+        insights: insights
     };
 }
 
