@@ -1716,7 +1716,7 @@ async function analyzeAnomalies(mainCases, anomalyCases, caseDescription) {
     if (anomalyCases.length === 0) {
         return null;
     }
-    
+
     try {
         const prompt = `你是一位資深的法律分析師。請分析以下案例數據，找出異常判決結果的關鍵差異因素。
 
@@ -1748,7 +1748,7 @@ ${anomalyCases.map((c, i) => `${i+1}. 判決：${c.verdictType} - ${c.summary?.s
             temperature: 0.3,
             response_format: { type: "json_object" }
         });
-        
+
         return JSON.parse(response.choices[0].message.content);
     } catch (error) {
         console.error('[casePrecedentAnalysisService] AI 異常分析失敗:', error);
@@ -1897,7 +1897,7 @@ async function executeAnalysisInBackground(taskId, analysisData, userId) {
         //         anomalyDetails = createTestAnomalyDetails(verdictAnalysis.anomalies);
         //     }
         // }
-        
+
         // 🆕 5. 生成智能推薦建議
         const smartRecommendations = generateSmartRecommendations(
             similarCases,
@@ -2120,10 +2120,10 @@ ${smartRecommendations.nextSteps.map(step => `• ${step}`).join('\n')}`;
         }
 
         console.log(`[casePrecedentAnalysisService] 分析完成，任務ID: ${taskId}`);
-        
+
     } catch (error) {
         console.error(`[casePrecedentAnalysisService] 背景執行失敗，任務ID: ${taskId}`, error);
-        
+
         // 更新任務狀態為失敗
         await taskRef.update({
             status: 'failed',
@@ -2142,11 +2142,11 @@ export async function startCasePrecedentAnalysis(analysisData, userId) {
         error.statusCode = 400;
         throw error;
     }
-    
+
     const db = admin.firestore();
     const taskRef = db.collection('aiAnalysisTasks').doc();
     const taskId = taskRef.id;
-    
+
     const taskData = {
         userId,
         taskId,
@@ -2155,13 +2155,13 @@ export async function startCasePrecedentAnalysis(analysisData, userId) {
         status: 'pending',
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
     };
-    
+
     await taskRef.set(taskData);
     console.log(`[casePrecedentAnalysisService] 任務 ${taskId} 已為用戶 ${userId} 創建`);
-    
+
     // **非同步執行**，不等待其完成
     executeAnalysisInBackground(taskId, analysisData, userId);
-    
+
     return { taskId };
 }
 
@@ -2435,64 +2435,111 @@ function createTestAnomalyDetails(anomalies) {
 }
 
 /**
- * 🚨 從案例池中獲取主流判決案例的詳細數據
+ * 🆕 從案例池中獲取重大判決案例（優先重大勝訴+重大敗訴，不足則補充部分勝訴）
  */
-async function getMainstreamCasesFromPool(casePool, mainVerdictType) {
+async function getCriticalCasesFromPool(casePool, position, maxCount = 10) {
     try {
-        console.log(`[getMainstreamCasesFromPool] 從案例池獲取主流判決案例: ${mainVerdictType}`);
+        console.log(`[getCriticalCasesFromPool] 🎯 從案例池獲取重大判決案例，立場: ${position}，最多: ${maxCount} 件`);
 
-        // 1. 從案例池中篩選主流判決案例
-        const mainCaseIds = casePool.mainPattern.cases;
-        const mainCases = casePool.allCases.filter(case_ =>
-            mainCaseIds.includes(case_.id) && case_.verdictType === mainVerdictType
-        );
+        const positionKey = position === 'plaintiff' ? 'plaintiff_perspective' : 'defendant_perspective';
 
-        console.log(`[getMainstreamCasesFromPool] 找到 ${mainCases.length} 個主流案例`);
+        // 1. 分類案例
+        const majorVictory = [];  // 重大勝訴
+        const majorDefeat = [];   // 重大敗訴
+        const partialSuccess = []; // 部分勝訴
 
-        // 2. 獲取完整的判決數據（如果需要 summary_ai_full）
-        const mainStreamCases = [];
-        for (let i = 0; i < Math.min(mainCases.length, 10); i++) {
-            const case_ = mainCases[i];
+        casePool.allCases.forEach(case_ => {
+            const analysis = case_.position_based_analysis?.[positionKey];
+            if (!analysis) return;
 
-            // 🚨 修復：從 ES 獲取完整數據（因為案例池已精簡）
+            switch (analysis.overall_result) {
+                case 'major_victory':
+                    majorVictory.push(case_);
+                    break;
+                case 'major_defeat':
+                    majorDefeat.push(case_);
+                    break;
+                case 'partial_success':
+                    partialSuccess.push(case_);
+                    break;
+            }
+        });
+
+        console.log(`[getCriticalCasesFromPool] 📊 案例分類: 重大勝訴 ${majorVictory.length} 件, 重大敗訴 ${majorDefeat.length} 件, 部分勝訴 ${partialSuccess.length} 件`);
+
+        // 2. 優先選擇重大勝訴和重大敗訴
+        const selectedCases = [];
+
+        // 2.1 加入所有重大勝訴（最多5件）
+        selectedCases.push(...majorVictory.slice(0, 5));
+
+        // 2.2 加入所有重大敗訴（最多5件）
+        selectedCases.push(...majorDefeat.slice(0, 5));
+
+        // 2.3 如果不足 maxCount 件，從部分勝訴補充
+        if (selectedCases.length < maxCount) {
+            const remaining = maxCount - selectedCases.length;
+            selectedCases.push(...partialSuccess.slice(0, remaining));
+        }
+
+        console.log(`[getCriticalCasesFromPool] ✅ 選擇了 ${selectedCases.length} 件案例進行分析`);
+
+        // 3. 獲取完整的判決數據
+        const criticalCases = [];
+        for (let i = 0; i < selectedCases.length; i++) {
+            const case_ = selectedCases[i];
+
             try {
                 const judgmentData = await getJudgmentNodeData(case_.id);
-                mainStreamCases.push({
+                const analysis = case_.position_based_analysis?.[positionKey];
+
+                criticalCases.push({
                     id: case_.id,
                     title: case_.title,
                     court: case_.court,
                     year: case_.year,
                     verdictType: case_.verdictType,
+                    overallResult: analysis?.overall_result,  // ✅ 新增
                     similarity: case_.similarity,
                     summaryAiFull: judgmentData.summary_ai_full ||
                                   (Array.isArray(judgmentData.summary_ai) ?
                                    judgmentData.summary_ai.join(' ') :
                                    judgmentData.summary_ai || ''),
-                    positionAnalysis: case_.positionAnalysis,
+                    positionAnalysis: case_.position_based_analysis,
                     citationIndex: i + 1
                 });
             } catch (error) {
-                console.warn(`[getMainstreamCasesFromPool] 無法獲取案例 ${case_.id} 的完整數據:`, error.message);
+                console.warn(`[getCriticalCasesFromPool] 無法獲取案例 ${case_.id} 的完整數據:`, error.message);
+                const analysis = case_.position_based_analysis?.[positionKey];
+
                 // 即使獲取失敗，也添加基本信息
-                mainStreamCases.push({
+                criticalCases.push({
                     id: case_.id,
                     title: case_.title,
                     court: case_.court,
                     year: case_.year,
                     verdictType: case_.verdictType,
+                    overallResult: analysis?.overall_result,
                     similarity: case_.similarity,
                     summaryAiFull: `${case_.title} - ${case_.court} ${case_.year}年判決`,
-                    positionAnalysis: case_.positionAnalysis,
+                    positionAnalysis: case_.position_based_analysis,
                     citationIndex: i + 1
                 });
             }
         }
 
-        console.log(`[getMainstreamCasesFromPool] 成功獲取 ${mainStreamCases.length} 個主流案例的完整數據`);
-        return mainStreamCases;
+        // 4. 統計分析的案例分布
+        const distribution = {
+            majorVictory: criticalCases.filter(c => c.overallResult === 'major_victory').length,
+            majorDefeat: criticalCases.filter(c => c.overallResult === 'major_defeat').length,
+            partialSuccess: criticalCases.filter(c => c.overallResult === 'partial_success').length
+        };
 
+        console.log(`[getCriticalCasesFromPool] 📊 分析案例分布: 重大勝訴 ${distribution.majorVictory} 件, 重大敗訴 ${distribution.majorDefeat} 件, 部分勝訴 ${distribution.partialSuccess} 件`);
+
+        return { cases: criticalCases, distribution };
     } catch (error) {
-        console.error('[getMainstreamCasesFromPool] 獲取主流案例失敗:', error);
+        console.error('[getCriticalCasesFromPool] 獲取重大判決案例失敗:', error);
         throw error;
     }
 }
@@ -2692,6 +2739,124 @@ ${commonRequirements}
 }
 
 /**
+ * 🆕 生成重大判決分析的提示詞（讓 AI 自由發揮）
+ */
+function getCriticalAnalysisPrompt(position, caseDescription, distribution, caseSummaries) {
+    const positionLabel = position === 'plaintiff' ? '原告' : '被告';
+    const strategyLabel = position === 'plaintiff' ? '攻擊' : '防禦';
+
+    const baseInfo = `**用戶案件描述：**
+${caseDescription}
+
+**分析案例分布：**
+- 重大勝訴：${distribution.majorVictory} 件
+- 重大敗訴：${distribution.majorDefeat} 件
+- 部分勝訴：${distribution.partialSuccess} 件
+
+🎯 **重要說明：以下案例優先選擇重大勝訴和重大敗訴，幫助律師學習成功策略和避免失敗陷阱**
+
+**重大判決案例：**
+${caseSummaries}`;
+
+    const commonRequirements = `
+**重要要求：**
+- 每個分析點都必須引用具體的判決書，使用格式 [數字]
+- 引用要精準，確保引用的判決書確實支持該論點
+- 分析要深入，不只是表面描述
+- 提供可操作的策略建議
+- 讓 AI 自由發揮，不限制固定維度`;
+
+    if (position === 'plaintiff') {
+        return `你是資深原告律師，擁有豐富的訴訟經驗。請分析以下重大判決案例，提供律師實戰可用的策略指導。
+
+${baseInfo}
+
+請從原告律師的專業角度進行分析，重點關注：
+
+1. **重大勝訴案例分析**（如果有）
+   - 成功關鍵因素是什麼？
+   - 有哪些可複製的勝訴策略？
+   - 原告律師使用了哪些有效的攻擊策略？
+
+2. **重大敗訴案例分析**（如果有）
+   - 失敗的主要原因是什麼？
+   - 有哪些需要避免的陷阱？
+   - 原告方在哪些方面準備不足？
+
+3. **部分勝訴案例分析**（如果有）
+   - 常見的部分勝訴模式是什麼？
+   - 如何從部分勝訴提升到重大勝訴？
+   - 有哪些可以改進的地方？
+
+4. **綜合策略建議**
+   - 基於以上分析，為用戶案件提供具體的攻擊策略
+   - 重點準備哪些證據？
+   - 如何最大化勝訴機會？
+
+**分析重點**：幫助原告律師學習成功策略，避免失敗陷阱，提供實戰可用的指導
+${commonRequirements}
+
+請以JSON格式回應（讓 AI 自由發揮，不限制固定欄位）：
+{
+  "summaryText": "重大判決分析摘要...",
+  "majorVictoryAnalysis": "重大勝訴案例分析...",
+  "majorDefeatAnalysis": "重大敗訴案例分析...",
+  "partialSuccessAnalysis": "部分勝訴案例分析...",
+  "strategicRecommendations": "綜合策略建議...",
+  "citations": {
+    "1": "判決書標題1 (法院 年份)",
+    "2": "判決書標題2 (法院 年份)",
+    ...
+  }
+}`;
+    } else {
+        return `你是資深被告律師，擁有豐富的抗辯經驗。請分析以下重大判決案例，提供被告律師實戰可用的防禦指導。
+
+${baseInfo}
+
+請從被告律師的專業角度進行分析，重點關注：
+
+1. **重大勝訴案例分析**（如果有）
+   - 成功防禦的關鍵因素是什麼？
+   - 有哪些可複製的防禦策略？
+   - 被告律師使用了哪些有效的抗辯策略？
+
+2. **重大敗訴案例分析**（如果有）
+   - 防禦失敗的主要原因是什麼？
+   - 有哪些需要避免的陷阱？
+   - 被告方在哪些方面準備不足？
+
+3. **部分勝訴案例分析**（如果有）
+   - 常見的部分勝訴模式是什麼？
+   - 如何從部分勝訴提升到重大勝訴？
+   - 有哪些可以改進的地方？
+
+4. **綜合防禦建議**
+   - 基於以上分析，為用戶案件提供具體的防禦策略
+   - 重點準備哪些抗辯理由和證據？
+   - 如何最大化勝訴或減損機會？
+
+**分析重點**：幫助被告律師學習成功防禦策略，避免失敗陷阱，提供實戰可用的指導
+${commonRequirements}
+
+請以JSON格式回應（讓 AI 自由發揮，不限制固定欄位）：
+{
+  "summaryText": "重大判決分析摘要...",
+  "majorVictoryAnalysis": "重大勝訴案例分析...",
+  "majorDefeatAnalysis": "重大敗訴案例分析...",
+  "partialSuccessAnalysis": "部分勝訴案例分析...",
+  "strategicRecommendations": "綜合防禦建議...",
+  "citations": {
+    "1": "判決書標題1 (法院 年份)",
+    "2": "判決書標題2 (法院 年份)",
+    ...
+  }
+}`;
+    }
+}
+
+
+/**
  * 🆕 準備包含立場分析的案例摘要
  */
 function prepareEnrichedCaseSummaries(mainStreamCases, position) {
@@ -2786,6 +2951,55 @@ async function analyzeMainstreamPattern(caseDescription, mainStreamCases, mainPa
 }
 
 /**
+ * 🆕 使用 AI 分析重大判決模式 - 優先分析重大勝訴和重大敗訴
+ */
+async function analyzeCriticalPattern(caseDescription, criticalCases, distribution, position = 'defendant') {
+    try {
+        console.log(`[analyzeCriticalPattern] 🎯 開始分析重大判決模式，立場: ${position}`);
+        console.log(`[analyzeCriticalPattern] 📊 案例分布: 重大勝訴 ${distribution.majorVictory} 件, 重大敗訴 ${distribution.majorDefeat} 件, 部分勝訴 ${distribution.partialSuccess} 件`);
+
+        // 1. 準備包含立場分析的案例摘要文本
+        const caseSummaries = prepareEnrichedCaseSummaries(criticalCases, position);
+
+        // 2. 使用新的提示詞（讓 AI 自由發揮）
+        const prompt = getCriticalAnalysisPrompt(position, caseDescription, distribution, caseSummaries);
+
+        const response = await openai.chat.completions.create({
+            model: ANALYSIS_MODEL,
+            messages: [{ role: 'user', content: prompt }],
+            temperature: 0.3,
+            response_format: { type: "json_object" }
+        });
+
+        const analysisResult = JSON.parse(response.choices[0].message.content);
+
+        // 3. 確保引用格式一致
+        const citations = {};
+        criticalCases.forEach((case_, index) => {
+            citations[index + 1] = {
+                judgementId: `${case_.title} (${case_.court} ${case_.year}年)`,
+                originalText: case_.summaryAiFull || case_.summary_ai || '無摘要'
+            };
+        });
+
+        analysisResult.citations = citations;
+
+        // 4. 添加立場信息和案例分布
+        analysisResult.position = position;
+        analysisResult.analysisType = position === 'plaintiff' ? '原告方重大判決分析' : '被告方重大判決分析';
+        analysisResult.caseDistribution = distribution;
+
+        console.log(`[analyzeCriticalPattern] ✅ 重大判決分析完成，立場: ${position}`);
+        return analysisResult;
+
+    } catch (error) {
+        console.error('[analyzeCriticalPattern] AI分析失敗:', error);
+        throw error;
+    }
+}
+
+
+/**
  * 歸納主流判決分析
  * @param {string} taskId - 原始案件有利判決分析的任務ID
  * @param {string} userId - 用戶ID
@@ -2848,22 +3062,25 @@ async function executeMainstreamAnalysisInBackground(taskId, originalResult, use
             throw new Error('主流判決案例數量不足，無法進行分析');
         }
 
-        // 🚨 4. 從案例池中獲取主流判決案例（不重新搜尋）
+        // 🚨 4. 從案例池中獲取重大判決案例（優先重大勝訴+重大敗訴）
         const { casePool } = casePrecedentData;
-        console.log(`[casePrecedentAnalysisService] 🎯 使用案例池中的主流案例: ${casePool.mainPattern.cases.length} 個`);
+        const position = analysisParams.position || 'defendant';
+        console.log(`[casePrecedentAnalysisService] 🎯 從案例池獲取重大判決案例，立場: ${position}`);
 
-        const mainStreamCases = await getMainstreamCasesFromPool(casePool, mainPattern.verdict);
+        const { cases: criticalCases, distribution } = await getCriticalCasesFromPool(casePool, position, 10);
 
-        if (mainStreamCases.length < 3) {
-            throw new Error(`案例池中主流判決案例數量不足: ${mainStreamCases.length} 個`);
+        if (criticalCases.length < 3) {
+            throw new Error(`案例池中重大判決案例數量不足: ${criticalCases.length} 個`);
         }
 
-        // 5. 使用 AI 分析主流判決模式 - 🆕 傳遞立場參數
-        const analysisResult = await analyzeMainstreamPattern(
+        console.log(`[casePrecedentAnalysisService] ✅ 獲取了 ${criticalCases.length} 件重大判決案例，分布: 重大勝訴 ${distribution.majorVictory} 件, 重大敗訴 ${distribution.majorDefeat} 件, 部分勝訴 ${distribution.partialSuccess} 件`);
+
+        // 5. 使用 AI 分析重大判決模式 - 🆕 傳遞立場參數和案例分布
+        const analysisResult = await analyzeCriticalPattern(
             analysisParams.caseDescription,
-            mainStreamCases,
-            mainPattern,
-            analysisParams.position || 'neutral' // 🆕 傳遞立場參數
+            criticalCases,
+            distribution,
+            position
         );
 
         // 6. 更新任務狀態為完成
