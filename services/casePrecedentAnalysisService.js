@@ -982,8 +982,9 @@ function generateSmartRecommendations(similarCases, coverageStats, verdictAnalys
         }
 
         // 2. 基於有利判決的策略建議
-        const mainVerdict = verdictAnalysis.mainPattern.verdict;
-        const mainPercentage = verdictAnalysis.mainPattern.percentage;
+        // ✅ 修復: analyzeVerdictDistribution() 返回的是 { mostCommon, distribution } 而不是 { mainPattern }
+        const mainVerdict = verdictAnalysis.mostCommon || '未知';
+        const mainPercentage = verdictAnalysis.distribution?.[mainVerdict]?.percentage || 0;
 
         if (mainPercentage >= 70) {
             if (mainVerdict.includes('勝訴') || mainVerdict.includes('准許')) {
