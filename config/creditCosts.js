@@ -19,6 +19,7 @@ export const CREDIT_COSTS = {
   SUMMARIZE_COMMON_POINTS: 4, // (圖板) AI歸納判例共同點
   CASE_PRECEDENT_ANALYSIS: 4, // 案例判決傾向分析
   PLEADING_GENERATION: 6, // AI訴狀生成（高級功能）
+  BEAUTIFY_DESCRIPTION: 1, // 🆕 AI潤飾案件描述（輕量級功能，使用 nano 模型）
 
   // 法條搜索相關
   LAW_SEARCH_BASIC: 1,    // 法條基礎搜索
@@ -42,6 +43,7 @@ export const CREDIT_PURPOSES = {
   SUMMARIZE_COMMON_POINTS: 'summarize_common_points', // (圖板) AI歸納判例共同點
   CASE_PRECEDENT_ANALYSIS: 'case_precedent_analysis', // 案例判決傾向分析
   PLEADING_GENERATION: 'pleading_generation', // AI訴狀生成
+  BEAUTIFY_DESCRIPTION: 'beautify_description', // 🆕 AI潤飾案件描述
 
   // 法條搜索相關
   LAW_SEARCH_BASIC: 'law_search_basic',

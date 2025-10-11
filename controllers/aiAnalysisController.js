@@ -5,6 +5,7 @@ import { startCasePrecedentAnalysis, startMainstreamAnalysis } from '../services
 import { startCitationAnalysis, cancelCitationAnalysisTask } from '../services/citationAnalysisService.js';
 import { startWritingAssistantTask } from '../services/writingAssistantService.js';
 import { startPleadingGenerationTask } from '../services/pleadingGenerationService.js';
+import { beautifyDescription } from '../services/descriptionBeautifyService.js';
 
 // 現有的 Controller
 export const analyzeSuccessFactorsController = async (req, res, next) => {
@@ -245,6 +246,50 @@ export const pleadingGenerationController = async (req, res, next) => {
 
     } catch (error) {
         console.error('[PleadingGenerationController] 訴狀生成失敗:', error);
+        next(error);
+    }
+};
+
+// 🆕 AI 潤飾案件描述 Controller
+export const beautifyDescriptionController = async (req, res, next) => {
+    try {
+        const { description, caseType, courtLevel, caseNature, stance, mode } = req.body;
+        const userId = req.user.uid;
+
+        console.log('[BeautifyDescriptionController] 收到請求:', {
+            userId,
+            descriptionLength: description?.length || 0,
+            caseType,
+            mode: mode || 'auto'
+        });
+
+        // 調用 Service
+        const result = await beautifyDescription({
+            description: description || '',
+            caseType,
+            courtLevel,
+            caseNature,
+            stance,
+            mode: mode || 'auto'
+        });
+
+        console.log('[BeautifyDescriptionController] 處理成功:', {
+            mode: result.mode,
+            beautifiedLength: result.beautifiedDescription.length
+        });
+
+        // 返回結果
+        res.status(200).json({
+            success: true,
+            originalDescription: result.originalDescription,
+            beautifiedDescription: result.beautifiedDescription,
+            mode: result.mode,
+            creditsUsed: 1,
+            metadata: result.metadata
+        });
+
+    } catch (error) {
+        console.error('[BeautifyDescriptionController] 處理失敗:', error);
         next(error);
     }
 };

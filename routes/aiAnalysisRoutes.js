@@ -1,6 +1,6 @@
 // routes/aiAnalysisRoutes.js
 import express from 'express';
-import { analyzeSuccessFactorsController, summarizeCommonPointsController, getAnalysisResultController, casePrecedentAnalysisController, mainstreamAnalysisController, citationAnalysisController, writingAssistantController, cancelCitationAnalysisController, pleadingGenerationController } from '../controllers/aiAnalysisController.js';
+import { analyzeSuccessFactorsController, summarizeCommonPointsController, getAnalysisResultController, casePrecedentAnalysisController, mainstreamAnalysisController, citationAnalysisController, writingAssistantController, cancelCitationAnalysisController, pleadingGenerationController, beautifyDescriptionController } from '../controllers/aiAnalysisController.js';
 import { verifyToken } from '../middleware/auth.js';
 import { checkAndDeductCredits } from '../middleware/credit.js';
 import { CREDIT_COSTS, CREDIT_PURPOSES } from '../config/creditCosts.js';
@@ -119,6 +119,20 @@ router.post(
         }
     ),
     pleadingGenerationController
+);
+
+// 🆕 POST /api/ai/beautify-description - AI潤飾案件描述
+router.post(
+    '/beautify-description',
+    verifyToken,
+    checkAndDeductCredits(
+        CREDIT_COSTS.BEAUTIFY_DESCRIPTION, // 使用專用點數成本（1點）
+        CREDIT_PURPOSES.BEAUTIFY_DESCRIPTION,
+        {
+            description: 'AI潤飾案件描述'
+        }
+    ),
+    beautifyDescriptionController
 );
 
 export default router;
