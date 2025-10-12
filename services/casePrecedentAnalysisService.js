@@ -1847,30 +1847,26 @@ async function executeAnalysisInBackground(taskId, analysisData, userId) {
             keyFactorsAnalysis = null;
         }
 
-        // 3. 分析異常案例 - 暫時跳過 AI 分析避免超時
-        // ✅ 修復: analyzeVerdictDistribution() 沒有 anomalies 屬性
-        // 暫時跳過異常分析
+        // 3. 分析異常案例（方案 B：簡化版，不調用 ES 獲取完整數據）
         let anomalyAnalysis = null;
         let anomalyDetails = {};
-        // if (verdictAnalysis && verdictAnalysis.anomalies && verdictAnalysis.anomalies.length > 0) {
-        //     // 簡化的異常分析，不調用 OpenAI
-        //     anomalyAnalysis = {
-        //         keyDifferences: ["案件事實差異", "法律適用差異", "舉證程度差異"],
-        //         riskFactors: ["證據不足風險", "法律適用風險"],
-        //         opportunities: ["完整舉證機會", "法律論述機會"],
-        //         strategicInsights: `發現 ${verdictAnalysis.anomalies.length} 種異常判決模式，建議深入分析差異因素。`
-        //     };
-        //
-        //     // 🚨 生成詳細的異常案例數據（將在案例池中處理）
-        //     anomalyDetails = {}; // 暫時為空，將在案例池中生成
-        //     console.log('[casePrecedentAnalysisService] 生成的異常詳情:', JSON.stringify(anomalyDetails, null, 2));
-        //
-        //     // 如果沒有生成到詳細數據，創建測試數據
-        //     if (Object.keys(anomalyDetails).length === 0 && verdictAnalysis.anomalies.length > 0) {
-        //         console.log('[casePrecedentAnalysisService] 創建測試異常詳情數據');
-        //         anomalyDetails = createTestAnomalyDetails(verdictAnalysis.anomalies);
-        //     }
-        // }
+
+        // ✅ 啟用異常案例分析
+        if (verdictAnalysis && verdictAnalysis.anomalies && verdictAnalysis.anomalies.length > 0) {
+            console.log(`[casePrecedentAnalysisService] 🎯 發現 ${verdictAnalysis.anomalies.length} 種異常判決模式`);
+
+            // 簡化的異常分析，不調用 OpenAI
+            anomalyAnalysis = {
+                keyDifferences: ["案件事實差異", "法律適用差異", "舉證程度差異"],
+                riskFactors: ["證據不足風險", "法律適用風險"],
+                opportunities: ["完整舉證機會", "法律論述機會"],
+                strategicInsights: `發現 ${verdictAnalysis.anomalies.length} 種異常判決模式，建議深入分析差異因素。`
+            };
+
+            console.log('[casePrecedentAnalysisService] 異常分析完成，將在案例池生成後創建詳細數據');
+        } else {
+            console.log('[casePrecedentAnalysisService] 沒有發現異常案例');
+        }
 
         // 🆕 5. 生成智能推薦建議
         const smartRecommendations = generateSmartRecommendations(
@@ -1961,7 +1957,7 @@ ${smartRecommendations.nextSteps.map(step => `• ${step}`).join('\n')}`;
                     percentage: verdictAnalysis.distribution?.[verdictAnalysis.mostCommon]?.percentage || 0,
                     count: verdictAnalysis.distribution?.[verdictAnalysis.mostCommon]?.count || 0
                 },
-                anomalies: [], // 暫時返回空數組
+                anomalies: verdictAnalysis.anomalies || [],  // ✅ 返回實際的異常案例
                 anomalyAnalysis,
                 anomalyDetails,
 
@@ -2055,7 +2051,7 @@ ${smartRecommendations.nextSteps.map(step => `• ${step}`).join('\n')}`;
                             .filter(c => c.verdictType === verdictAnalysis.mostCommon && c.id)
                             .map(c => c.id)
                     },
-                    anomalies: [], // 暫時返回空數組
+                    anomalies: verdictAnalysis.anomalies || [],  // ✅ 返回實際的異常案例
                     searchMetadata: {
                         courtLevel: analysisData.courtLevel,
                         caseType: analysisData.caseType,
@@ -2069,13 +2065,18 @@ ${smartRecommendations.nextSteps.map(step => `• ${step}`).join('\n')}`;
             }
         };
 
-        // 🚨 生成異常案例詳情（基於案例池）
-        // ✅ 修復: 暫時跳過異常案例詳情生成
-        result.casePrecedentData.anomalyDetails = {};
-        // result.casePrecedentData.anomalyDetails = await generateAnomalyDetailsFromPool(
-        //     verdictAnalysis.anomalies,
-        //     result.casePrecedentData.casePool
-        // );
+        // 🚨 生成異常案例詳情（基於案例池 - 方案 B：簡化版）
+        if (verdictAnalysis && verdictAnalysis.anomalies && verdictAnalysis.anomalies.length > 0) {
+            console.log(`[casePrecedentAnalysisService] 🎯 開始生成異常案例詳情（簡化版）`);
+            result.casePrecedentData.anomalyDetails = await generateAnomalyDetailsFromPoolSimplified(
+                verdictAnalysis.anomalies,
+                result.casePrecedentData.casePool
+            );
+            console.log(`[casePrecedentAnalysisService] ✅ 異常案例詳情生成完成，類型數: ${Object.keys(result.casePrecedentData.anomalyDetails).length}`);
+        } else {
+            result.casePrecedentData.anomalyDetails = {};
+            console.log(`[casePrecedentAnalysisService] 沒有異常案例，跳過詳情生成`);
+        }
 
         // 5. 更新任務狀態為完成
         console.log(`🔵 [FIRESTORE-UPDATE-START] 開始更新 Firestore，任務ID: ${taskId}`);
@@ -2180,7 +2181,75 @@ async function getJudgmentNodeData(caseId) {
 }
 
 /**
- * 🚨 從案例池生成詳細的異常案例數據
+ * 🚨 從案例池生成詳細的異常案例數據（方案 B：簡化版，不調用 ES）
+ */
+async function generateAnomalyDetailsFromPoolSimplified(anomalies, casePool) {
+    console.log('[generateAnomalyDetailsFromPoolSimplified] 開始從案例池生成異常詳情（簡化版）');
+    console.log('[generateAnomalyDetailsFromPoolSimplified] 異常類型:', anomalies.map(a => a.verdict));
+
+    const anomalyDetails = {};
+
+    for (const anomaly of anomalies) {
+        console.log(`[generateAnomalyDetailsFromPoolSimplified] 處理異常類型: ${anomaly.verdict}`);
+
+        // 從案例池中找到異常案例的 ID
+        const anomalyCaseIds = anomaly.cases || [];  // 直接使用 anomaly.cases（已經是 ID 陣列）
+
+        // 從案例池中獲取異常案例的完整數據
+        const anomalyCases = casePool.allCases.filter(case_ =>
+            anomalyCaseIds.includes(case_.id)
+        );
+
+        console.log(`[generateAnomalyDetailsFromPoolSimplified] 找到 ${anomalyCases.length} 個 ${anomaly.verdict} 案例`);
+
+        if (anomalyCases.length > 0) {
+            // ✅ 簡化版：不調用 getJudgmentNodeData()，只使用案例池中已有的數據
+            const detailedCases = anomalyCases.slice(0, 5).map((case_) => {
+                console.log(`[generateAnomalyDetailsFromPoolSimplified] 處理案例 ${case_.id}`);
+
+                return {
+                    id: case_.id,
+                    title: case_.title || '無標題',
+                    court: case_.court || '未知法院',
+                    year: case_.year || '未知年份',
+                    similarity: case_.similarity || 0,
+                    summary: `${case_.court || '未知法院'} ${case_.year || '未知年份'}年判決，判決結果：${case_.verdictType}`,
+                    // ✅ 使用案例池中已有的數據（不調用 ES）
+                    judgmentSummary: {
+                        JID: case_.id,
+                        JTITLE: case_.title,
+                        court: case_.court,
+                        verdict_type: case_.verdictType,
+                        summary: case_.source?.summary_ai?.join(' ') || '案例摘要暫無',
+                        hasFullData: false  // 標記為簡化版數據
+                    },
+                    keyDifferences: [
+                        "與主流案例在事實認定上存在差異",
+                        "法律適用或解釋角度不同",
+                        "證據評價標準可能有所不同"
+                    ],
+                    riskFactors: [
+                        { factor: "事實認定風險", level: "medium" },
+                        { factor: "法律適用風險", level: "medium" },
+                        { factor: "證據充分性", level: "high" }
+                    ]
+                };
+            });
+
+            anomalyDetails[anomaly.verdict] = detailedCases;
+            console.log(`[generateAnomalyDetailsFromPoolSimplified] ${anomaly.verdict} 類型生成 ${detailedCases.length} 個案例詳情`);
+        } else {
+            console.log(`[generateAnomalyDetailsFromPoolSimplified] 警告: 案例池中沒有找到 ${anomaly.verdict} 類型的案例`);
+        }
+    }
+
+    console.log('[generateAnomalyDetailsFromPoolSimplified] 生成完成，異常詳情鍵:', Object.keys(anomalyDetails));
+    return anomalyDetails;
+}
+
+/**
+ * 🚨 從案例池生成詳細的異常案例數據（方案 A：完整版，調用 ES）
+ * ⚠️ 此函數已棄用，使用 generateAnomalyDetailsFromPoolSimplified 代替
  */
 async function generateAnomalyDetailsFromPool(anomalies, casePool) {
     console.log('[generateAnomalyDetailsFromPool] 開始從案例池生成異常詳情');

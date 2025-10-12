@@ -169,12 +169,31 @@ export function analyzeVerdictDistributionByPosition(cases, position) {
             return acc;
         }, {});
 
+    // ✅ 找出主流判決（數量最多的）
+    const mostCommonLabel = Object.keys(sortedVerdicts)[0] || '未知';
+
+    // ✅ 識別異常案例（判決類型與主流不同的案例）
+    const anomalies = Object.entries(sortedVerdicts)
+        .filter(([label, stats]) => label !== mostCommonLabel)
+        .map(([label, stats]) => ({
+            verdict: label,                    // 異常判決類型（中文標籤）
+            overallResult: stats.overallResult, // 原始 overall_result 值
+            count: stats.count,                // 案例數量
+            percentage: stats.percentage,      // 百分比
+            cases: stats.cases.map(c => c.id)  // 只保存案例 ID
+        }))
+        .sort((a, b) => b.count - a.count);    // 按數量排序
+
+    console.log(`[analyzeVerdictDistributionByPosition] 🎯 主流判決: ${mostCommonLabel} (${sortedVerdicts[mostCommonLabel]?.count} 件)`);
+    console.log(`[analyzeVerdictDistributionByPosition] 🎯 異常案例: ${anomalies.length} 種類型，共 ${anomalies.reduce((sum, a) => sum + a.count, 0)} 件`);
+
     return {
         total: totalCases,
         distribution: sortedVerdicts,
-        mostCommon: Object.keys(sortedVerdicts)[0] || '未知',
-        mostCommonCount: sortedVerdicts[Object.keys(sortedVerdicts)[0]]?.count || 0,
-        position: position  // 記錄立場
+        mostCommon: mostCommonLabel,
+        mostCommonCount: sortedVerdicts[mostCommonLabel]?.count || 0,
+        position: position,  // 記錄立場
+        anomalies: anomalies  // ✅ 新增異常案例列表
     };
 }
 
