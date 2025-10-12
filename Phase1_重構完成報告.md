@@ -276,11 +276,27 @@ if (winCases.length === 0 && loseCases.length === 0) {
 }
 ```
 
+**修復 1.3**: 添加 `keyFactorsAnalysis` 結果檢查 (Line 1786-1794, 1803)
+```javascript
+// Line 1786-1794
+if (keyFactorsAnalysis && keyFactorsAnalysis.dataStatus === 'insufficient') {
+    console.log(`⚠️ 勝負因素分析數據不足: ${keyFactorsAnalysis.message}`);
+} else if (keyFactorsAnalysis) {
+    console.log(`勝負因素分析完成，勝訴因素: ${keyFactorsAnalysis.winFactors?.length || 0} 個`);
+} else {
+    console.log(`⚠️ 勝負因素分析返回 null 或 undefined`);
+}
+
+// Line 1803 - 修復 verdictAnalysis.anomalies 訪問
+if (verdictAnalysis && verdictAnalysis.anomalies && verdictAnalysis.anomalies.length > 0) {
+```
+
 **效果**:
 - ✅ 如果單個案例缺少數據，會跳過該案例而不是拋出異常
 - ✅ 如果所有案例都缺少數據，會返回 `dataStatus: 'insufficient'`
-- ✅ 前端可以正常處理 `dataStatus: 'insufficient'` 的情況
-- ✅ 避免 `undefined.length` 錯誤
+- ✅ 主服務正確處理 `dataStatus: 'insufficient'` 的情況
+- ✅ 避免 `undefined.length` 錯誤 (Line 1789, 1803)
+- ✅ 前端可以正常處理 `null` 或 `dataStatus: 'insufficient'` 的結果
 
 ---
 
