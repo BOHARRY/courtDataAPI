@@ -437,21 +437,10 @@ function getPositionBasedSearchStrategy(position, caseType = '民事') {
                     'legal_issues_vector': 0.5,              // ✅ 法律爭點最重要
                     'plaintiff_combined_vector': 0.3,        // ✅ 原告方綜合向量
                     'main_reasons_ai_vector': 0.2            // ✅ 勝負關鍵因素
-                },
-                filterQuery: {
-                    bool: {
-                        should: [
-                            // 1. 尋找對原告方有利的判例
-                            { term: { [`position_based_analysis.${plaintiffPerspective}.case_value`]: 'positive_precedent' } },
-                            { term: { [`position_based_analysis.${plaintiffPerspective}.overall_result`]: 'major_victory' } },
-                            { term: { [`position_based_analysis.${plaintiffPerspective}.overall_result`]: 'partial_success' } },
-
-                            // 2. 尋找有成功要素的案例
-                            { exists: { field: `position_based_analysis.${plaintiffPerspective}.successful_elements` } }
-                        ],
-                        minimum_should_match: 0
-                    }
                 }
+                // ✅ 移除 filterQuery，讓搜尋結果更客觀
+                // 不再偏向有利判例，而是返回所有相關案例（包含成功和失敗）
+                // 這樣律師可以看到完整的判決分布，包括風險因素和失敗案例
             };
         case 'defendant':
             const defendantPerspective = perspectives.defendant;
@@ -461,25 +450,10 @@ function getPositionBasedSearchStrategy(position, caseType = '民事') {
                     'legal_issues_vector': 0.5,              // ✅ 法律爭點最重要
                     'defendant_combined_vector': 0.3,        // ✅ 被告方綜合向量
                     'main_reasons_ai_vector': 0.2            // ✅ 勝負關鍵因素
-                },
-                filterQuery: {
-                    bool: {
-                        should: [
-                            // 1. 尋找對被告方有利的判例
-                            { term: { [`position_based_analysis.${defendantPerspective}.case_value`]: 'model_defense' } },
-                            { term: { [`position_based_analysis.${defendantPerspective}.overall_result`]: 'major_victory' } },
-                            { term: { [`position_based_analysis.${defendantPerspective}.overall_result`]: 'partial_success' } },
-
-                            // 2. 尋找高複製性的防禦策略
-                            { term: { 'position_based_analysis.replication_potential': 'high' } },
-
-                            // 3. 尋找有成功策略的案例
-                            { exists: { field: `position_based_analysis.${defendantPerspective}.successful_strategies` } },
-                            { exists: { field: `position_based_analysis.${defendantPerspective}.winning_formula` } }
-                        ],
-                        minimum_should_match: 0
-                    }
                 }
+                // ✅ 移除 filterQuery，讓搜尋結果更客觀
+                // 不再偏向有利判例，而是返回所有相關案例（包含成功和失敗）
+                // 這樣律師可以看到完整的判決分布，包括風險因素和失敗案例
             };
         default: // 'neutral'
             return {
