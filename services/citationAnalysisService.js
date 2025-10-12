@@ -1845,7 +1845,7 @@ async function generateCitationRecommendationsThreeStage(valuableCitations, posi
             }, "專家級 AI 正在嚴格驗證推薦品質...", 85);
         }
 
-        // 🎯 階段二：GPT-4o 嚴格驗證（否決權）
+        // 🎯 階段二：GPT-4o 嚴格驗證否決權）
         console.log(`[generateCitationRecommendationsThreeStage] 🛡️ 階段二：GPT-4o 嚴格驗證`);
 
         // 🚀 新增：傳遞 taskRef 和進度上下文給驗證函數
