@@ -255,7 +255,8 @@ async function miniQuickScreening(valuableCitations, position, caseDescription) 
         const positionLabel = position === 'plaintiff' ? '原告' : position === 'defendant' ? '被告' : '中性';
 
         // 準備援引數據（包含上下文摘要）
-        const citationsWithContext = valuableCitations.slice(0, 20).map(citation => {
+        // ✅ 修改：增加處理數量從 20 → 30
+        const citationsWithContext = valuableCitations.slice(0, 30).map(citation => {
             // 🔧 修復：安全地提取上下文摘要
             const contextSummary = citation.totalContexts && citation.totalContexts.length > 0
                 ? citation.totalContexts.slice(0, 2).map(ctx => {
@@ -294,7 +295,7 @@ ${citationsWithContext.map((c, i) => `${i+1}. ${c.citation}
 請快速評估每個援引是否可能與案件相關，標準要寬鬆：
 1. 可能相關就選擇（不確定也選）
 2. 明顯無關才排除
-3. 最多選擇15個，最少選擇5個
+3. 最多選擇20個，最少選擇8個（✅ 修改：增加選擇數量）
 
 請以 JSON 格式回應：
 {
@@ -1531,11 +1532,27 @@ async function analyzeCitationsFromCasePool(casePool, position, caseDescription,
         // 2. 計算價值評估
         const enrichedCitations = enrichCitationsWithValue(citationStats, casePool.allCases.length);
 
-        // 3. 篩選高價值援引（總分 >= 40 或在法院見解內被引用）
-        const valuableCitations = enrichedCitations.filter(citation =>
-            citation.valueAssessment.totalScore >= 40 ||
-            citation.inCourtInsightCount > 0
-        );
+        // 3. 篩選高價值援引（降低門檻以獲得更多推薦）
+        // ✅ 修改：降低總分門檻從 40 → 30，並增加更多篩選條件
+        const valuableCitations = enrichedCitations.filter(citation => {
+            const score = citation.valueAssessment.totalScore;
+            const inCourtInsight = citation.inCourtInsightCount > 0;
+            const usageCount = citation.usageCount;
+
+            // 條件 1: 總分 >= 30（降低門檻）
+            if (score >= 30) return true;
+
+            // 條件 2: 在法院見解內被引用（高價值）
+            if (inCourtInsight) return true;
+
+            // 條件 3: 使用次數 >= 2（多次使用表示重要）
+            if (usageCount >= 2) return true;
+
+            // 條件 4: 稀有度高（rareness >= 25）且至少被使用 1 次
+            if (citation.valueAssessment.breakdown.rareness >= 25 && usageCount >= 1) return true;
+
+            return false;
+        });
 
         // 🆕 更新進度：價值評估完成
         if (taskRef) {
