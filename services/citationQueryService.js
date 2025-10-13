@@ -664,9 +664,11 @@ async function queryJudgmentWithAI(citationInfo, queryId, progressCallback) {
 
       querySteps.push({ message: stepMessage, status: 'loading', timestamp: Date.now() });
       console.log(`[Citation Query] ${queryId} 添加步驟: ${stepMessage}, 當前步驟數: ${querySteps.length}`);
-      if (progressCallback) {
-        progressCallback(querySteps);
-      }
+
+      // 不要在 loading 時推送，避免重複
+      // if (progressCallback) {
+      //   progressCallback(querySteps);
+      // }
 
       try {
         const result = await callChromeMCPTool(toolName, toolArgs);
@@ -674,6 +676,8 @@ async function queryJudgmentWithAI(citationInfo, queryId, progressCallback) {
         // 更新步驟狀態為成功
         querySteps[querySteps.length - 1].status = 'success';
         console.log(`[Citation Query] ${queryId} 步驟成功: ${stepMessage}`);
+
+        // 只在成功時推送
         if (progressCallback) {
           progressCallback(querySteps);
         }
