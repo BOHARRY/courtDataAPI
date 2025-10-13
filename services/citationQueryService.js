@@ -379,6 +379,17 @@ export function getCaseTypeChineseName(caseType) {
 }
 
 /**
+ * 自定義錯誤類，包含查詢步驟
+ */
+class CitationQueryError extends Error {
+  constructor(message, querySteps = []) {
+    super(message);
+    this.name = 'CitationQueryError';
+    this.querySteps = querySteps;
+  }
+}
+
+/**
  * 使用 AI + Chrome MCP 自動查詢判決書
  */
 async function queryJudgmentWithAI(citationInfo, queryId, progressCallback) {
@@ -604,7 +615,7 @@ async function queryJudgmentWithAI(citationInfo, queryId, progressCallback) {
       if (urlMatch) {
         return { url: urlMatch[0], querySteps };
       } else {
-        throw new Error('AI 未返回判決書 URL');
+        throw new CitationQueryError('AI 未返回判決書 URL', querySteps);
       }
     }
 
@@ -696,7 +707,7 @@ async function queryJudgmentWithAI(citationInfo, queryId, progressCallback) {
     }
   }
 
-  throw new Error(`達到最大輪數限制 (${MAX_ITERATIONS})，查詢失敗`);
+  throw new CitationQueryError(`達到最大輪數限制 (${MAX_ITERATIONS})，查詢失敗`, querySteps);
 }
 
 /**
@@ -767,10 +778,14 @@ export async function queryCitation(citationText, judgementId) {
     const duration = Date.now() - startTime;
     console.error(`[Citation Query] ${queryId} 查詢失敗，耗時 ${duration}ms:`, error.message);
 
+    // 如果是 CitationQueryError，提取查詢步驟
+    const querySteps = error.querySteps || [];
+
     return {
       success: false,
       error: error.message,
-      citation_info: null
+      citation_info: null,
+      query_steps: querySteps  // 即使失敗也返回查詢步驟
     };
   }
 }
