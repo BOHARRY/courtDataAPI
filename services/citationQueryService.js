@@ -195,7 +195,7 @@ async function callChromeMCPTool(toolName, args) {
 /**
  * 判斷案件類型（民事/刑事/行政）
  * 🔥 關鍵功能：根據當前判決書判斷案件類型，提升查詢準確性和速度
- * 
+ *
  * @param {Object} judgementData - 當前判決書數據
  * @returns {string} 'civil' | 'criminal' | 'administrative'
  */
@@ -253,24 +253,24 @@ export function determineCaseType(judgementData) {
 
   // 策略 4: 從 JCASE（案號）判斷
   const jcase = String(judgementData.JCASE || '').toLowerCase();
-  
+
   // 刑事案件關鍵字
-  if (jcase.includes('刑') || jcase.includes('易') || jcase.includes('少') || 
-      jcase.includes('訴緝') || jcase.includes('交') || jcase.includes('保安') || 
+  if (jcase.includes('刑') || jcase.includes('易') || jcase.includes('少') ||
+      jcase.includes('訴緝') || jcase.includes('交') || jcase.includes('保安') ||
       jcase.includes('毒') || jcase.includes('懲') || jcase.includes('劾')) {
     console.log('[Citation Query] 使用 JCASE 判斷為刑事');
     return 'criminal';
   }
-  
+
   // 行政案件關鍵字
-  if (jcase.includes('訴願') || jcase.includes('公法') || jcase.includes('稅') || 
+  if (jcase.includes('訴願') || jcase.includes('公法') || jcase.includes('稅') ||
       jcase.includes('環')) {
     console.log('[Citation Query] 使用 JCASE 判斷為行政');
     return 'administrative';
   }
-  
+
   // 民事案件關鍵字
-  if (jcase.includes('訴') || jcase.includes('調') || jcase.includes('家') || 
+  if (jcase.includes('訴') || jcase.includes('調') || jcase.includes('家') ||
       jcase.includes('勞') || jcase.includes('選') || jcase.includes('消')) {
     console.log('[Citation Query] 使用 JCASE 判斷為民事');
     return 'civil';
@@ -280,7 +280,7 @@ export function determineCaseType(judgementData) {
   const title = String(judgementData.JTITLE || '').toLowerCase();
   const criminalKeywords = ['殺人', '傷害', '竊盜', '詐欺', '毒品', '強盜', '妨害'];
   const civilKeywords = ['損害賠償', '給付', '返還', '確認', '撤銷'];
-  
+
   if (criminalKeywords.some(k => title.includes(k))) {
     console.log('[Citation Query] 使用 JTITLE 判斷為刑事');
     return 'criminal';
@@ -350,10 +350,10 @@ export function parseCitationText(citationText) {
       groups.forEach((key, index) => {
         result[key] = match[index + 1];
       });
-      
+
       if (defaultCourt) result.court = defaultCourt;
       if (requiresManualInput) result.needsManualInput = true;
-      
+
       console.log('[Citation Query] 解析成功:', result);
       return result;
     }
@@ -796,3 +796,85 @@ export async function queryCitation(citationText, judgementId) {
   }
 }
 
+
+
+/**
+ * 查詢引用判決（SSE 版本，帶實時進度推送）
+ * @param {string} citationText - 引用判決文本
+ * @param {string} judgementId - 當前判決書 ID
+ * @param {Function} progressCallback - 進度回調函數
+ * @returns {Promise<Object>} 查詢結果
+ */
+export async function queryCitationWithSSE(citationText, judgementId, progressCallback) {
+  const queryId = `citation-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
+  const startTime = Date.now();
+
+  console.log(`[Citation Query SSE] ${queryId} 開始查詢: ${citationText}`);
+  console.log(`[Citation Query SSE] ${queryId} 當前判決書 ID: ${judgementId}`);
+
+  try {
+    // 1. 解析案號
+    const parsedCitation = parseCitationText(citationText);
+    if (!parsedCitation) {
+      throw new Error('無法解析引用判決案號格式');
+    }
+
+    if (parsedCitation.needsManualInput) {
+      throw new Error('案號缺少年度信息，無法自動查詢');
+    }
+
+    // 2. 獲取當前判決書數據
+    console.log(`[Citation Query SSE] ${queryId} 獲取當前判決書數據...`);
+    const judgementData = await getJudgmentDetails(judgementId);
+    if (!judgementData) {
+      throw new Error('無法獲取當前判決書數據');
+    }
+
+    // 3. 判斷案件類型
+    const caseType = determineCaseType(judgementData);
+    const caseTypeChinese = getCaseTypeChineseName(caseType);
+    console.log(`[Citation Query SSE] ${queryId} 案件類型: ${caseType} (${caseTypeChinese})`);
+
+    // 4. 構建查詢信息
+    const citationInfo = {
+      court: parsedCitation.court || '最高法院',
+      year: parsedCitation.year,
+      category: parsedCitation.category,
+      number: parsedCitation.number,
+      case_type: caseType,
+      case_type_chinese: caseTypeChinese
+    };
+
+    console.log(`[Citation Query SSE] ${queryId} 查詢信息:`, citationInfo);
+
+    // 5. 使用 AI + Chrome MCP 自動查詢（帶進度回調）
+    const result = await queryJudgmentWithAI(citationInfo, queryId, progressCallback);
+    const url = typeof result === 'string' ? result : result.url;
+    const querySteps = typeof result === 'object' ? result.querySteps : [];
+
+    const duration = Date.now() - startTime;
+    console.log(`[Citation Query SSE] ${queryId} 查詢完成，耗時 ${duration}ms`);
+    console.log(`[Citation Query SSE] ${queryId} 判決書 URL:`, url);
+
+    return {
+      success: true,
+      url,
+      citation_info: citationInfo,
+      query_steps: querySteps
+    };
+
+  } catch (error) {
+    const duration = Date.now() - startTime;
+    console.error(`[Citation Query SSE] ${queryId} 查詢失敗，耗時 ${duration}ms:`, error.message);
+
+    // 如果是 CitationQueryError，提取查詢步驟
+    const querySteps = error.querySteps || [];
+
+    return {
+      success: false,
+      error: error.message,
+      citation_info: null,
+      query_steps: querySteps
+    };
+  }
+}
