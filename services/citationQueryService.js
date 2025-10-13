@@ -472,31 +472,74 @@ async function queryJudgmentWithAI(citationInfo, queryId) {
   ];
 
   // 構建 System Prompt
-  const systemPrompt = `你是一個瀏覽器自動化助手，專門用於查詢司法院判決書。
+  const systemPrompt = `你是一個瀏覽器自動化助手，專門用於查詢司法院判決書。你**必須**使用工具來完成任務，**不要**只是告訴用戶如何手動操作。
 
 **當前任務**：
 查詢判決書：${citationInfo.court} ${citationInfo.year}年${citationInfo.category}字第${citationInfo.number}號
 案件類型：${citationInfo.case_type_chinese}（${citationInfo.case_type}）
 
+**可用工具**：
+1. navigate_to_url(url) - 訪問網頁
+2. get_page_info() - 獲取當前頁面的所有表單元素和連結
+3. fill_input(selector, value) - 填寫輸入框
+4. select_option(selector, value) - 選擇下拉選單
+5. click_element(selector) - 點擊元素（按鈕、連結等）
+6. evaluate_script(script) - 執行 JavaScript 代碼
+
 **重要規則**：
-1. 你**必須**使用工具來完成任務，**不要**只是告訴用戶如何手動操作
-2. **最重要**：查詢完成後，**只要**給我判決書的網址，**不要**提供摘要或分析
-3. 如果查詢失敗，返回錯誤信息
+- 你**必須**實際執行查詢，而不是告訴用戶怎麼做
+- **最重要**：查詢完成後，**只要**給我判決書的網址，**不要**提供摘要或分析
+- **不要**重複填寫同一個欄位
+- 如果某個操作失敗（例如選擇下拉選單），**跳過它**，繼續下一步
+- 格式：最終回覆「判決書網址：https://judgment.judicial.gov.tw/FJUD/data.aspx?ty=JD&id=...」
 
-**查詢流程**：
-1. 訪問 https://judgment.judicial.gov.tw/FJUD/Default_AD.aspx
-2. 使用 get_page_info 查看頁面表單元素
-3. 選擇裁判案件類別（${citationInfo.case_type_chinese}）
-4. 填寫表單：年度=${citationInfo.year}, 字別=${citationInfo.category}, 案號=${citationInfo.number}
-5. 點擊查詢按鈕
-6. 使用 evaluate_script 獲取 iframe URL：
-   "() => { const iframe = document.querySelector('iframe[name=\\"iframe-data\\"]'); if (iframe && iframe.contentWindow) { try { return iframe.contentWindow.location.href; } catch(e) { return iframe.src; } } return null; }"
-7. 訪問 iframe URL
-8. 如果是列表頁面，點擊第一個判決書連結
-9. 再次使用 evaluate_script 獲取判決書內容頁面的 URL
-10. 返回最終的判決書 URL（data.aspx 的完整 URL）
+**查詢判決書的完整流程**：
+1. 使用 navigate_to_url 訪問 https://judgment.judicial.gov.tw/FJUD/Default_AD.aspx
 
-**開始執行！**`;
+2. 使用 get_page_info 查看頁面上有哪些表單元素（注意它們的 id 和 name）
+
+3. **選擇裁判案件類別**（如果頁面上有 checkbox 或 radio button）：
+   - 案件類型是：${citationInfo.case_type_chinese}
+   - 查看是否有「民事」、「刑事」、「行政」等選項
+   - 如果找到對應的選項，使用 click_element 點擊
+   - **如果選擇失敗或找不到選項，直接跳過這一步，繼續填寫表單**
+
+4. 根據案號填寫表單（這是最重要的步驟）：
+   - 年度 = ${citationInfo.year}
+   - 字別 = ${citationInfo.category}
+   - 案號 = ${citationInfo.number}
+   - 找到對應的 input 元素（通常 id 包含 jud_year, jud_case, jud_no 或 dy1, word1, no1）
+   - 使用 fill_input 填寫每個欄位
+   - **每個欄位只填寫一次，不要重複填寫**
+
+5. 使用 click_element 點擊查詢按鈕（通常是 input[type='submit'] 或包含「查詢」、「送出」的按鈕）
+
+6. **關鍵步驟**：查詢後，司法院網站會在 iframe 中顯示結果，你**必須**：
+   - 使用 evaluate_script 執行以下代碼來獲取 iframe URL：
+     "() => { const iframe = document.querySelector('iframe[name=\\"iframe-data\\"]'); if (iframe && iframe.contentWindow) { try { return iframe.contentWindow.location.href; } catch(e) { return iframe.src; } } return null; }"
+   - 這會返回一個 URL（可能是 qryresultlst.aspx 或 data.aspx）
+
+7. 使用 navigate_to_url 訪問步驟 6 獲取的 iframe URL
+
+8. 使用 get_page_info 查看頁面內容：
+   - 如果頁面上有判決書列表（連結），使用 click_element 點擊第一個判決書連結
+   - 如果頁面已經是判決書內容頁面，直接進行下一步
+
+9. 如果點擊了連結，再次使用 evaluate_script 獲取新的 iframe URL（判決書內容頁面）
+
+10. 使用 navigate_to_url 訪問判決書內容頁面的 URL
+
+11. **重要**：向我報告判決書的網址（data.aspx 的完整 URL）
+    - **不要**提供判決書的摘要或內容分析
+    - **只要**給我判決書的網址連結
+    - 格式：「判決書網址：https://judgment.judicial.gov.tw/FJUD/data.aspx?ty=JD&id=...」
+
+**注意**：
+- iframe 中可能先顯示查詢結果列表，需要再點擊一次才能看到判決書內容
+- 最終的判決書內容頁面 URL 通常包含 "data.aspx?ty=JD&id="
+- 如果某個步驟失敗，不要重複嘗試，直接跳過或繼續下一步
+
+**開始執行任務！**`;
 
   // 初始化對話
   const messages = [
