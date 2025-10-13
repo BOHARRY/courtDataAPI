@@ -498,19 +498,27 @@ async function queryJudgmentWithAI(citationInfo, queryId) {
 
 2. 使用 get_page_info 查看頁面上有哪些表單元素（注意它們的 id 和 name）
 
-3. **選擇裁判案件類別**（如果頁面上有 checkbox 或 radio button）：
+3. **選擇裁判案件類別**（這一步是可選的）：
    - 案件類型是：${citationInfo.case_type_chinese}
-   - 查看是否有「民事」、「刑事」、「行政」等選項
-   - 如果找到對應的選項，使用 click_element 點擊
-   - **如果選擇失敗或找不到選項，直接跳過這一步，繼續填寫表單**
+   - 如果是民事，點擊：input[name="jud_sys"][value="V"]
+   - 如果是刑事，點擊：input[name="jud_sys"][value="M"]
+   - 如果是行政，點擊：input[name="jud_sys"][value="A"]
+   - 使用 click_element 工具點擊對應的 checkbox
+   - **重要**：如果點擊失敗或超時，**立即跳過**，不要重試，直接進行步驟 4
+   - **注意**：頁面說明「未勾選預設為全選」，所以這一步失敗也不影響查詢
 
-4. 根據案號填寫表單（這是最重要的步驟）：
+4. 根據案號填寫表單（**這是最重要的步驟，必須成功**）：
    - 年度 = ${citationInfo.year}
    - 字別 = ${citationInfo.category}
    - 案號 = ${citationInfo.number}
-   - 找到對應的 input 元素（通常 id 包含 jud_year, jud_case, jud_no 或 dy1, word1, no1）
-   - 使用 fill_input 填寫每個欄位
+   - **重要**：使用以下精確的選擇器填寫：
+     * 使用 fill_input 填寫 #jud_year，值為 ${citationInfo.year}
+     * 使用 fill_input 填寫 #jud_case，值為 ${citationInfo.category}
+     * 使用 fill_input 填寫 #jud_no，值為 ${citationInfo.number}
+   - **不要**使用 select_option 選擇 #sel_judword（常用字別下拉選單）
+   - **不要**填寫 #dy1, #dm1, #dd1（那些是裁判期間，不是裁判字號）
    - **每個欄位只填寫一次，不要重複填寫**
+   - **如果填寫失敗，重試一次，如果還是失敗就報錯**
 
 5. 使用 click_element 點擊查詢按鈕（通常是 input[type='submit'] 或包含「查詢」、「送出」的按鈕）
 
