@@ -523,7 +523,10 @@ async function queryJudgmentWithAI(citationInfo, queryId, progressCallback) {
    - **每個欄位只填寫一次，不要重複填寫**
    - **如果填寫失敗，重試一次，如果還是失敗就報錯**
 
-5. 使用 click_element 點擊查詢按鈕（通常是 input[type='submit'] 或包含「查詢」、「送出」的按鈕）
+5. 使用 click_element 點擊查詢按鈕：
+   - **重要**：使用選擇器 input[type='submit']
+   - **不要**使用 #search-btn 或其他 ID（按鈕沒有 ID）
+   - 如果點擊失敗，等待 2 秒後重試一次
 
 6. **關鍵步驟**：查詢後，司法院網站會在 iframe 中顯示結果，你**必須**：
    - 使用 evaluate_script 執行以下代碼來獲取 iframe URL：
@@ -544,11 +547,18 @@ async function queryJudgmentWithAI(citationInfo, queryId, progressCallback) {
     - **不要**提供判決書的摘要或內容分析
     - **只要**給我判決書的網址連結
     - 格式：「判決書網址：https://judgment.judicial.gov.tw/FJUD/data.aspx?ty=JD&id=...」
+    - **必須**確保 URL 包含 "data.aspx"
+
+**錯誤處理**：
+- 如果點擊查詢按鈕失敗，等待 2 秒後使用 input[type='submit'] 重試一次
+- 如果 evaluate_script 返回 null，表示 iframe 還沒載入，等待 3 秒後重試
+- 如果重試後仍然失敗，報告錯誤：「無法提交查詢，請稍後再試」
+- **不要**在沒有獲得有效 URL 的情況下就結束任務
 
 **注意**：
 - iframe 中可能先顯示查詢結果列表，需要再點擊一次才能看到判決書內容
 - 最終的判決書內容頁面 URL 通常包含 "data.aspx?ty=JD&id="
-- 如果某個步驟失敗，不要重複嘗試，直接跳過或繼續下一步
+- 如果某個步驟失敗，不要無限重複嘗試，最多重試 1 次
 
 **開始執行任務！**`;
 
