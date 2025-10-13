@@ -381,8 +381,11 @@ export function getCaseTypeChineseName(caseType) {
 /**
  * 使用 AI + Chrome MCP 自動查詢判決書
  */
-async function queryJudgmentWithAI(citationInfo, queryId) {
+async function queryJudgmentWithAI(citationInfo, queryId, progressCallback) {
   console.log(`[Citation Query] ${queryId} 開始 AI 自動化查詢...`);
+
+  // 進度追蹤
+  const querySteps = [];
 
   // 定義 Chrome MCP 工具
   const tools = [
@@ -578,12 +581,18 @@ async function queryJudgmentWithAI(citationInfo, queryId) {
       // 沒有工具調用，AI 給出最終回覆
       console.log(`[Citation Query] ${queryId} AI 完成任務`);
 
+      // 添加最終步驟
+      querySteps.push({ message: '查詢完成！', status: 'success', timestamp: Date.now() });
+      if (progressCallback) {
+        progressCallback(querySteps);
+      }
+
       // 從 AI 回覆中提取 URL
       const content = message.content || '';
       const urlMatch = content.match(/https?:\/\/[^\s]+/);
 
       if (urlMatch) {
-        return urlMatch[0];
+        return { url: urlMatch[0], querySteps };
       } else {
         throw new Error('AI 未返回判決書 URL');
       }
@@ -596,8 +605,53 @@ async function queryJudgmentWithAI(citationInfo, queryId) {
 
       console.log(`[Citation Query] ${queryId} 調用工具: ${toolName}`, toolArgs);
 
+      // 記錄進度步驟（使用專業抽象的描述）
+      let stepMessage = '';
+      if (toolName === 'navigate_to_url') {
+        stepMessage = '正在連接司法院判決書系統...';
+      } else if (toolName === 'get_page_info') {
+        stepMessage = '正在解析查詢介面...';
+      } else if (toolName === 'fill_input') {
+        if (toolArgs.selector === '#jud_year') {
+          stepMessage = '正在設定查詢條件（年度）...';
+        } else if (toolArgs.selector === '#jud_case') {
+          stepMessage = '正在設定查詢條件（案件字別）...';
+        } else if (toolArgs.selector === '#jud_no') {
+          stepMessage = '正在設定查詢條件（案號）...';
+        } else {
+          stepMessage = '正在設定查詢參數...';
+        }
+      } else if (toolName === 'click_element') {
+        if (toolArgs.selector && toolArgs.selector.includes('submit')) {
+          stepMessage = '正在執行判決書檢索...';
+        } else if (toolArgs.selector && toolArgs.selector.includes('data.aspx')) {
+          stepMessage = '正在載入判決書內容...';
+        } else if (toolArgs.selector && toolArgs.selector.includes('jud_sys')) {
+          stepMessage = '正在設定案件類別...';
+        } else {
+          stepMessage = '正在處理查詢請求...';
+        }
+      } else if (toolName === 'evaluate_script') {
+        stepMessage = '正在取得判決書資訊...';
+      } else if (toolName === 'select_option') {
+        stepMessage = '正在調整查詢選項...';
+      } else {
+        stepMessage = '正在處理查詢作業...';
+      }
+
+      querySteps.push({ message: stepMessage, status: 'loading', timestamp: Date.now() });
+      if (progressCallback) {
+        progressCallback(querySteps);
+      }
+
       try {
         const result = await callChromeMCPTool(toolName, toolArgs);
+
+        // 更新步驟狀態為成功
+        querySteps[querySteps.length - 1].status = 'success';
+        if (progressCallback) {
+          progressCallback(querySteps);
+        }
 
         // 移除 screenshot 以節省 tokens
         const resultForAI = { ...result };
@@ -614,6 +668,12 @@ async function queryJudgmentWithAI(citationInfo, queryId) {
 
         console.log(`[Citation Query] ${queryId} 工具執行成功`);
       } catch (error) {
+        // 更新步驟狀態為失敗
+        querySteps[querySteps.length - 1].status = 'error';
+        if (progressCallback) {
+          progressCallback(querySteps);
+        }
+
         messages.push({
           tool_call_id: toolCall.id,
           role: 'tool',
@@ -678,7 +738,9 @@ export async function queryCitation(citationText, judgementId) {
     console.log(`[Citation Query] ${queryId} 查詢信息:`, citationInfo);
 
     // 5. 使用 AI + Chrome MCP 自動查詢
-    const url = await queryJudgmentWithAI(citationInfo, queryId);
+    const result = await queryJudgmentWithAI(citationInfo, queryId);
+    const url = typeof result === 'string' ? result : result.url;
+    const querySteps = typeof result === 'object' ? result.querySteps : [];
 
     const duration = Date.now() - startTime;
     console.log(`[Citation Query] ${queryId} 查詢完成，耗時 ${duration}ms`);
@@ -687,7 +749,8 @@ export async function queryCitation(citationText, judgementId) {
     return {
       success: true,
       url,
-      citation_info: citationInfo
+      citation_info: citationInfo,
+      query_steps: querySteps
     };
 
   } catch (error) {
