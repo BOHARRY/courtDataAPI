@@ -613,6 +613,8 @@ async function queryJudgmentWithAI(citationInfo, queryId, progressCallback) {
       const urlMatch = content.match(/https?:\/\/[^\s]+/);
 
       if (urlMatch) {
+        console.log(`[Citation Query] ${queryId} 返回結果，querySteps 數量:`, querySteps.length);
+        console.log(`[Citation Query] ${queryId} querySteps:`, JSON.stringify(querySteps, null, 2));
         return { url: urlMatch[0], querySteps };
       } else {
         throw new CitationQueryError('AI 未返回判決書 URL', querySteps);
@@ -766,6 +768,8 @@ export async function queryCitation(citationText, judgementId) {
     const duration = Date.now() - startTime;
     console.log(`[Citation Query] ${queryId} 查詢完成，耗時 ${duration}ms`);
     console.log(`[Citation Query] ${queryId} 判決書 URL:`, url);
+
+    console.log(`[Citation Query] ${queryId} 最終返回，query_steps 數量:`, querySteps.length);
 
     return {
       success: true,
