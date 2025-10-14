@@ -811,7 +811,8 @@ export async function aiExplainLaw(lawName) {
             tools: [
                 {
                 type: "web_search",
-                filters: { allowed_domains: ["law.moj.gov.tw"] },
+                // 🆕 移除 allowed_domains 限制，讓 GPT-5-mini 可以搜尋更廣泛的來源
+                // filters: { allowed_domains: ["law.moj.gov.tw"] },
                 user_location: { type: "approximate", country: "TW" },
                 search_context_size: "low"
                 }
