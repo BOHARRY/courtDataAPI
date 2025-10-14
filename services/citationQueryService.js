@@ -2,6 +2,7 @@
 import { getJudgmentDetails } from './judgment.js';
 import OpenAI from 'openai';
 import { OPENAI_API_KEY } from '../config/environment.js';
+import admin from 'firebase-admin';
 
 // OpenAI 客戶端
 const openai = new OpenAI({
@@ -16,6 +17,9 @@ const MAX_ITERATIONS = 20;
 
 // 查詢超時設置（毫秒）
 const QUERY_TIMEOUT = 60 * 1000; // 60 秒
+
+// Firebase 緩存集合名稱
+const CITATION_CACHE_COLLECTION = 'citationCache';
 
 // 可重試的錯誤類型
 const RETRYABLE_ERRORS = [
@@ -394,6 +398,98 @@ export function parseCitationText(citationText) {
   // 無法解析
   console.error('[Citation Query] 無法解析案號:', citationText);
   return null;
+}
+
+/**
+ * 生成緩存 Key
+ * @param {Object} citationInfo - 案號信息 { court, year, category, number }
+ * @returns {string} 緩存 Key，例如：「最高法院-96-台上-489」
+ */
+function generateCacheKey(citationInfo) {
+  const { court, year, category, number } = citationInfo;
+  return `${court}-${year}-${category}-${number}`;
+}
+
+/**
+ * 從 Firebase 緩存中獲取援引判決 URL
+ * @param {string} cacheKey - 緩存 Key
+ * @returns {Promise<Object|null>} 緩存數據或 null
+ */
+async function getCitationFromCache(cacheKey) {
+  try {
+    const db = admin.firestore();
+    const docRef = db.collection(CITATION_CACHE_COLLECTION).doc(cacheKey);
+    const docSnap = await docRef.get();
+
+    if (!docSnap.exists) {
+      console.log(`[CitationCache] 快取未命中: ${cacheKey}`);
+      return null;
+    }
+
+    const data = docSnap.data();
+
+    // 更新命中次數和最後訪問時間
+    await docRef.update({
+      hitCount: admin.firestore.FieldValue.increment(1),
+      lastAccessedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    console.log(`[CitationCache] 快取命中: ${cacheKey}, 命中次數: ${(data.hitCount || 0) + 1}`);
+
+    return {
+      judgementUrl: data.judgementUrl,
+      court: data.court,
+      year: data.year,
+      category: data.category,
+      number: data.number,
+      caseType: data.caseType,
+      queryDuration: data.queryDuration,
+      _cached: true,
+      _hitCount: (data.hitCount || 0) + 1,
+      _createdAt: data.createdAt
+    };
+  } catch (error) {
+    console.error('[CitationCache] 查詢快取失敗:', error);
+    return null;
+  }
+}
+
+/**
+ * 將援引判決查詢結果存入 Firebase 緩存
+ * @param {string} cacheKey - 緩存 Key
+ * @param {Object} citationData - 查詢結果數據
+ */
+async function saveCitationToCache(cacheKey, citationData) {
+  try {
+    const db = admin.firestore();
+    const docRef = db.collection(CITATION_CACHE_COLLECTION).doc(cacheKey);
+
+    await docRef.set({
+      // 基本資訊
+      court: citationData.court,
+      year: citationData.year,
+      category: citationData.category,
+      number: citationData.number,
+      caseType: citationData.caseType,
+
+      // 查詢結果
+      judgementUrl: citationData.judgementUrl,
+
+      // 元數據
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      hitCount: 0,
+      lastAccessedAt: admin.firestore.FieldValue.serverTimestamp(),
+
+      // 查詢資訊
+      queryDuration: citationData.queryDuration || 0,
+      sessionId: citationData.sessionId || null
+    });
+
+    console.log(`[CitationCache] 已存入快取: ${cacheKey}`);
+  } catch (error) {
+    console.error('[CitationCache] 存入快取失敗:', error);
+  }
 }
 
 /**
@@ -1047,14 +1143,52 @@ export async function queryCitation(citationText, judgementId) {
 
     console.log(`[Citation Query] ${queryId} 查詢信息:`, citationInfo);
 
-    // 5. 使用 AI + Chrome MCP 自動查詢
+    // 🆕 5. 生成緩存 Key 並檢查 Firebase 快取
+    const cacheKey = generateCacheKey(citationInfo);
+    console.log(`[Citation Query] ${queryId} 緩存 Key:`, cacheKey);
+
+    const cachedResult = await getCitationFromCache(cacheKey);
+    if (cachedResult) {
+      const duration = Date.now() - startTime;
+      console.log(`[Citation Query] ${queryId} 使用快取結果，耗時 ${duration}ms`);
+      console.log(`[Citation Query] ${queryId} 快取命中次數:`, cachedResult._hitCount);
+
+      return {
+        success: true,
+        url: cachedResult.judgementUrl,
+        citation_info: citationInfo,
+        query_steps: [],
+        cached: true,
+        hitCount: cachedResult._hitCount
+      };
+    }
+
+    // 🆕 6. 快取未命中，使用 AI + Chrome MCP 自動查詢
+    console.log(`[Citation Query] ${queryId} 快取未命中，開始 AI 查詢...`);
     const result = await queryJudgmentWithAI(citationInfo, queryId);
     const url = typeof result === 'string' ? result : result.url;
     const querySteps = typeof result === 'object' ? result.querySteps : [];
+    const sessionId = typeof result === 'object' ? result.sessionId : null;
 
     const duration = Date.now() - startTime;
     console.log(`[Citation Query] ${queryId} 查詢完成，耗時 ${duration}ms`);
     console.log(`[Citation Query] ${queryId} 判決書 URL:`, url);
+
+    // 🆕 7. 將結果異步存入 Firebase 快取
+    if (url) {
+      saveCitationToCache(cacheKey, {
+        court: citationInfo.court,
+        year: citationInfo.year,
+        category: citationInfo.category,
+        number: citationInfo.number,
+        caseType: caseType,
+        judgementUrl: url,
+        queryDuration: duration,
+        sessionId: sessionId
+      }).catch(err => {
+        console.error('[Citation Query] 背景存入快取失敗:', err);
+      });
+    }
 
     console.log(`[Citation Query] ${queryId} 最終返回，query_steps 數量:`, querySteps.length);
 
@@ -1062,7 +1196,8 @@ export async function queryCitation(citationText, judgementId) {
       success: true,
       url,
       citation_info: citationInfo,
-      query_steps: querySteps
+      query_steps: querySteps,
+      cached: false
     };
 
   } catch (error) {
@@ -1132,7 +1267,49 @@ export async function queryCitationWithSSE(citationText, judgementId, progressCa
 
     console.log(`[Citation Query SSE] ${queryId} 查詢信息:`, citationInfo);
 
-    // 5. 使用 AI + Chrome MCP 自動查詢（帶進度回調）
+    // 🆕 5. 生成緩存 Key 並檢查 Firebase 快取
+    const cacheKey = generateCacheKey(citationInfo);
+    console.log(`[Citation Query SSE] ${queryId} 緩存 Key:`, cacheKey);
+
+    const cachedResult = await getCitationFromCache(cacheKey);
+    if (cachedResult) {
+      const duration = Date.now() - startTime;
+      console.log(`[Citation Query SSE] ${queryId} 使用快取結果，耗時 ${duration}ms`);
+      console.log(`[Citation Query SSE] ${queryId} 快取命中次數:`, cachedResult._hitCount);
+
+      // 推送快取命中的進度消息
+      if (progressCallback) {
+        progressCallback([{
+          step: 'cache_hit',
+          message: `✅ 從快取中找到判決書 URL（命中次數: ${cachedResult._hitCount}）`,
+          status: 'success',
+          timestamp: new Date().toISOString()
+        }]);
+      }
+
+      return {
+        success: true,
+        url: cachedResult.judgementUrl,
+        citation_info: citationInfo,
+        query_steps: [],
+        session_id: null,
+        cached: true,
+        hitCount: cachedResult._hitCount
+      };
+    }
+
+    // 🆕 6. 快取未命中，推送進度消息
+    console.log(`[Citation Query SSE] ${queryId} 快取未命中，開始 AI 查詢...`);
+    if (progressCallback) {
+      progressCallback([{
+        step: 'cache_miss',
+        message: '🔍 快取未命中，開始查詢...',
+        status: 'info',
+        timestamp: new Date().toISOString()
+      }]);
+    }
+
+    // 7. 使用 AI + Chrome MCP 自動查詢（帶進度回調）
     const result = await queryJudgmentWithAI(citationInfo, queryId, progressCallback);
     const url = typeof result === 'string' ? result : result.url;
     const querySteps = typeof result === 'object' ? result.querySteps : [];
@@ -1143,12 +1320,29 @@ export async function queryCitationWithSSE(citationText, judgementId, progressCa
     console.log(`[Citation Query SSE] ${queryId} 判決書 URL:`, url);
     console.log(`[Citation Query SSE] ${queryId} Session ID:`, sessionId);
 
+    // 🆕 8. 將結果異步存入 Firebase 快取
+    if (url) {
+      saveCitationToCache(cacheKey, {
+        court: citationInfo.court,
+        year: citationInfo.year,
+        category: citationInfo.category,
+        number: citationInfo.number,
+        caseType: caseType,
+        judgementUrl: url,
+        queryDuration: duration,
+        sessionId: sessionId
+      }).catch(err => {
+        console.error('[Citation Query SSE] 背景存入快取失敗:', err);
+      });
+    }
+
     return {
       success: true,
       url,
       citation_info: citationInfo,
       query_steps: querySteps,
-      session_id: sessionId
+      session_id: sessionId,
+      cached: false
     };
 
   } catch (error) {

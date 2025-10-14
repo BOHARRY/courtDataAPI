@@ -859,17 +859,43 @@ export async function aiExplainLaw(lawName) {
             sourceUrl: result.出處來源
         });
 
-        // 步驟 3: 將結果存入 Firebase 快取（異步，不阻塞返回）
-        saveLawToCache(lawName, result).catch(err => {
-            console.error('[LawSearch] 背景存入快取失敗:', err);
-        });
+        // 🆕 步驟 3: 驗證結果有效性，只有成功的查詢結果才存入 Firebase 快取
+        const isValidResult = (
+            result.法條原文 &&
+            result.法條原文.trim() !== "" &&
+            result.法條原文 !== "抱歉，目前無法獲取法條原文，請稍後再試。" &&
+            !result.法條原文.includes("無法獲取") &&
+            !result.法條原文.includes("查詢失敗") &&
+            result.出處來源 &&
+            result.出處來源.trim() !== "" &&
+            result.出處來源 !== "查詢失敗" &&
+            result.出處來源.startsWith('http') && // 確保是有效的 URL
+            !result.出處來源.includes("錯誤") && // 🆕 排除包含「錯誤」的 URL
+            !result.出處來源.includes("失敗") && // 🆕 排除包含「失敗」的 URL
+            !result.出處來源.includes("無法") && // 🆕 排除包含「無法」的 URL
+            !result.出處來源.includes("（") && // 🆕 排除包含括號說明的 URL
+            !result.出處來源.includes("(") // 🆕 排除包含括號說明的 URL
+        );
+
+        if (isValidResult) {
+            // 只有當結果有效時才存入快取（異步，不阻塞返回）
+            saveLawToCache(lawName, result).catch(err => {
+                console.error('[LawSearch] 背景存入快取失敗:', err);
+            });
+            console.log(`[LawSearch] 有效結果，已存入快取: ${lawName}`);
+        } else {
+            console.warn(`[LawSearch] 無效結果，不存入快取: ${lawName}`, {
+                法條原文: result.法條原文?.substring(0, 50),
+                出處來源: result.出處來源
+            });
+        }
 
         return result;
 
     } catch (error) {
         console.error('[LawSearch] AI 解析失敗:', error);
 
-        // 降級處理：返回基本信息
+        // 降級處理：返回基本信息（不存入快取）
         return {
             法條原文: "抱歉，目前無法獲取法條原文，請稍後再試。",
             出處來源: "查詢失敗",
