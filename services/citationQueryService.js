@@ -30,11 +30,6 @@ const RETRYABLE_ERRORS = [
 // 最大重試次數
 const MAX_RETRIES = 2;
 
-// MCP Session 管理
-let mcpSessionId = null;
-let sessionInitTime = null;
-const SESSION_TIMEOUT = 5 * 60 * 1000; // 5 分鐘過期
-
 /**
  * 檢查錯誤是否可重試
  */
@@ -71,50 +66,23 @@ function classifyError(error) {
 }
 
 /**
- * 檢查 Session 是否有效
+ * 創建新的 Chrome MCP Session（每個查詢獨立）
  */
-function isSessionValid() {
-  if (!mcpSessionId || !sessionInitTime) {
-    return false;
-  }
-
-  const now = Date.now();
-  const elapsed = now - sessionInitTime;
-
-  if (elapsed > SESSION_TIMEOUT) {
-    console.log('[Citation Query] Session 已過期，需要重新初始化');
-    mcpSessionId = null;
-    sessionInitTime = null;
-    return false;
-  }
-
-  return true;
-}
-
-/**
- * 初始化 Chrome MCP Session
- */
-async function initializeChromeMCPSession(forceReinit = false) {
-  // 如果強制重新初始化或 Session 無效，則重新初始化
-  if (!forceReinit && isSessionValid()) {
-    console.log('[Citation Query] 使用現有 Session:', mcpSessionId);
-    return mcpSessionId;
-  }
-
+async function createChromeMCPSession(queryId) {
   try {
-    console.log('[Citation Query] 初始化 Chrome MCP Session...');
+    console.log(`[Citation Query] ${queryId} 創建新的 Chrome MCP Session...`);
 
     // 步驟 1: 發送 initialize 請求
     const initRequest = {
       jsonrpc: "2.0",
-      id: 1,
+      id: Date.now(),
       method: "initialize",
       params: {
         protocolVersion: "2024-11-05",
         capabilities: {},
         clientInfo: {
           name: "lawsowl-citation-query",
-          version: "1.0.0"
+          version: "2.0.0"
         }
       }
     };
@@ -133,12 +101,11 @@ async function initializeChromeMCPSession(forceReinit = false) {
     }
 
     // 獲取 Session ID
-    mcpSessionId = initResponse.headers.get('Mcp-Session-Id');
-    sessionInitTime = Date.now();
-    console.log('[Citation Query] Chrome MCP Session 初始化成功:', mcpSessionId);
+    const sessionId = initResponse.headers.get('Mcp-Session-Id');
+    console.log(`[Citation Query] ${queryId} Chrome MCP Session 創建成功:`, sessionId);
 
     // 步驟 2: 發送 initialized 通知 (必須!)
-    console.log('[Citation Query] 發送 initialized 通知...');
+    console.log(`[Citation Query] ${queryId} 發送 initialized 通知...`);
     const notifyRequest = {
       jsonrpc: "2.0",
       method: "notifications/initialized"
@@ -149,32 +116,46 @@ async function initializeChromeMCPSession(forceReinit = false) {
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json, text/event-stream',
-        'Mcp-Session-Id': mcpSessionId
+        'Mcp-Session-Id': sessionId
       },
       body: JSON.stringify(notifyRequest)
     });
 
-    console.log('[Citation Query] initialized 通知發送成功');
+    console.log(`[Citation Query] ${queryId} initialized 通知發送成功`);
 
-    return mcpSessionId;
+    return sessionId;
   } catch (error) {
-    console.error('[Citation Query] Chrome MCP 初始化失敗:', error);
-    mcpSessionId = null;
-    sessionInitTime = null;
+    console.error(`[Citation Query] ${queryId} Chrome MCP Session 創建失敗:`, error);
     throw error;
   }
 }
 
 /**
- * 調用 Chrome MCP 工具
+ * 關閉 Chrome MCP Session
  */
-async function callChromeMCPTool(toolName, args) {
+async function closeChromeMCPSession(sessionId, queryId) {
   try {
-    console.log(`[Citation Query] 調用 Chrome MCP 工具: ${toolName}`);
-    console.log(`[Citation Query] 參數:`, JSON.stringify(args, null, 2));
+    console.log(`[Citation Query] ${queryId} 關閉 Chrome MCP Session:`, sessionId);
 
-    // 確保 MCP Session 已初始化
-    const sessionId = await initializeChromeMCPSession();
+    await callChromeMCPTool('close_browser_session', { session_id: sessionId }, sessionId);
+
+    console.log(`[Citation Query] ${queryId} Chrome MCP Session 已關閉`);
+  } catch (error) {
+    console.error(`[Citation Query] ${queryId} 關閉 Chrome MCP Session 失敗:`, error);
+    // 不拋出錯誤，避免影響主流程
+  }
+}
+
+/**
+ * 調用 Chrome MCP 工具
+ * @param {string} toolName - 工具名稱
+ * @param {Object} args - 工具參數
+ * @param {string} sessionId - Session ID
+ */
+async function callChromeMCPTool(toolName, args, sessionId) {
+  try {
+    console.log(`[Citation Query] 調用 Chrome MCP 工具: ${toolName} (Session: ${sessionId})`);
+    console.log(`[Citation Query] 參數:`, JSON.stringify(args, null, 2));
 
     // 構建 MCP 請求
     const mcpRequest = {
@@ -446,11 +427,23 @@ class CitationQueryError extends Error {
 async function queryJudgmentWithAI(citationInfo, queryId, progressCallback) {
   console.log(`[Citation Query] ${queryId} 開始 AI 自動化查詢...`);
 
+  // 創建獨立的 Chrome MCP Session
+  let sessionId = null;
+
+  try {
+    sessionId = await createChromeMCPSession(queryId);
+    console.log(`[Citation Query] ${queryId} 使用 Session:`, sessionId);
+  } catch (error) {
+    console.error(`[Citation Query] ${queryId} 創建 Session 失敗:`, error);
+    throw new CitationQueryError('無法創建瀏覽器 Session', []);
+  }
+
   // 進度追蹤
   const querySteps = [];
 
-  // 定義 Chrome MCP 工具（v2.0.0 - 支持 Context 隔離）
-  const tools = [
+  try {
+    // 定義 Chrome MCP 工具（v2.0.0 - 支持 Context 隔離）
+    const tools = [
     {
       type: 'function',
       function: {
@@ -754,157 +747,165 @@ navigate_to_url({ url: "https://judgment.judicial.gov.tw/FJUD/data.aspx?ty=JD&id
 
 **開始執行任務！**`;
 
-  // 初始化對話
-  const messages = [
-    { role: 'system', content: systemPrompt },
-    { role: 'user', content: `請查詢判決書：${citationInfo.court} ${citationInfo.year}年${citationInfo.category}字第${citationInfo.number}號` }
-  ];
+    // 初始化對話
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: `請查詢判決書：${citationInfo.court} ${citationInfo.year}年${citationInfo.category}字第${citationInfo.number}號` }
+    ];
 
-  let turnCount = 0;
+    let turnCount = 0;
 
-  // 多輪工具調用循環
-  while (turnCount < MAX_ITERATIONS) {
-    turnCount++;
-    console.log(`[Citation Query] ${queryId} 第 ${turnCount} 輪 AI 調用`);
+    // 多輪工具調用循環
+    while (turnCount < MAX_ITERATIONS) {
+      turnCount++;
+      console.log(`[Citation Query] ${queryId} 第 ${turnCount} 輪 AI 調用`);
 
-    // 調用 OpenAI
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o',
-      messages: messages,
-      tools: tools,
-      tool_choice: turnCount === 1 ? 'required' : 'auto'
-    });
+      // 調用 OpenAI
+      const response = await openai.chat.completions.create({
+        model: 'gpt-4o',
+        messages: messages,
+        tools: tools,
+        tool_choice: turnCount === 1 ? 'required' : 'auto'
+      });
 
-    const message = response.choices[0].message;
-    messages.push(message);
+      const message = response.choices[0].message;
+      messages.push(message);
 
-    // 檢查是否有工具調用
-    if (!message.tool_calls || message.tool_calls.length === 0) {
-      // 沒有工具調用，AI 給出最終回覆
-      console.log(`[Citation Query] ${queryId} AI 完成任務`);
+      // 檢查是否有工具調用
+      if (!message.tool_calls || message.tool_calls.length === 0) {
+        // 沒有工具調用，AI 給出最終回覆
+        console.log(`[Citation Query] ${queryId} AI 完成任務`);
 
-      // 添加最終步驟
-      querySteps.push({ message: '查詢完成！', status: 'success', timestamp: Date.now() });
-      if (progressCallback) {
-        progressCallback(querySteps);
+        // 添加最終步驟
+        querySteps.push({ message: '查詢完成！', status: 'success', timestamp: Date.now() });
+        if (progressCallback) {
+          progressCallback(querySteps);
+        }
+
+        // 從 AI 回覆中提取 URL
+        const content = message.content || '';
+        const urlMatch = content.match(/https?:\/\/[^\s]+/);
+
+        if (urlMatch) {
+          console.log(`[Citation Query] ${queryId} 返回結果，querySteps 數量:`, querySteps.length);
+          console.log(`[Citation Query] ${queryId} querySteps:`, JSON.stringify(querySteps, null, 2));
+          return { url: urlMatch[0], querySteps, sessionId };
+        } else {
+          throw new CitationQueryError('AI 未返回判決書 URL', querySteps);
+        }
       }
 
-      // 從 AI 回覆中提取 URL
-      const content = message.content || '';
-      const urlMatch = content.match(/https?:\/\/[^\s]+/);
+      // 執行工具調用
+      for (const toolCall of message.tool_calls) {
+        const toolName = toolCall.function.name;
+        const toolArgs = JSON.parse(toolCall.function.arguments);
 
-      if (urlMatch) {
-        console.log(`[Citation Query] ${queryId} 返回結果，querySteps 數量:`, querySteps.length);
-        console.log(`[Citation Query] ${queryId} querySteps:`, JSON.stringify(querySteps, null, 2));
-        return { url: urlMatch[0], querySteps };
-      } else {
-        throw new CitationQueryError('AI 未返回判決書 URL', querySteps);
+        console.log(`[Citation Query] ${queryId} 調用工具: ${toolName}`, toolArgs);
+
+        // 記錄進度步驟（使用專業抽象的描述）
+        let stepMessage = '';
+        if (toolName === 'navigate_to_url') {
+          stepMessage = '正在連接司法院判決書系統...';
+        } else if (toolName === 'get_page_info') {
+          stepMessage = '正在解析查詢介面...';
+        } else if (toolName === 'fill_input') {
+          if (toolArgs.selector === '#jud_year') {
+            stepMessage = '正在設定查詢條件（年度）...';
+          } else if (toolArgs.selector === '#jud_case') {
+            stepMessage = '正在設定查詢條件（案件字別）...';
+          } else if (toolArgs.selector === '#jud_no') {
+            stepMessage = '正在設定查詢條件（案號）...';
+          } else {
+            stepMessage = '正在設定查詢參數...';
+          }
+        } else if (toolName === 'click_element') {
+          if (toolArgs.selector && toolArgs.selector.includes('submit')) {
+            stepMessage = '正在執行判決書檢索...';
+          } else if (toolArgs.selector && toolArgs.selector.includes('data.aspx')) {
+            stepMessage = '正在載入判決書內容...';
+          } else if (toolArgs.selector && toolArgs.selector.includes('jud_sys')) {
+            stepMessage = '正在設定案件類別...';
+          } else {
+            stepMessage = '正在處理查詢請求...';
+          }
+        } else if (toolName === 'get_iframe_url') {
+          stepMessage = '正在取得查詢結果頁面...';
+        } else if (toolName === 'click_link_by_text') {
+          stepMessage = '正在開啟判決書內容...';
+        } else if (toolName === 'get_text_content') {
+          stepMessage = '正在讀取頁面資訊...';
+        } else if (toolName === 'evaluate_script') {
+          stepMessage = '正在取得判決書資訊...';
+        } else if (toolName === 'select_option') {
+          stepMessage = '正在調整查詢選項...';
+        } else if (toolName === 'close_browser_session') {
+          stepMessage = '正在清理資源...';
+        } else {
+          stepMessage = '正在處理查詢作業...';
+        }
+
+        querySteps.push({ message: stepMessage, status: 'loading', timestamp: Date.now() });
+        console.log(`[Citation Query] ${queryId} 添加步驟: ${stepMessage}, 當前步驟數: ${querySteps.length}`);
+
+        // 不要在 loading 時推送，避免重複
+        // if (progressCallback) {
+        //   progressCallback(querySteps);
+        // }
+
+        try {
+          // 將 sessionId 添加到工具參數中
+          const toolArgsWithSession = { ...toolArgs, session_id: sessionId };
+          const result = await callChromeMCPTool(toolName, toolArgsWithSession, sessionId);
+
+          // 更新步驟狀態為成功
+          querySteps[querySteps.length - 1].status = 'success';
+          console.log(`[Citation Query] ${queryId} 步驟成功: ${stepMessage}`);
+
+          // 只在成功時推送
+          if (progressCallback) {
+            progressCallback(querySteps);
+          }
+
+          // 移除 screenshot 以節省 tokens
+          const resultForAI = { ...result };
+          if (resultForAI.screenshot) {
+            resultForAI.screenshot = '[截圖已移除]';
+          }
+
+          messages.push({
+            tool_call_id: toolCall.id,
+            role: 'tool',
+            name: toolName,
+            content: JSON.stringify(resultForAI)
+          });
+
+          console.log(`[Citation Query] ${queryId} 工具執行成功`);
+        } catch (error) {
+          // 更新步驟狀態為失敗
+          querySteps[querySteps.length - 1].status = 'error';
+          if (progressCallback) {
+            progressCallback(querySteps);
+          }
+
+          messages.push({
+            tool_call_id: toolCall.id,
+            role: 'tool',
+            name: toolName,
+            content: `Error: ${error.message}`
+          });
+
+          console.error(`[Citation Query] ${queryId} 工具執行失敗:`, error.message);
+        }
       }
     }
 
-    // 執行工具調用
-    for (const toolCall of message.tool_calls) {
-      const toolName = toolCall.function.name;
-      const toolArgs = JSON.parse(toolCall.function.arguments);
-
-      console.log(`[Citation Query] ${queryId} 調用工具: ${toolName}`, toolArgs);
-
-      // 記錄進度步驟（使用專業抽象的描述）
-      let stepMessage = '';
-      if (toolName === 'navigate_to_url') {
-        stepMessage = '正在連接司法院判決書系統...';
-      } else if (toolName === 'get_page_info') {
-        stepMessage = '正在解析查詢介面...';
-      } else if (toolName === 'fill_input') {
-        if (toolArgs.selector === '#jud_year') {
-          stepMessage = '正在設定查詢條件（年度）...';
-        } else if (toolArgs.selector === '#jud_case') {
-          stepMessage = '正在設定查詢條件（案件字別）...';
-        } else if (toolArgs.selector === '#jud_no') {
-          stepMessage = '正在設定查詢條件（案號）...';
-        } else {
-          stepMessage = '正在設定查詢參數...';
-        }
-      } else if (toolName === 'click_element') {
-        if (toolArgs.selector && toolArgs.selector.includes('submit')) {
-          stepMessage = '正在執行判決書檢索...';
-        } else if (toolArgs.selector && toolArgs.selector.includes('data.aspx')) {
-          stepMessage = '正在載入判決書內容...';
-        } else if (toolArgs.selector && toolArgs.selector.includes('jud_sys')) {
-          stepMessage = '正在設定案件類別...';
-        } else {
-          stepMessage = '正在處理查詢請求...';
-        }
-      } else if (toolName === 'get_iframe_url') {
-        stepMessage = '正在取得查詢結果頁面...';
-      } else if (toolName === 'click_link_by_text') {
-        stepMessage = '正在開啟判決書內容...';
-      } else if (toolName === 'get_text_content') {
-        stepMessage = '正在讀取頁面資訊...';
-      } else if (toolName === 'evaluate_script') {
-        stepMessage = '正在取得判決書資訊...';
-      } else if (toolName === 'select_option') {
-        stepMessage = '正在調整查詢選項...';
-      } else if (toolName === 'close_browser_session') {
-        stepMessage = '正在清理資源...';
-      } else {
-        stepMessage = '正在處理查詢作業...';
-      }
-
-      querySteps.push({ message: stepMessage, status: 'loading', timestamp: Date.now() });
-      console.log(`[Citation Query] ${queryId} 添加步驟: ${stepMessage}, 當前步驟數: ${querySteps.length}`);
-
-      // 不要在 loading 時推送，避免重複
-      // if (progressCallback) {
-      //   progressCallback(querySteps);
-      // }
-
-      try {
-        const result = await callChromeMCPTool(toolName, toolArgs);
-
-        // 更新步驟狀態為成功
-        querySteps[querySteps.length - 1].status = 'success';
-        console.log(`[Citation Query] ${queryId} 步驟成功: ${stepMessage}`);
-
-        // 只在成功時推送
-        if (progressCallback) {
-          progressCallback(querySteps);
-        }
-
-        // 移除 screenshot 以節省 tokens
-        const resultForAI = { ...result };
-        if (resultForAI.screenshot) {
-          resultForAI.screenshot = '[截圖已移除]';
-        }
-
-        messages.push({
-          tool_call_id: toolCall.id,
-          role: 'tool',
-          name: toolName,
-          content: JSON.stringify(resultForAI)
-        });
-
-        console.log(`[Citation Query] ${queryId} 工具執行成功`);
-      } catch (error) {
-        // 更新步驟狀態為失敗
-        querySteps[querySteps.length - 1].status = 'error';
-        if (progressCallback) {
-          progressCallback(querySteps);
-        }
-
-        messages.push({
-          tool_call_id: toolCall.id,
-          role: 'tool',
-          name: toolName,
-          content: `Error: ${error.message}`
-        });
-
-        console.error(`[Citation Query] ${queryId} 工具執行失敗:`, error.message);
-      }
+    throw new CitationQueryError(`達到最大輪數限制 (${MAX_ITERATIONS})，查詢失敗`, querySteps);
+  } finally {
+    // 無論成功或失敗，都要清理 session
+    if (sessionId) {
+      await closeChromeMCPSession(sessionId, queryId);
     }
   }
-
-  throw new CitationQueryError(`達到最大輪數限制 (${MAX_ITERATIONS})，查詢失敗`, querySteps);
 }
 
 /**
@@ -1090,16 +1091,19 @@ export async function queryCitationWithSSE(citationText, judgementId, progressCa
     const result = await queryJudgmentWithAI(citationInfo, queryId, progressCallback);
     const url = typeof result === 'string' ? result : result.url;
     const querySteps = typeof result === 'object' ? result.querySteps : [];
+    const sessionId = typeof result === 'object' ? result.sessionId : null;
 
     const duration = Date.now() - startTime;
     console.log(`[Citation Query SSE] ${queryId} 查詢完成，耗時 ${duration}ms`);
     console.log(`[Citation Query SSE] ${queryId} 判決書 URL:`, url);
+    console.log(`[Citation Query SSE] ${queryId} Session ID:`, sessionId);
 
     return {
       success: true,
       url,
       citation_info: citationInfo,
-      query_steps: querySteps
+      query_steps: querySteps,
+      session_id: sessionId
     };
 
   } catch (error) {
