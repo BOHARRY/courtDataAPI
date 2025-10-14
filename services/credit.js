@@ -137,10 +137,13 @@ export async function addUserCreditsAndLog(userId, amount, purpose, logDetails =
   }
 }
 
-// 註冊獎勵的特定函數 (範例)
-export async function grantSignupBonus(userId, bonusAmount = 300) {
-  // 這裡可以加入邏輯檢查用戶是否已經領取過註冊獎勵，避免重複發放
-  // 例如，可以在 userDoc 中增加一個欄位 hasReceivedSignupBonus: true
+// 註冊獎勵的特定函數
+export async function grantSignupBonus(userId) {
+  // 🆕 從配置文件讀取獎勵金額
+  const { CREDIT_REWARDS } = await import('../config/creditCosts.js');
+  const bonusAmount = CREDIT_REWARDS.SIGNUP_BONUS;
+
+  // 檢查用戶是否已經領取過註冊獎勵，避免重複發放
   const userDocRef = admin.firestore().collection('users').doc(userId);
   const userDoc = await userDocRef.get();
   if (userDoc.exists && userDoc.data().hasReceivedSignupBonus) {
@@ -158,7 +161,7 @@ export async function grantSignupBonus(userId, bonusAmount = 300) {
     // 標記已領取
     await userDocRef.update({ hasReceivedSignupBonus: true });
     console.log(`[Credit Service] Signup bonus of ${bonusAmount} granted to user ${userId}.`);
-    return { message: "Signup bonus granted successfully." };
+    return { message: "Signup bonus granted successfully.", bonusAmount };
   } catch (error) {
     console.error(`[Credit Service] Failed to grant signup bonus to user ${userId}:`, error);
     throw error;

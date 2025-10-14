@@ -30,6 +30,11 @@ export const CREDIT_COSTS = {
   // EXAMPLE_FEATURE_B: 2,
 };
 
+// 🆕 積分獎勵配置
+export const CREDIT_REWARDS = {
+  SIGNUP_BONUS: 300, // 新用戶註冊獎勵
+};
+
 // 也可以導出 purpose 的常數，以確保一致性
 export const CREDIT_PURPOSES = {
   SEARCH_JUDGEMENT: 'search_judgement',

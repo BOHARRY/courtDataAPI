@@ -6,7 +6,8 @@ import {
     updateUserSubscriptionController,
     getAiAnalysisHistoryController,
     cancelPendingDowngradeController,
-    getUserSubscriptionStatusController
+    getUserSubscriptionStatusController,
+    recordSignupBonusController
 } from '../controllers/user-controller.js';
 import { verifyToken } from '../middleware/auth.js';
 
@@ -30,6 +31,9 @@ router.get('/subscription-status', verifyToken, getUserSubscriptionStatusControl
 
 // 新增：取消待降級請求 (POST /api/users/cancel-downgrade)
 router.post('/cancel-downgrade', verifyToken, cancelPendingDowngradeController);
+
+// 🆕 新增：領取註冊獎勵積分 (POST /api/users/signup-bonus)
+router.post('/signup-bonus', verifyToken, recordSignupBonusController);
 
 // 未來可以添加其他用戶相關路由，例如獲取用戶資料、更新用戶資料等
 // router.get('/profile', verifyToken, getUserProfileController);
