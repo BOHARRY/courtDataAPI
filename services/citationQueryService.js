@@ -675,25 +675,42 @@ async function queryJudgmentWithAI(citationInfo, queryId, progressCallback) {
 
 7. 使用 navigate_to_url 訪問步驟 6 獲取的 iframe URL（記得傳遞 session_id）
 
-8. 使用 get_page_info(session_id) 查看頁面內容：
-   - 如果頁面上有判決書列表（連結），有兩種點擊方式：
-     * **推薦**：使用 click_link_by_text(案號的一部分, session_id)，例如 click_link_by_text("${citationInfo.year}${citationInfo.category}${citationInfo.number}", session_id)
-     * 或使用 click_element 點擊第一個判決書連結
+8. 使用 get_page_info(session_id) 查看頁面內容，找到並點擊判決書連結：
+
+   **重要**：司法院網站的連結文字格式通常是「96 年度 台上 字第 489 號」（有空格），請根據實際頁面內容選擇最佳的匹配方式。
+
+   **推薦方式**（按優先順序）：
+
+   a) **最推薦**：使用 click_link_by_text 搜尋案號的關鍵部分
+      - 搜尋「字第 + 案號」：click_link_by_text("${citationInfo.category} 字第 ${citationInfo.number} 號", session_id)
+        例如：click_link_by_text("台上 字第 489 號", session_id)
+      - 或搜尋「年度 + 字別」：click_link_by_text("${citationInfo.year} 年度 ${citationInfo.category}", session_id)
+        例如：click_link_by_text("96 年度 台上", session_id)
+
+   b) **備用方式**：如果 click_link_by_text 失敗，使用 get_page_info 查看頁面上的連結
+      - 找到判決書連結的 selector（通常是表格中的第一個連結）
+      - 使用 click_element 點擊，例如：click_element("tr:nth-child(1) a", session_id)
+
+   c) **靈活判斷**：你可以根據 get_page_info 返回的實際連結文字，選擇最合適的搜尋關鍵字
+
    - 如果頁面已經是判決書內容頁面，直接進行下一步
 
-8.5. **重要**：點擊連結後，先檢查當前頁面狀態（避免盲目等待 iframe）：
-   - 使用 evaluate_script 執行：\`() => window.location.href\`
-   - 檢查返回的 URL：
-     * 如果 URL 包含 "data.aspx"，說明頁面已經直接導航到判決書頁面，**跳到步驟 11**
-     * 如果 URL 不包含 "data.aspx"，說明判決書在 iframe 中，繼續步驟 9
-   - **這一步很關鍵**：可以避免在頁面已經是判決書時還去等待 iframe，導致超時失敗
+9. **重要**：點擊連結後，嘗試提取判決書 URL（智能處理兩種情況）：
+   - **第一步**：優先使用 get_iframe_url(session_id=session_id, timeout=10000)
+     * 如果成功，會返回 iframe 中的判決書 URL，繼續步驟 10
+     * 如果失敗（超時），說明沒有 iframe，繼續第二步
 
-9. 如果當前頁面 URL 不包含 "data.aspx"，需要提取 iframe URL：
-   - **推薦**：優先使用 get_iframe_url(session_id=session_id)
-   - 如果 get_iframe_url 失敗，使用 evaluate_script 作為備用方案
-   - 這會返回 iframe 中的判決書 URL
+   - **第二步**：如果 get_iframe_url 失敗，使用 evaluate_script 檢查當前頁面 URL：
+     * 執行：\`() => window.location.href\`
+     * 如果返回的 URL 包含 "data.aspx"，說明頁面已經直接導航到判決書，**直接跳到步驟 11 報告這個 URL**
+     * 如果返回的 URL 不包含 "data.aspx"，說明既沒有 iframe 也沒有導航，報告錯誤
 
-10. 使用 navigate_to_url 訪問判決書內容頁面的 URL（記得傳遞 session_id）
+   - **這個流程很關鍵**：
+     * 先嘗試 iframe（大多數情況）
+     * iframe 失敗後檢查是否直接導航（少數情況）
+     * 兩種情況都能正確處理
+
+10. 如果步驟 9 返回了 iframe URL，使用 navigate_to_url 訪問判決書內容頁面（記得傳遞 session_id）
 
 11. **重要**：向我報告判決書的網址（data.aspx 的完整 URL）
     - **不要**提供判決書的摘要或內容分析
@@ -739,23 +756,34 @@ get_iframe_url({ session_id: "abc123" })
 // 步驟 6: 訪問結果頁面
 navigate_to_url({ url: "https://judgment.judicial.gov.tw/FJUD/qryresultlst.aspx?...", session_id: "abc123" })
 
-// 步驟 7: 點擊判決書連結（推薦使用 click_link_by_text）
-click_link_by_text({ text_contains: "${citationInfo.year}${citationInfo.category}${citationInfo.number}", session_id: "abc123" })
+// 步驟 7: 點擊判決書連結
+// 方式 1（推薦）：使用 click_link_by_text 搜尋關鍵字
+click_link_by_text({ text_contains: "${citationInfo.category} 字第 ${citationInfo.number} 號", session_id: "abc123" })
+// 例如：click_link_by_text({ text_contains: "台上 字第 489 號", session_id: "abc123" })
 
-// 步驟 8: 檢查當前頁面 URL（重要！避免盲目等待 iframe）
+// 方式 2（備用）：如果方式 1 失敗，使用 click_element
+// 先用 get_page_info 查看頁面，找到連結的 selector
+// click_element({ selector: "tr:nth-child(1) a", session_id: "abc123" })
+
+// 步驟 8: 嘗試提取判決書 URL（智能處理兩種情況）
+
+// 步驟 8.1: 優先嘗試 get_iframe_url（大多數情況下判決書在 iframe 中）
+get_iframe_url({ session_id: "abc123", timeout: 10000 })
+// 情況 1: 成功返回 iframe URL
+// 返回: { iframe_url: "https://judgment.judicial.gov.tw/FJUD/data.aspx?ty=JD&id=...", ... }
+// → 繼續步驟 9
+
+// 情況 2: 失敗（超時），說明沒有 iframe
+// 返回: { error: "Timeout..." }
+// → 繼續步驟 8.2
+
+// 步驟 8.2: 如果 get_iframe_url 失敗，檢查當前頁面 URL
 evaluate_script({ script: "() => window.location.href", session_id: "abc123" })
 // 返回: { result: "https://judgment.judicial.gov.tw/FJUD/data.aspx?ty=JD&id=..." }
-// 或: { result: "https://judgment.judicial.gov.tw/FJUD/qryresultlst.aspx?..." }
+// 如果 URL 包含 "data.aspx"，說明頁面已經直接導航到判決書
+// → 直接跳到步驟 10，報告這個 URL
 
-// 步驟 8.5: 根據 URL 判斷下一步
-// 如果 URL 包含 "data.aspx"，說明頁面已經是判決書，直接跳到步驟 10
-// 如果 URL 不包含 "data.aspx"，繼續步驟 9
-
-// 步驟 9: 如果需要，提取 iframe URL
-get_iframe_url({ session_id: "abc123" })
-// 返回: { iframe_url: "https://judgment.judicial.gov.tw/FJUD/data.aspx?ty=JD&id=...", ... }
-
-// 步驟 9.5: 訪問判決書內容頁面
+// 步驟 9: 如果步驟 8.1 成功，訪問 iframe URL
 navigate_to_url({ url: "https://judgment.judicial.gov.tw/FJUD/data.aspx?ty=JD&id=...", session_id: "abc123" })
 
 // 步驟 10: 報告結果
