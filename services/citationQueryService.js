@@ -14,10 +14,61 @@ const CHROME_MCP_URL = process.env.CHROME_MCP_URL || 'https://chromemcp.onrender
 // 最大工具調用輪數
 const MAX_ITERATIONS = 20;
 
+// 查詢超時設置（毫秒）
+const QUERY_TIMEOUT = 60 * 1000; // 60 秒
+
+// 可重試的錯誤類型
+const RETRYABLE_ERRORS = [
+  'timeout',
+  'network',
+  'connection',
+  'ECONNREFUSED',
+  'ETIMEDOUT',
+  'ENOTFOUND'
+];
+
+// 最大重試次數
+const MAX_RETRIES = 2;
+
 // MCP Session 管理
 let mcpSessionId = null;
 let sessionInitTime = null;
 const SESSION_TIMEOUT = 5 * 60 * 1000; // 5 分鐘過期
+
+/**
+ * 檢查錯誤是否可重試
+ */
+function isRetryableError(error) {
+  const errorMessage = error.message || error.toString();
+  return RETRYABLE_ERRORS.some(keyword =>
+    errorMessage.toLowerCase().includes(keyword.toLowerCase())
+  );
+}
+
+/**
+ * 分類錯誤類型
+ */
+function classifyError(error) {
+  const errorMessage = error.message || error.toString();
+
+  if (errorMessage.includes('timeout') || errorMessage.includes('ETIMEDOUT')) {
+    return { type: 'timeout', retryable: true, message: '查詢超時，請稍後再試' };
+  }
+
+  if (errorMessage.includes('network') || errorMessage.includes('ECONNREFUSED') || errorMessage.includes('ENOTFOUND')) {
+    return { type: 'network', retryable: true, message: '網路連線錯誤，請檢查網路狀態' };
+  }
+
+  if (errorMessage.includes('AI 未返回判決書 URL')) {
+    return { type: 'no_result', retryable: false, message: '未找到符合條件的判決書' };
+  }
+
+  if (errorMessage.includes('無法提交查詢')) {
+    return { type: 'submit_failed', retryable: true, message: '提交查詢失敗，請稍後再試' };
+  }
+
+  return { type: 'unknown', retryable: false, message: '查詢過程發生錯誤' };
+}
 
 /**
  * 檢查 Session 是否有效
@@ -662,6 +713,45 @@ async function queryJudgmentWithAI(citationInfo, queryId, progressCallback) {
 - 如果某個步驟失敗，不要無限重複嘗試，最多重試 1 次
 - **所有工具調用都必須傳遞 session_id 參數**
 
+**完整範例（推薦流程）**：
+
+\`\`\`
+// 步驟 1: 訪問司法院網站
+navigate_to_url({ url: "https://judgment.judicial.gov.tw/FJUD/Default_AD.aspx" })
+// 返回: { session_id: "abc123", ... }
+
+// 步驟 2: 獲取頁面資訊
+get_page_info({ session_id: "abc123" })
+
+// 步驟 3: 填寫表單（使用返回的 session_id）
+fill_input({ selector: "#jud_year", value: "${citationInfo.year}", session_id: "abc123" })
+fill_input({ selector: "#jud_case", value: "${citationInfo.category}", session_id: "abc123" })
+fill_input({ selector: "#jud_no", value: "${citationInfo.number}", session_id: "abc123" })
+
+// 步驟 4: 點擊查詢按鈕
+click_element({ selector: "input[type='submit']", session_id: "abc123" })
+
+// 步驟 5: 提取 iframe URL（推薦使用 get_iframe_url）
+get_iframe_url({ session_id: "abc123" })
+// 返回: { iframe_url: "https://judgment.judicial.gov.tw/FJUD/qryresultlst.aspx?...", ... }
+
+// 步驟 6: 訪問結果頁面
+navigate_to_url({ url: "https://judgment.judicial.gov.tw/FJUD/qryresultlst.aspx?...", session_id: "abc123" })
+
+// 步驟 7: 點擊判決書連結（推薦使用 click_link_by_text）
+click_link_by_text({ text_contains: "${citationInfo.year}${citationInfo.category}${citationInfo.number}", session_id: "abc123" })
+
+// 步驟 8: 再次提取 iframe URL
+get_iframe_url({ session_id: "abc123" })
+// 返回: { iframe_url: "https://judgment.judicial.gov.tw/FJUD/data.aspx?ty=JD&id=...", ... }
+
+// 步驟 9: 訪問判決書內容頁面
+navigate_to_url({ url: "https://judgment.judicial.gov.tw/FJUD/data.aspx?ty=JD&id=...", session_id: "abc123" })
+
+// 步驟 10: 報告結果
+"判決書網址：https://judgment.judicial.gov.tw/FJUD/data.aspx?ty=JD&id=..."
+\`\`\`
+
 **開始執行任務！**`;
 
   // 初始化對話
@@ -815,6 +905,52 @@ async function queryJudgmentWithAI(citationInfo, queryId, progressCallback) {
   }
 
   throw new CitationQueryError(`達到最大輪數限制 (${MAX_ITERATIONS})，查詢失敗`, querySteps);
+}
+
+/**
+ * 帶超時和重試的查詢包裝函數
+ * @param {Function} queryFn - 查詢函數
+ * @param {number} timeout - 超時時間（毫秒）
+ * @param {number} maxRetries - 最大重試次數
+ * @returns {Promise<Object>}
+ */
+async function queryWithTimeoutAndRetry(queryFn, timeout = QUERY_TIMEOUT, maxRetries = MAX_RETRIES) {
+  let lastError = null;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      // 創建超時 Promise
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('查詢超時')), timeout);
+      });
+
+      // 執行查詢，帶超時
+      const result = await Promise.race([
+        queryFn(),
+        timeoutPromise
+      ]);
+
+      return result;
+
+    } catch (error) {
+      lastError = error;
+      const errorInfo = classifyError(error);
+
+      console.error(`[Citation Query] 查詢失敗 (嘗試 ${attempt + 1}/${maxRetries + 1}):`, errorInfo.message);
+
+      // 如果不可重試，或已達最大重試次數，直接拋出錯誤
+      if (!errorInfo.retryable || attempt >= maxRetries) {
+        throw error;
+      }
+
+      // 等待一段時間後重試（指數退避）
+      const waitTime = Math.min(1000 * Math.pow(2, attempt), 5000);
+      console.log(`[Citation Query] ${waitTime}ms 後重試...`);
+      await new Promise(resolve => setTimeout(resolve, waitTime));
+    }
+  }
+
+  throw lastError;
 }
 
 /**
