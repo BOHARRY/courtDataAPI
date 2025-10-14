@@ -15,6 +15,7 @@ export const OPENAI_MODEL_NAME_NANO = process.env.OPENAI_MODEL_NAME_NANO || 'gpt
 
 // Perplexity 配置
 export const PERPLEXITY_API_KEY = process.env.PERPLEXITY_API_KEY;
+export const SERPAPI_API_KEY = process.env.SERPAPI_API_KEY;
 
 // xAI 配置
 export const XAI_API_KEY = process.env.XAI_API_KEY;
