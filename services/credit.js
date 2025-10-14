@@ -129,7 +129,9 @@ export async function addUserCreditsAndLog(userId, amount, purpose, logDetails =
 
   try {
     return await db.runTransaction(async (transaction) => {
-      return addUserCreditsInTransaction(transaction, userDocRef, userId, amount, purpose, logDetails);
+      // 🔧 修正：在交易中讀取用戶文檔
+      const userSnapshot = await transaction.get(userDocRef);
+      return addUserCreditsInTransaction(transaction, userDocRef, userId, amount, purpose, logDetails, userSnapshot);
     });
   } catch (error) {
     console.error(`[Credit Service] Failed to add credits and log for user ${userId}:`, error);
