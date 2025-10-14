@@ -807,7 +807,7 @@ navigate_to_url({ url: "https://judgment.judicial.gov.tw/FJUD/data.aspx?ty=JD&id
 
       // 調用 OpenAI
       const response = await openai.chat.completions.create({
-        model: 'gpt-4o',
+        model: 'gpt-4.1',
         messages: messages,
         tools: tools,
         tool_choice: turnCount === 1 ? 'required' : 'auto'
