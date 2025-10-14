@@ -2,8 +2,9 @@
 import esClient from '../config/elasticsearch.js';
 import { OpenAI } from 'openai';
 import Anthropic from '@anthropic-ai/sdk';
-import { OPENAI_API_KEY, OPENAI_MODEL_NAME_EMBEDDING, PERPLEXITY_API_KEY } from '../config/environment.js';
+import { OPENAI_API_KEY, OPENAI_MODEL_NAME_EMBEDDING, PERPLEXITY_API_KEY, SERPAPI_API_KEY } from '../config/environment.js';
 import perplexityClient from '../config/perplexityClient.js';
+import axios from 'axios';
 import admin from 'firebase-admin';
 
 const openai = new OpenAI({
@@ -739,31 +740,90 @@ async function saveLawToCache(lawName, lawData) {
  * @param {string} lawName - 法條名稱（例如：民法第184條）
  * @returns {Promise<Object>} 包含法條原文、出處來源、白話解析的物件
  */
-export async function aiExplainLaw(lawName) {
-    // 步驟 1: 先檢查 Firebase 快取
-    const cachedResult = await getLawFromCache(lawName);
-    if (cachedResult) {
-        console.log(`[LawSearch] 使用快取結果: ${lawName}`);
-        return cachedResult;
-    }
+/**
+ * 步驟 1: 使用 SerpAPI 獲取法條 URL
+ */
+async function findLawURL(lawName) {
+    const query = `law.moj.gov.tw LawSingle ${lawName}`;
 
-    // 步驟 2: 快取未命中，使用 Perplexity API 查詢
+    console.log(`[LawSearch] 🔍 步驟 1: 使用 SerpAPI 搜索法條 URL...`);
+    console.log(`[LawSearch]    查詢: ${query}`);
+
+    const params = {
+        q: query,
+        api_key: SERPAPI_API_KEY,
+        engine: 'google',
+        num: 5,
+        gl: 'tw',
+        hl: 'zh-tw',
+        filter: '0',
+        nfpr: '1',
+        as_sitesearch: 'law.moj.gov.tw',
+        as_dt: 'i'
+    };
+
     try {
-        console.log(`[LawSearch] AI 解析法條 (使用 Perplexity sonar): ${lawName}`);
+        const response = await axios.get('https://serpapi.com/search', {
+            params,
+            timeout: 30000
+        });
 
-        const systemPrompt = `你是一個專業的法律檢索助手。請精確查詢台灣全國法規資料庫 (https://law.moj.gov.tw/)，並以 JSON 格式回傳結果。`;
+        const results = response.data.organic_results || [];
 
-        const userPrompt = `請在 https://law.moj.gov.tw/ 全國法規資料庫中查詢「${lawName}」，提供完整條文內容和該法條的網址連結。
+        if (results.length === 0) {
+            console.log(`[LawSearch]    ❌ 未找到搜索結果`);
+            return { success: false, error: '未找到搜索結果' };
+        }
 
-請以以下 JSON 格式回覆（僅回覆 JSON，不要其他文字）：
+        // 找第一個包含 law.moj.gov.tw 和 LawSingle 的結果
+        for (const result of results) {
+            const link = result.link || '';
+            if (link.includes('law.moj.gov.tw') && link.includes('LawSingle')) {
+                console.log(`[LawSearch]    ✅ 找到 URL: ${link}`);
+                return {
+                    success: true,
+                    url: link,
+                    title: result.title || ''
+                };
+            }
+        }
+
+        console.log(`[LawSearch]    ❌ 未找到符合條件的 URL`);
+        return { success: false, error: '未找到符合條件的 URL' };
+
+    } catch (error) {
+        console.error(`[LawSearch]    ❌ SerpAPI 請求失敗:`, error.message);
+        return { success: false, error: `SerpAPI 請求失敗: ${error.message}` };
+    }
+}
+
+/**
+ * 步驟 2: 使用 Perplexity 讀取網頁內容
+ */
+async function readLawContentWithPerplexity(url, lawName) {
+    console.log(`[LawSearch] 📖 步驟 2: 使用 Perplexity 讀取網頁內容...`);
+    console.log(`[LawSearch]    URL: ${url}`);
+
+    const systemPrompt = `你是專業的法律文件分析助手。請精確提取法條原文，不要改寫或摘要條文內容。`;
+
+    const userPrompt = `請閱讀以下網址的內容：${url}
+
+這是台灣「${lawName}」的法條頁面。
+
+請提供以下資訊（以 JSON 格式回覆）：
 {
-  "法條原文": "完整的法規條文原文（不含法條編號）",
-  "出處來源": "全國法規資料庫的完整網址（必須以 https://law.moj.gov.tw/ 開頭）",
-  "白話解析": "50字內的精簡直白說明",
-  "查詢時間": "回應時間（ISO 8601 格式）"
-}`;
+  "法條原文": "完整條文內容（逐字原文，不要摘要或改寫）",
+  "出處來源": "${url}",
+  "白話解析": "條文重點摘要（50字內）",
+  "查詢時間": "當前時間（ISO 8601 格式）"
+}
 
-        // 使用 Perplexity API
+重要：
+1. 法條原文必須是完整的原文，不要摘要或改寫
+2. 只需回傳 JSON，不要其他說明文字
+3. 不要返回「我無法」、「抱歉」等錯誤訊息`;
+
+    try {
         const response = await perplexityClient.post('/chat/completions', {
             model: 'sonar',
             messages: [
@@ -777,24 +837,33 @@ export async function aiExplainLaw(lawName) {
                 }
             ],
             temperature: 0.1,
-            return_citations: true,
-            search_domain_filter: ['law.moj.gov.tw']
+            return_citations: true
         });
 
-        // 解析回應
-        let responseContent = response.data.choices[0].message.content;
+        let content = response.data.choices[0].message.content;
         const citations = response.data.citations || [];
 
-        // 移除可能的 markdown 標記
-        if (responseContent.includes('```json')) {
-            responseContent = responseContent.split('```json')[1].split('```')[0].trim();
-        } else if (responseContent.includes('```')) {
-            responseContent = responseContent.split('```')[1].split('```')[0].trim();
+        console.log(`[LawSearch]    ✅ Perplexity 返回成功`);
+
+        // 檢查是否包含錯誤訊息
+        if (content.includes('我無法') ||
+            content.includes('抱歉') ||
+            content.includes('無法存取') ||
+            content.includes('無法直接')) {
+            console.log(`[LawSearch]    ⚠️ Perplexity 返回錯誤訊息`);
+            throw new Error('Perplexity 返回錯誤訊息');
         }
 
-        const result = JSON.parse(responseContent);
+        // 移除 markdown 標記
+        if (content.includes('```json')) {
+            content = content.split('```json')[1].split('```')[0].trim();
+        } else if (content.includes('```')) {
+            content = content.split('```')[1].split('```')[0].trim();
+        }
 
-        // 添加查詢時間（如果 AI 沒有提供）
+        const result = JSON.parse(content);
+
+        // 添加查詢時間（如果沒有）
         if (!result.查詢時間) {
             result.查詢時間 = new Date().toISOString();
         }
@@ -804,58 +873,145 @@ export async function aiExplainLaw(lawName) {
             result.citations = citations;
         }
 
-        console.log(`[LawSearch] AI 解析成功 (Perplexity sonar):`, {
-            lawName,
-            hasOriginalText: !!result.法條原文,
-            hasSource: !!result.出處來源,
-            hasExplanation: !!result.白話解析,
-            sourceUrl: result.出處來源,
-            citationsCount: citations.length
-        });
+        console.log(`[LawSearch]    ✅ JSON 解析成功`);
 
-        // 步驟 3: 驗證結果有效性，只有成功的查詢結果才存入 Firebase 快取
-        const isValidResult = (
-            result.法條原文 &&
-            result.法條原文.trim() !== "" &&
-            result.法條原文 !== "抱歉，目前無法獲取法條原文，請稍後再試。" &&
-            !result.法條原文.includes("無法獲取") &&
-            !result.法條原文.includes("查詢失敗") &&
-            result.出處來源 &&
-            result.出處來源.trim() !== "" &&
-            result.出處來源 !== "查詢失敗" &&
-            result.出處來源.startsWith('http') && // 確保是有效的 URL
-            !result.出處來源.includes("錯誤") && // 排除包含「錯誤」的 URL
-            !result.出處來源.includes("失敗") && // 排除包含「失敗」的 URL
-            !result.出處來源.includes("無法") && // 排除包含「無法」的 URL
-            !result.出處來源.includes("（") && // 排除包含括號說明的 URL
-            !result.出處來源.includes("(") // 排除包含括號說明的 URL
-        );
-
-        if (isValidResult) {
-            // 只有當結果有效時才存入快取（異步，不阻塞返回）
-            saveLawToCache(lawName, result).catch(err => {
-                console.error('[LawSearch] 背景存入快取失敗:', err);
-            });
-            console.log(`[LawSearch] 有效結果，已存入快取: ${lawName}`);
-        } else {
-            console.warn(`[LawSearch] 無效結果，不存入快取: ${lawName}`, {
-                法條原文: result.法條原文?.substring(0, 50),
-                出處來源: result.出處來源
-            });
-        }
-
-        return result;
+        return {
+            success: true,
+            data: result
+        };
 
     } catch (error) {
-        console.error('[LawSearch] Perplexity API 解析失敗:', error);
+        console.error(`[LawSearch]    ❌ Perplexity 讀取失敗:`, error.message);
+        return {
+            success: false,
+            error: `Perplexity 讀取失敗: ${error.message}`
+        };
+    }
+}
 
-        // 降級處理：返回基本信息（不存入快取）
+export async function aiExplainLaw(lawName) {
+    console.log(`[LawSearch] ========================================`);
+    console.log(`[LawSearch] 🔍 混合版法條查詢: ${lawName}`);
+    console.log(`[LawSearch] ========================================`);
+
+    // 步驟 1: 先檢查 Firebase 快取
+    const cachedResult = await getLawFromCache(lawName);
+    if (cachedResult) {
+        console.log(`[LawSearch] ✅ 使用快取結果: ${lawName}`);
+        console.log(`[LawSearch] ========================================`);
+        return cachedResult;
+    }
+
+    // 步驟 2: 使用 SerpAPI 獲取法條 URL（最多重試 2 次）
+    let urlResult = null;
+    let lastError = null;
+
+    for (let attempt = 1; attempt <= 2; attempt++) {
+        console.log(`[LawSearch] 嘗試 ${attempt}/2...`);
+
+        urlResult = await findLawURL(lawName);
+
+        if (urlResult.success) {
+            break;
+        }
+
+        lastError = new Error(urlResult.error);
+
+        // 如果是第一次嘗試失敗，等待 1 秒後重試
+        if (attempt === 1) {
+            console.log(`[LawSearch] ⏳ 等待 1 秒後重試...`);
+            await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+    }
+
+    // 如果 SerpAPI 失敗，返回錯誤
+    if (!urlResult || !urlResult.success) {
+        console.error('[LawSearch] ❌ SerpAPI 所有嘗試都失敗:', lastError?.message);
+        console.log(`[LawSearch] ========================================`);
+
         return {
             法條原文: "抱歉，目前無法獲取法條原文，請稍後再試。",
             出處來源: "查詢失敗",
             白話解析: "AI 解析服務暫時無法使用，請稍後再試或聯繫客服。",
             查詢時間: new Date().toISOString(),
-            error: error.message
+            error: lastError?.message
         };
     }
+
+    // 步驟 3: 使用 Perplexity 讀取網頁內容（最多重試 2 次）
+    let contentResult = null;
+
+    for (let attempt = 1; attempt <= 2; attempt++) {
+        console.log(`[LawSearch] Perplexity 嘗試 ${attempt}/2...`);
+
+        contentResult = await readLawContentWithPerplexity(urlResult.url, lawName);
+
+        if (contentResult.success) {
+            break;
+        }
+
+        lastError = new Error(contentResult.error);
+
+        // 如果是第一次嘗試失敗，等待 1 秒後重試
+        if (attempt === 1) {
+            console.log(`[LawSearch] ⏳ 等待 1 秒後重試...`);
+            await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+    }
+
+    // 如果 Perplexity 失敗，至少返回 URL
+    if (!contentResult || !contentResult.success) {
+        console.warn('[LawSearch] ⚠️ Perplexity 讀取失敗，但已找到 URL');
+        console.log(`[LawSearch] ========================================`);
+
+        return {
+            法條原文: "已找到法條網址，但無法自動讀取內容。請點擊下方連結查看完整法條。",
+            出處來源: urlResult.url,
+            白話解析: "請點擊連結查看法條內容。",
+            查詢時間: new Date().toISOString(),
+            note: "找到網址但無法讀取內容",
+            error: lastError?.message
+        };
+    }
+
+    // 步驟 4: 驗證結果有效性
+    const result = contentResult.data;
+
+    const isValidResult = (
+        result.法條原文 &&
+        result.法條原文.trim() !== "" &&
+        result.法條原文.length > 10 && // 至少 10 個字
+        !result.法條原文.includes("無法獲取") &&
+        !result.法條原文.includes("查詢失敗") &&
+        !result.法條原文.includes("抱歉") &&
+        !result.法條原文.includes("我無法") &&
+        !result.法條原文.includes("已找到法條網址") &&
+        result.出處來源 &&
+        result.出處來源.trim() !== "" &&
+        result.出處來源.startsWith('http') &&
+        !result.出處來源.includes("錯誤") &&
+        !result.出處來源.includes("失敗") &&
+        !result.出處來源.includes("無法") &&
+        !result.出處來源.includes("（") &&
+        !result.出處來源.includes("(")
+    );
+
+    if (isValidResult) {
+        // 只有當結果有效時才存入快取（異步，不阻塞返回）
+        saveLawToCache(lawName, result).catch(err => {
+            console.error('[LawSearch] 背景存入快取失敗:', err);
+        });
+        console.log(`[LawSearch] ✅ 有效結果，已存入快取: ${lawName}`);
+    } else {
+        console.warn(`[LawSearch] ⚠️ 無效結果，不存入快取: ${lawName}`, {
+            法條原文: result.法條原文?.substring(0, 50),
+            出處來源: result.出處來源
+        });
+    }
+
+    console.log(`[LawSearch] ========================================`);
+    console.log(`[LawSearch] ✅ 查詢完成: ${lawName}`);
+    console.log(`[LawSearch] ========================================`);
+
+    return result;
 }
