@@ -2,7 +2,8 @@
 import esClient from '../config/elasticsearch.js';
 import { OpenAI } from 'openai';
 import Anthropic from '@anthropic-ai/sdk';
-import { OPENAI_API_KEY, OPENAI_MODEL_NAME_EMBEDDING } from '../config/environment.js';
+import { OPENAI_API_KEY, OPENAI_MODEL_NAME_EMBEDDING, PERPLEXITY_API_KEY } from '../config/environment.js';
+import perplexityClient from '../config/perplexityClient.js';
 import admin from 'firebase-admin';
 
 const openai = new OpenAI({
@@ -746,97 +747,43 @@ export async function aiExplainLaw(lawName) {
         return cachedResult;
     }
 
-    // 步驟 2: 快取未命中，使用 AI 查詢
+    // 步驟 2: 快取未命中，使用 Perplexity API 查詢
     try {
-        console.log(`[LawSearch] AI 解析法條 (使用 GPT-5-mini Responses API): ${lawName}`);
+        console.log(`[LawSearch] AI 解析法條 (使用 Perplexity sonar): ${lawName}`);
 
-        const developerPrompt = `你是一名台灣法律專家，收到提問時，需主動於網路上搜尋相關且最新的法律依據，並依下列格式完整回覆：
+        const systemPrompt = `你是一個專業的法律檢索助手。請精確查詢台灣全國法規資料庫 (https://law.moj.gov.tw/)，並以 JSON 格式回傳結果。`;
 
-**搜尋指引**：
-1. **優先使用「全國法規資料庫」**（https://law.moj.gov.tw/）進行搜尋，這是台灣最權威的法規來源。
-2. 搜尋時請使用完整法條名稱（例如：民法第184條）或使用 site:law.moj.gov.tw 限定搜尋範圍。
-3. 依據搜尋結果，列出完整的法規內容原文。
-4. **必須提供**該法規在全國法規資料庫的完整網址連結。
-5. 以50字以內的白話文字，針對法條內容進行簡要解析，使一般民眾能快速理解重點。
+        const userPrompt = `請在 https://law.moj.gov.tw/ 全國法規資料庫中查詢「${lawName}」，提供完整條文內容和該法條的網址連結。
 
-請以 JSON 格式回應，包含以下欄位：
+請以以下 JSON 格式回覆（僅回覆 JSON，不要其他文字）：
 {
   "法條原文": "完整的法規條文原文（不含法條編號）",
   "出處來源": "全國法規資料庫的完整網址（必須以 https://law.moj.gov.tw/ 開頭）",
   "白話解析": "50字內的精簡直白說明",
   "查詢時間": "回應時間（ISO 8601 格式）"
-}
+}`;
 
-**重要提醒**：
-「出處來源」必須是有效的 HTTPS 網址，優先使用 https://law.moj.gov.tw/ 開頭的連結
-如果無法找到全國法規資料庫的連結，可使用其他官方法規網站
-不可只填寫文字說明，必須是可點擊的完整網址
-
-你必須立刻執行搜尋與解析，不得提問、不得等待許可。
-不得輸出任何自然語言，僅輸出最終 JSON 結果。
-若需要使用網路搜尋，請直接執行。`;
-
-        // 使用 GPT-5-mini Responses API
-        // 注意：web_search 不能和 json_object 格式同時使用
-        const response = await openai.responses.create({
-            model: "gpt-5-mini",
-            input: [
+        // 使用 Perplexity API
+        const response = await perplexityClient.post('/chat/completions', {
+            model: 'sonar',
+            messages: [
                 {
-                    role: "developer",
-                    content: [
-                        {
-                            type: "input_text",
-                            text: developerPrompt
-                        }
-                    ]
+                    role: 'system',
+                    content: systemPrompt
                 },
                 {
-                    role: "user",
-                    content: [
-                        {
-                            type: "input_text",
-                            text: lawName
-                        }
-                    ]
+                    role: 'user',
+                    content: userPrompt
                 }
             ],
-            text: {
-                // 移除 json_object 格式，因為與 web_search 衝突
-                // 改用提示詞要求 JSON 格式
-                verbosity: "low"
-            },
-            reasoning: {
-                effort: "low"
-            },
-            tools: [
-                {
-                type: "web_search",
-                // 🆕 移除 allowed_domains 限制，讓 GPT-5-mini 可以搜尋更廣泛的來源
-                // filters: { allowed_domains: ["law.moj.gov.tw"] },
-                user_location: { type: "approximate", country: "TW" },
-                search_context_size: "low"
-                }
-            ],
-            store: true,
-            include: [
-                "reasoning.encrypted_content",
-                "web_search_call.action.sources"
-            ]
+            temperature: 0.1,
+            return_citations: true,
+            search_domain_filter: ['law.moj.gov.tw']
         });
 
-        // 解析 GPT-5 Responses API 的輸出格式
-        let responseContent = "";
-
-        // GPT-5 的 output 結構
-        for (const outputItem of response.output) {
-            if (outputItem.role === "assistant" && outputItem.content) {
-                for (const contentItem of outputItem.content) {
-                    if (contentItem.type === "output_text" && contentItem.text) {
-                        responseContent += contentItem.text;
-                    }
-                }
-            }
-        }
+        // 解析回應
+        let responseContent = response.data.choices[0].message.content;
+        const citations = response.data.citations || [];
 
         // 移除可能的 markdown 標記
         if (responseContent.includes('```json')) {
@@ -852,15 +799,21 @@ export async function aiExplainLaw(lawName) {
             result.查詢時間 = new Date().toISOString();
         }
 
-        console.log(`[LawSearch] AI 解析成功 (GPT-5-mini):`, {
+        // 添加引用來源（如果有）
+        if (citations.length > 0) {
+            result.citations = citations;
+        }
+
+        console.log(`[LawSearch] AI 解析成功 (Perplexity sonar):`, {
             lawName,
             hasOriginalText: !!result.法條原文,
             hasSource: !!result.出處來源,
             hasExplanation: !!result.白話解析,
-            sourceUrl: result.出處來源
+            sourceUrl: result.出處來源,
+            citationsCount: citations.length
         });
 
-        // 🆕 步驟 3: 驗證結果有效性，只有成功的查詢結果才存入 Firebase 快取
+        // 步驟 3: 驗證結果有效性，只有成功的查詢結果才存入 Firebase 快取
         const isValidResult = (
             result.法條原文 &&
             result.法條原文.trim() !== "" &&
@@ -871,11 +824,11 @@ export async function aiExplainLaw(lawName) {
             result.出處來源.trim() !== "" &&
             result.出處來源 !== "查詢失敗" &&
             result.出處來源.startsWith('http') && // 確保是有效的 URL
-            !result.出處來源.includes("錯誤") && // 🆕 排除包含「錯誤」的 URL
-            !result.出處來源.includes("失敗") && // 🆕 排除包含「失敗」的 URL
-            !result.出處來源.includes("無法") && // 🆕 排除包含「無法」的 URL
-            !result.出處來源.includes("（") && // 🆕 排除包含括號說明的 URL
-            !result.出處來源.includes("(") // 🆕 排除包含括號說明的 URL
+            !result.出處來源.includes("錯誤") && // 排除包含「錯誤」的 URL
+            !result.出處來源.includes("失敗") && // 排除包含「失敗」的 URL
+            !result.出處來源.includes("無法") && // 排除包含「無法」的 URL
+            !result.出處來源.includes("（") && // 排除包含括號說明的 URL
+            !result.出處來源.includes("(") // 排除包含括號說明的 URL
         );
 
         if (isValidResult) {
@@ -894,7 +847,7 @@ export async function aiExplainLaw(lawName) {
         return result;
 
     } catch (error) {
-        console.error('[LawSearch] AI 解析失敗:', error);
+        console.error('[LawSearch] Perplexity API 解析失敗:', error);
 
         // 降級處理：返回基本信息（不存入快取）
         return {

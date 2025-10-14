@@ -13,6 +13,9 @@ export const OPENAI_MODEL_NAME_EMBEDDING = 'text-embedding-3-large';
 export const OPENAI_MODEL_NAME_CHAT = 'gpt-4.1';
 export const OPENAI_MODEL_NAME_NANO = process.env.OPENAI_MODEL_NAME_NANO || 'gpt-4.1-nano';
 
+// Perplexity 配置
+export const PERPLEXITY_API_KEY = process.env.PERPLEXITY_API_KEY;
+
 // xAI 配置
 export const XAI_API_KEY = process.env.XAI_API_KEY;
 export const XAI_MODEL_VERIFICATION = process.env.XAI_MODEL_VERIFICATION || 'grok-4-latest';
@@ -58,6 +61,9 @@ if (!XAI_API_KEY) {
 }
 if (!CLAUDE_API_KEY) {
   console.warn("WARNING: CLAUDE_API_KEY environment variable is not set. Pleading generation will fallback to GPT-4.1.");
+}
+if (!PERPLEXITY_API_KEY) {
+  console.warn("WARNING: PERPLEXITY_API_KEY environment variable is not set. Law search will fallback to OpenAI.");
 }
 
 // 記得檢查 OPENAI_MODEL_NAME_CHAT 是否也需要
