@@ -19,7 +19,8 @@ import maintenanceRoutes from './maintenanceRoutes.js'; // 維護模式路由
 import lawSearchRoutes from './law-search.js';
 import mcpRoutes from './mcp.js';
 import aiAgentRoutes from './ai-agent.js';
-import citationRoutes from './citation.js'; // 🔥 新增引用判決查詢路由
+import citationRoutes from './citation.js';
+import auditLogRoutes from './auditLogs.js'; // 🔥 新增引用判決查詢路由
 import { getCaseDetailController } from '../controllers/judgment-controller.js';
 import { verifyToken } from '../middleware/auth.js';
 
