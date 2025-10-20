@@ -3,6 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import mainRouter from '../routes/index.js';
 import judgmentProxyRouter from '../routes/judgmentProxy.js';
+import auditLogger from '../middleware/auditLogger.js';
 
 const app = express();
 
@@ -92,6 +93,7 @@ app.get('/health', (req, res) => {
 });
 
 // 掛載路由
+app.use('/api', auditLogger);
 app.use('/api', mainRouter); // 所有 API 路由都有 /api 前綴
 app.use('/api/judgment-proxy', judgmentProxyRouter);
 
