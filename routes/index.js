@@ -9,7 +9,6 @@ import complaintRoutes from './complaint.js'; // 新增引入
 import configRoutes from './configRoutes.js'; // <--- 引入新的配置路由
 import aiAnalysisRoutes from './aiAnalysisRoutes.js';
 import platformStatusRoutes from './platformStatusRoutes.js';
-import contactRoutes from './contactRoutes.js';
 import paymentRoutes from './payment.js';
 import intakeRoutes from './intake.js';
 import ezshipRoutes from './ezship.js'; // 新增這行
@@ -37,7 +36,6 @@ router.use('/complaint', complaintRoutes); // 新增掛載
 router.use('/config', configRoutes);
 router.use('/ai', aiAnalysisRoutes);
 router.use('/platform-status', platformStatusRoutes); // 新增掛載平台狀態路由
-router.use('/contact', contactRoutes);
 router.use('/payment', paymentRoutes);
 router.use('/intake', intakeRoutes);
 router.use('/ezship', ezshipRoutes); // 新增這行
