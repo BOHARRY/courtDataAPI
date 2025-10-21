@@ -1,6 +1,7 @@
 // utils/query-builder.js (完整修正版)
 
 import { processCaseNumberQuery } from '../services/caseNumberParser.js';
+import { getCourtVariants } from '../services/courtNormalizer.js';
 
 /**
  * 解析查詢字串，生成對應的查詢子句陣列。
@@ -208,11 +209,26 @@ export async function buildEsQuery(filters = {}) {
     }
   }
 
-  // 法院篩選
+  // 法院篩選 - 🆕 支持同名異字（台/臺）
   if (courtLevels) {
     const courtsArray = Array.isArray(courtLevels) ? courtLevels : courtLevels.split(',');
     if (courtsArray.length > 0) {
-      filter.push({ terms: { 'court.exact': courtsArray } });
+      // 為每個法院生成所有可能的變體（台/臺）
+      const courtQueries = courtsArray.flatMap(court => {
+        const variants = getCourtVariants(court);
+        // 為每個變體創建 wildcard 查詢
+        return variants.map(variant => ({
+          wildcard: { 'court.exact': `*${variant}*` }
+        }));
+      });
+
+      // 使用 bool.should 來匹配任何一個變體
+      filter.push({
+        bool: {
+          should: courtQueries,
+          minimum_should_match: 1
+        }
+      });
     }
   }
 

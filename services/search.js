@@ -2,6 +2,7 @@
 import esClient from '../config/elasticsearch.js';
 import { buildEsQuery } from '../utils/query-builder.js';
 import { formatEsResponse } from '../utils/response-formatter.js';
+import { getStructuredCourtList } from './courtNormalizer.js';
 
 const ES_INDEX_NAME = 'search-boooook';
 
@@ -144,7 +145,7 @@ export async function getAvailableFilters() {
         court_names: {
           terms: {
             field: 'court.exact',  // 保持不變，因為這個有效
-            size: 50,
+            size: 200,  // 增加到 200 以獲取所有法院
             order: { _count: 'desc' }
           }
         },
@@ -181,19 +182,29 @@ export async function getAvailableFilters() {
     console.log('[Search Service] Aggregation results:');
     console.log('- case_types buckets:', aggs?.case_types?.buckets?.length || 0);
     console.log('- verdicts buckets:', aggs?.verdicts?.buckets?.length || 0);
-    // console.log('- reasoning_strengths buckets:', aggs?.reasoning_strengths?.buckets?.length || 0); // 移除
+    console.log('- court_names buckets:', aggs?.court_names?.buckets?.length || 0);
+
+    // 🆕 獲取原始法院名稱列表
+    const rawCourtNames = aggs?.court_names?.buckets.map(b => b.key) || [];
+
+    // 🆕 生成結構化法院列表（按地區分組）
+    const structuredCourts = getStructuredCourtList(rawCourtNames);
+
+    console.log('[Search Service] Structured courts by region:');
+    Object.entries(structuredCourts).forEach(([region, courts]) => {
+      console.log(`  - ${region}: ${courts.length} courts`);
+    });
 
     const filters = {
       caseTypes: aggs?.case_types?.buckets.map(b => b.key) || [],
-      courtNames: aggs?.court_names?.buckets.map(b => b.key) || [],
+      courtNames: rawCourtNames,  // 保留原始列表（向後兼容）
+      courtNamesStructured: structuredCourts,  // 🆕 新增結構化列表
       verdicts: aggs?.verdicts?.buckets.map(b => b.key) || [],
-      // ===== 修正 #6: 移除不存在的欄位 =====
-      // reasoningStrengths: aggs?.reasoning_strengths?.buckets.map(b => b.key) || [],
       reasoningStrengths: [], // 返回空陣列，因為 mapping 中沒有這個欄位
       winReasons: aggs?.win_reasons?.buckets || []  // 新增
     };
 
-    console.log('[Search Service] Filters data retrieved:', filters);
+    console.log('[Search Service] Filters data retrieved (courtNames count):', filters.courtNames.length);
     return filters;
   } catch (error) {
     console.error('[Search Service] Error getting available filters:', error.meta || error);
