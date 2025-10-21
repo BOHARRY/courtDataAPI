@@ -23,9 +23,10 @@ async function parseQueryString(query) {
 
       if (caseNumberQuery) {
         console.log('[QueryBuilder] 🎯 檢測到案號查詢，使用 AI 生成的精確查詢');
-        // caseNumberQuery 已經是一個完整的查詢對象（可能是 bool、term 等）
-        // 直接添加 boost 屬性
-        caseNumberQuery.boost = 100;  // 極高權重
+        // caseNumberQuery 是一個 bool 查詢，需要在 bool 內部添加 boost
+        if (caseNumberQuery.bool) {
+          caseNumberQuery.bool.boost = 100;  // 極高權重
+        }
         mustClauses.push(caseNumberQuery);
         return { mustClauses, shouldClauses, isCaseNumberQuery: true };
       }
