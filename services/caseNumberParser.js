@@ -208,23 +208,29 @@ export function buildCaseNumberQuery(parseResult) {
 
 /**
  * 完整的案號智能處理流程
- * 
+ *
  * @param {string} userInput - 用戶輸入
  * @returns {Promise<Object|null>} - Elasticsearch 查詢對象，如果不是案號則返回 null
  */
 export async function processCaseNumberQuery(userInput) {
-    // 步驟 1: 前端預檢
-    if (!mightBeCaseNumber(userInput)) {
-        console.log(`[CaseNumberParser] 預檢未通過，不是案號格式`);
+    try {
+        // 步驟 1: 前端預檢
+        if (!mightBeCaseNumber(userInput)) {
+            console.log(`[CaseNumberParser] 預檢未通過，不是案號格式`);
+            return null;
+        }
+
+        // 步驟 2: AI 解析
+        const parseResult = await parseCaseNumber(userInput);
+
+        // 步驟 3: 構建查詢
+        const esQuery = buildCaseNumberQuery(parseResult);
+
+        return esQuery;
+    } catch (error) {
+        console.error(`[CaseNumberParser] 處理案號查詢時發生錯誤:`, error);
+        // 發生錯誤時返回 null，讓系統回退到通用查詢
         return null;
     }
-    
-    // 步驟 2: AI 解析
-    const parseResult = await parseCaseNumber(userInput);
-    
-    // 步驟 3: 構建查詢
-    const esQuery = buildCaseNumberQuery(parseResult);
-    
-    return esQuery;
 }
 
