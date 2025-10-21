@@ -7,13 +7,16 @@ const ES_INDEX_NAME = 'search-boooook';
 
 /**
  * 執行判決書搜尋。
+ * 🆕 支持 AI 案號智能解析
+ *
  * @param {object} searchFilters - 從控制器傳來的查詢參數。
  * @param {number} page - 當前頁碼。
  * @param {number} pageSize - 每頁結果數量。
  * @returns {Promise<object>} 格式化後的搜尋結果。
  */
 export async function performSearch(searchFilters, page, pageSize) {
-  const esQueryBody = buildEsQuery(searchFilters);
+  // 🆕 buildEsQuery 現在是異步的（支持 AI 案號解析）
+  const esQueryBody = await buildEsQuery(searchFilters);
   const from = (page - 1) * pageSize;
 
   try {

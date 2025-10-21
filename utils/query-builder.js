@@ -1,37 +1,72 @@
 // utils/query-builder.js (完整修正版)
 
+import { processCaseNumberQuery } from '../services/caseNumberParser.js';
+
 /**
  * 解析查詢字串，生成對應的查詢子句陣列。
+ * 🆕 新增案號智能檢測：如果檢測到案號格式，優先使用 AI 解析
+ *
  * @param {string} query - 原始查詢字串。
- * @returns {{mustClauses: object[], shouldClauses: object[]}} - 解析後的 must 和 should 子句。
+ * @returns {Promise<{mustClauses: object[], shouldClauses: object[], isCaseNumberQuery: boolean}>} - 解析後的 must 和 should 子句。
  */
-function parseQueryString(query) {
+async function parseQueryString(query) {
   const mustClauses = [];
   const shouldClauses = [];
+
+  // 🆕 步驟 0: 案號智能檢測（優先級最高）
+  // 如果是單一查詢詞（沒有 OR/AND 邏輯），嘗試案號解析
+  const hasLogicOperators = /(\|\||OR|\+|&)/i.test(query);
+
+  if (!hasLogicOperators) {
+    try {
+      const caseNumberQuery = await processCaseNumberQuery(query.trim());
+
+      if (caseNumberQuery) {
+        console.log('[QueryBuilder] 🎯 檢測到案號查詢，使用 AI 生成的精確查詢');
+        // 案號查詢使用極高權重，確保優先匹配
+        mustClauses.push({
+          bool: {
+            ...caseNumberQuery,
+            boost: 100  // 極高權重
+          }
+        });
+        return { mustClauses, shouldClauses, isCaseNumberQuery: true };
+      }
+    } catch (error) {
+      console.error('[QueryBuilder] 案號解析失敗，回退到通用查詢:', error);
+      // 繼續執行通用查詢邏輯
+    }
+  }
 
   // 1. 檢測 OR 邏輯
   const orRegex = /\s*(\|\||OR)\s*/i; // 匹配 || 或 OR (不分大小寫)
   if (orRegex.test(query)) {
     const terms = query.split(orRegex).filter(t => t && !orRegex.test(t));
-    terms.forEach(term => shouldClauses.push(buildSubQuery(term.trim())));
-    return { mustClauses, shouldClauses };
+    for (const term of terms) {
+      shouldClauses.push(await buildSubQuery(term.trim()));
+    }
+    return { mustClauses, shouldClauses, isCaseNumberQuery: false };
   }
 
   // 2. 檢測 AND 邏輯 (預設)
   const andRegex = /\s*(\+|&| )\s*/; // 匹配 +, &, 或空格
   const terms = query.split(andRegex).filter(t => t && !andRegex.test(t));
-  terms.forEach(term => mustClauses.push(buildSubQuery(term.trim())));
+  for (const term of terms) {
+    mustClauses.push(await buildSubQuery(term.trim()));
+  }
 
-  return { mustClauses, shouldClauses };
+  return { mustClauses, shouldClauses, isCaseNumberQuery: false };
 }
 
 /**
  * 為單一關鍵詞或詞組構建 ES 查詢子句。
  * 這個版本統一使用 match_phrase 來實現精準詞組搜尋。
+ * 🆕 支持異步操作（為未來擴展預留）
+ *
  * @param {string} term - 單一查詢詞，例如 "無因管理" 或 ""不當得利""。
- * @returns {object} - 一個 bool query 物件。
+ * @returns {Promise<object>} - 一個 bool query 物件。
  */
-function buildSubQuery(term) {
+async function buildSubQuery(term) {
   let searchTerm = term.trim();
 
   // 如果使用者用了引號，我們尊重它並移除引號，搜尋引號內的內容
@@ -115,10 +150,12 @@ function buildSubQuery(term) {
 
 /**
  * 根據提供的篩選條件構建 Elasticsearch 查詢 DSL 的 query 部分。
+ * 🆕 支持異步操作以啟用 AI 案號解析
+ *
  * @param {object} filters - 從請求查詢參數中獲取的篩選條件對象。
- * @returns {object} Elasticsearch 查詢的 bool query 部分。
+ * @returns {Promise<object>} Elasticsearch 查詢的 bool query 部分。
  */
-export function buildEsQuery(filters = {}) {
+export async function buildEsQuery(filters = {}) {
   const {
     query,
     caseTypes,
@@ -139,11 +176,16 @@ export function buildEsQuery(filters = {}) {
   const filter = [];
   let should = [];
 
-  // ==================== 關鍵字查詢重構 ====================
+  // ==================== 關鍵字查詢重構（🆕 支持 AI 案號解析）====================
   if (query) {
-    const { mustClauses, shouldClauses } = parseQueryString(query); // parseQueryString 保持不變
+    const { mustClauses, shouldClauses, isCaseNumberQuery } = await parseQueryString(query);
     if (mustClauses.length > 0) must.push(...mustClauses);
     if (shouldClauses.length > 0) should.push(...shouldClauses);
+
+    // 🆕 如果是案號查詢，記錄日誌
+    if (isCaseNumberQuery) {
+      console.log('[QueryBuilder] ✅ 案號查詢已啟用 AI 智能解析');
+    }
   }
   // =======================================================
 
