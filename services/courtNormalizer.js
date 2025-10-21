@@ -121,14 +121,8 @@ export function getCourtRegion(courtName) {
   const normalized = normalizeCourtName(courtName);
   if (!normalized) return '其他';
 
-  // 特殊處理：高等法院分院
+  // 特殊處理：所有高等法院（包括分院）都歸類為「高等以上」
   if (normalized.includes('高等法院')) {
-    if (normalized.includes('臺中分院')) return '中部';
-    if (normalized.includes('臺南分院')) return '南部';
-    if (normalized.includes('高雄分院')) return '南部';
-    if (normalized.includes('花蓮分院')) return '東部外島';
-    if (normalized.includes('金門分院')) return '東部外島';
-    // 臺灣高等法院（本院）歸類為高等以上
     return '高等以上';
   }
 
