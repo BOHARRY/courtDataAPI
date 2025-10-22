@@ -3316,12 +3316,12 @@ async function analyzeMainstreamPattern(caseDescription, mainStreamCases, mainPa
                 JID: case_.id || case_.JID,  // 判決書唯一識別碼
                 JTITLE: case_.title,  // 判決書標題
                 judgementId: `${case_.title} (${case_.court} ${case_.year}年)`,  // 顯示用的判決書ID
-                originalText: case_.summary_ai_full || case_.summary_ai || '無摘要',  // 原始摘要文本
+                originalText: case_.summaryAiFull || '無摘要',  // 🔧 修復：使用正確的駝峰命名 summaryAiFull
                 court: case_.court,  // 法院
                 year: case_.year,  // 年份
                 // 🆕 添加其他可能有用的字段
                 verdict_type: case_.verdict_type || case_.verdictType,  // 判決類型
-                summary_ai: case_.summary_ai  // AI 摘要
+                summary_ai: case_.summaryAiFull || ''  // 🔧 修復：使用正確的駝峰命名 summaryAiFull
             };
         });
 
@@ -3369,15 +3369,15 @@ async function analyzeCriticalPattern(caseDescription, criticalCases, distributi
         criticalCases.forEach((case_, index) => {
             citations[index + 1] = {
                 // 🆕 添加完整的判決書信息
-                JID: case_.id || case_.JID,  // 判決書唯一識別碼
-                JTITLE: case_.title,  // 判決書標題
-                judgementId: `${case_.title} (${case_.court} ${case_.year}年)`,  // 顯示用的判決書ID
-                originalText: case_.summaryAiFull || case_.summary_ai || '無摘要',  // 原始摘要文本
-                court: case_.court,  // 法院
-                year: case_.year,  // 年份
-                // 🆕 添加其他可能有用的字段
-                verdict_type: case_.verdict_type || case_.verdictType,  // 判決類型
-                summary_ai: case_.summary_ai  // AI 摘要
+                JID: case_.id || case_.JID || '',  // 判決書唯一識別碼
+                JTITLE: case_.title || '',  // 判決書標題
+                judgementId: `${case_.title || '未知判決'} (${case_.court || '未知法院'} ${case_.year || '未知年份'}年)`,  // 顯示用的判決書ID
+                originalText: case_.summaryAiFull || '無摘要',  // 🔧 修復：使用正確的駝峰命名 summaryAiFull
+                court: case_.court || '',  // 法院
+                year: case_.year || '',  // 年份
+                // 🆕 添加其他可能有用的字段（確保不會是 undefined）
+                verdict_type: case_.verdict_type || case_.verdictType || '',  // 判決類型
+                summary_ai: case_.summaryAiFull || ''  // 🔧 修復：使用正確的駝峰命名 summaryAiFull，避免 undefined
             };
         });
 
