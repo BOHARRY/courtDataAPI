@@ -325,9 +325,205 @@ function cleanCitationMarkers(text) {
 }
 
 /**
+ * 🆕 使用 AI 歸納策略洞察
+ * 將 5-10 個原始洞察通過 AI 語義合併，生成 3-5 個精煉的核心要點
+ *
+ * @param {Array} rawInsights - 原始洞察列表 (5-10 個)
+ * @param {String} type - 類型 ('success' | 'risk')
+ * @param {String} position - 立場 ('plaintiff' | 'defendant')
+ * @returns {Object} 歸納後的洞察 { summary: [], details: [], totalCases: number }
+ */
+async function summarizeStrategicInsights(rawInsights, type, position) {
+    console.log(`[summarizeStrategicInsights] 開始歸納 ${type} 洞察，立場: ${position}，原始數量: ${rawInsights.length}`);
+
+    if (rawInsights.length === 0) {
+        return {
+            summary: [],
+            details: [],
+            totalCases: 0
+        };
+    }
+
+    try {
+        // 1. 清理引用標記
+        const cleanedInsights = rawInsights.map(insight => cleanCitationMarkers(insight));
+        console.log(`[summarizeStrategicInsights] 清理引用標記完成`);
+
+        // 2. 去重
+        const uniqueInsights = [...new Set(cleanedInsights)].filter(s => s && s.trim());
+        console.log(`[summarizeStrategicInsights] 去重後數量: ${uniqueInsights.length}`);
+
+        // 3. 取前 10 個 (增加樣本數量)
+        const topInsights = uniqueInsights.slice(0, 10);
+        console.log(`[summarizeStrategicInsights] 取前 10 個進行 AI 分析`);
+
+        // 4. 如果數量太少，直接返回
+        if (topInsights.length <= 3) {
+            console.log(`[summarizeStrategicInsights] 數量太少 (${topInsights.length})，直接返回`);
+            return {
+                summary: topInsights,
+                details: topInsights.map(insight => ({
+                    category: insight,
+                    count: 1,
+                    examples: [insight]
+                })),
+                totalCases: rawInsights.length
+            };
+        }
+
+        // 5. 構建 AI 提示詞
+        const positionLabel = position === 'plaintiff' ? '原告方' : '被告方';
+        const typeLabel = type === 'success' ? '成功策略' : '風險因素';
+
+        let prompt;
+        if (type === 'success') {
+            // 成功策略提示詞
+            prompt = `你是資深訴訟律師。請將以下${positionLabel}的成功策略按照語義相似性進行分類合併。
+
+成功策略列表：
+${topInsights.map((insight, index) => `${index + 1}. ${insight}`).join('\n')}
+
+請按照以下規則分類：
+1. 將語義相似的策略歸為同一類
+2. 為每一類選擇一個簡潔明確的類別名稱，最多不超過10字
+3. 類別名稱應該是**可操作的策略**，例如「充分舉證證明損害」而非「舉證問題」
+4. 優先使用律師實務用語，便於律師理解和應用
+5. 如果某個策略很獨特，可以單獨成類
+6. 所有文字請使用繁體中文
+
+請以純JSON格式回應，不要包含任何markdown標記或說明文字：
+{
+  "策略類別1": ["具體策略1", "具體策略2"],
+  "策略類別2": ["具體策略3"],
+  ...
+}
+
+正確示範：
+{
+  "充分舉證證明損害": ["提供醫療單據證明傷害", "提供鑑定報告證明因果關係"],
+  "善用程序抗辯": ["主張時效抗辯成功", "主張管轄權異議成功"],
+  "法律適用正確": ["正確援引民法第184條", "正確主張侵權行為構成要件"]
+}
+
+重要：只返回JSON對象，不要添加任何其他文字或格式標記。`;
+        } else {
+            // 風險因素提示詞
+            prompt = `你是資深訴訟律師。請將以下${positionLabel}的失敗風險因素按照語義相似性進行分類合併。
+
+風險因素列表：
+${topInsights.map((insight, index) => `${index + 1}. ${insight}`).join('\n')}
+
+請按照以下規則分類：
+1. 將語義相似的風險歸為同一類
+2. 為每一類選擇一個簡潔明確的類別名稱，最多不超過10字
+3. 類別名稱應該是**明確的風險點**，例如「舉證不足」而非「證據問題」
+4. 優先使用律師實務用語，便於律師識別和規避
+5. 如果某個風險很獨特，可以單獨成類
+6. 所有文字請使用繁體中文
+
+請以純JSON格式回應，不要包含任何markdown標記或說明文字：
+{
+  "風險類別1": ["具體風險1", "具體風險2"],
+  "風險類別2": ["具體風險3"],
+  ...
+}
+
+正確示範：
+{
+  "舉證責任未盡": ["未能證明損害存在", "未能證明因果關係"],
+  "法律適用錯誤": ["錯誤援引法條", "未能證明構成要件"],
+  "程序瑕疵": ["逾期提出證據", "未依法送達"]
+}
+
+重要：只返回JSON對象，不要添加任何其他文字或格式標記。`;
+        }
+
+        // 6. 調用 AI
+        console.log(`[summarizeStrategicInsights] 調用 GPT-4o-mini 進行語義合併`);
+        const response = await openai.chat.completions.create({
+            model: 'gpt-4o-mini',
+            messages: [
+                {
+                    role: 'system',
+                    content: `你是專業的法律分析助手，擅長將相似的法律${typeLabel}進行分類整理，並提供給資深律師高度判斷價值。`
+                },
+                {
+                    role: 'user',
+                    content: prompt
+                }
+            ],
+            temperature: 0.1,
+            max_tokens: 1500
+        });
+
+        // 7. 處理 AI 響應
+        let responseContent = response.choices[0].message.content.trim();
+        console.log(`[summarizeStrategicInsights] AI 原始響應長度: ${responseContent.length}`);
+
+        // 移除可能的 markdown 代碼塊標記
+        if (responseContent.startsWith('```json')) {
+            responseContent = responseContent.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+        } else if (responseContent.startsWith('```')) {
+            responseContent = responseContent.replace(/^```\s*/, '').replace(/\s*```$/, '');
+        }
+
+        const mergedCategories = JSON.parse(responseContent);
+        console.log(`[summarizeStrategicInsights] AI 合併完成，生成 ${Object.keys(mergedCategories).length} 個類別`);
+
+        // 8. 統計每個類別的重要性
+        const categoryStats = Object.entries(mergedCategories).map(([category, examples]) => ({
+            category: category,
+            count: examples.length,
+            examples: examples.slice(0, 2) // 保留 2 個代表性例子
+        }));
+
+        // 9. 按重要性排序 (出現次數降序)
+        categoryStats.sort((a, b) => b.count - a.count);
+
+        // 10. 取前 5 個核心要點
+        const topCategories = categoryStats.slice(0, 5);
+
+        // 11. 生成精煉的洞察文本
+        const summary = topCategories.map(cat => {
+            if (cat.count > 1) {
+                return `${cat.category} (${cat.count}件)`;
+            } else {
+                return cat.category;
+            }
+        });
+
+        console.log(`[summarizeStrategicInsights] 歸納完成，生成 ${summary.length} 個核心要點`);
+
+        return {
+            summary: summary,
+            details: categoryStats,
+            totalCases: rawInsights.length
+        };
+
+    } catch (error) {
+        console.error(`[summarizeStrategicInsights] AI 歸納失敗:`, error);
+
+        // Fallback: 返回前 5 個原始洞察
+        const cleanedInsights = rawInsights.map(insight => cleanCitationMarkers(insight));
+        const uniqueInsights = [...new Set(cleanedInsights)].filter(s => s && s.trim());
+        const fallbackSummary = uniqueInsights.slice(0, 5);
+
+        return {
+            summary: fallbackSummary,
+            details: fallbackSummary.map(insight => ({
+                category: insight,
+                count: 1,
+                examples: [insight]
+            })),
+            totalCases: rawInsights.length
+        };
+    }
+}
+
+/**
  * 🆕 生成立場導向策略洞察
  */
-function generateStrategicInsights(similarCases, position, verdictAnalysis) {
+async function generateStrategicInsights(similarCases, position, verdictAnalysis) {
     if (position === 'neutral') {
         // ✅ 修復: 使用正確的數據結構
         const mainVerdict = verdictAnalysis.mostCommon || '未知';
@@ -446,14 +642,50 @@ function generateStrategicInsights(similarCases, position, verdictAnalysis) {
         insights.push(`${positionLabel}重大敗訴率：${majorDefeatRate}% (${majorDefeatCount} 件)`);
     }
 
-    // 關鍵成功策略
+    // 🆕 關鍵成功策略 (使用 AI 歸納)
+    let successStrategiesDetails = null;
     if (successStrategies.length > 0) {
-        insights.push(`關鍵成功策略：${[...new Set(successStrategies)].slice(0, 3).join('、')}`);
+        console.log(`[generateStrategicInsights] 開始 AI 歸納成功策略，原始數量: ${successStrategies.length}`);
+
+        const summarized = await summarizeStrategicInsights(
+            successStrategies,
+            'success',
+            position
+        );
+
+        console.log(`[generateStrategicInsights] AI 歸納完成，生成 ${summarized.summary.length} 個核心策略`);
+
+        // 生成洞察文本
+        if (summarized.summary.length > 0) {
+            const strategiesText = summarized.summary.join('、');
+            insights.push(`關鍵成功策略：${strategiesText}`);
+
+            // 🆕 保存詳細數據供前端展開查看
+            successStrategiesDetails = summarized.details;
+        }
     }
 
-    // 主要風險因素
+    // 🆕 主要風險因素 (使用 AI 歸納)
+    let riskFactorsDetails = null;
     if (riskFactors.length > 0) {
-        insights.push(`主要風險因素：${[...new Set(riskFactors)].slice(0, 3).join('、')}`);
+        console.log(`[generateStrategicInsights] 開始 AI 歸納風險因素，原始數量: ${riskFactors.length}`);
+
+        const summarized = await summarizeStrategicInsights(
+            riskFactors,
+            'risk',
+            position
+        );
+
+        console.log(`[generateStrategicInsights] AI 歸納完成，生成 ${summarized.summary.length} 個核心風險`);
+
+        // 生成洞察文本
+        if (summarized.summary.length > 0) {
+            const risksText = summarized.summary.join('、');
+            insights.push(`主要風險因素：${risksText}`);
+
+            // 🆕 保存詳細數據供前端展開查看
+            riskFactorsDetails = summarized.details;
+        }
     }
 
     return {
@@ -472,7 +704,11 @@ function generateStrategicInsights(similarCases, position, verdictAnalysis) {
         minorVictoryRate,
         majorDefeatCount,
         majorDefeatRate,
-        insights: insights
+        insights: insights,
+
+        // 🆕 新增詳細數據
+        successStrategiesDetails: successStrategiesDetails,
+        riskFactorsDetails: riskFactorsDetails
     };
 }
 
