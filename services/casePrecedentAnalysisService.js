@@ -619,20 +619,21 @@ async function performMultiAngleSearch(searchAngles, courtLevel, caseType, thres
                 });
 
                 // 3. 結合立場過濾和基本過濾
+                // ✅ 修復: 使用 filter 而不是 query，避免影響 KNN 分數
                 if (basicFilters.length > 0 || searchStrategy.filterQuery) {
-                    const combinedQuery = {
-                        bool: {
-                            must: basicFilters // 基本條件必須滿足
-                        }
-                    };
+                    const filters = [...basicFilters];
 
-                    // 如果有立場過濾，作為加分條件
+                    // 如果有立場過濾，加入到 filter 中（不影響分數）
                     if (searchStrategy.filterQuery) {
-                        combinedQuery.bool.should = [searchStrategy.filterQuery];
-                        combinedQuery.bool.boost = 2.0; // 立場匹配加分
+                        filters.push(searchStrategy.filterQuery);
                     }
 
-                    searchQuery.query = combinedQuery;
+                    // 使用 filter context 而不是 query context
+                    searchQuery.query = {
+                        bool: {
+                            filter: filters
+                        }
+                    };
                 }
 
                 const response = await esClient.search(searchQuery);
