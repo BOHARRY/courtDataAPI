@@ -3308,11 +3308,20 @@ async function analyzeMainstreamPattern(caseDescription, mainStreamCases, mainPa
         const analysisResult = JSON.parse(response.choices[0].message.content);
 
         // 🔧 修正：確保引用格式與共同點歸納一致（包含 judgementId 和 originalText）
+        // 🆕 添加完整的判決書信息以支持點擊開啟
         const citations = {};
         mainStreamCases.forEach((case_, index) => {
             citations[index + 1] = {
-                judgementId: `${case_.title} (${case_.court} ${case_.year}年)`,
-                originalText: case_.summary_ai_full || case_.summary_ai || '無摘要'
+                // 🆕 添加完整的判決書信息
+                JID: case_.id || case_.JID,  // 判決書唯一識別碼
+                JTITLE: case_.title,  // 判決書標題
+                judgementId: `${case_.title} (${case_.court} ${case_.year}年)`,  // 顯示用的判決書ID
+                originalText: case_.summary_ai_full || case_.summary_ai || '無摘要',  // 原始摘要文本
+                court: case_.court,  // 法院
+                year: case_.year,  // 年份
+                // 🆕 添加其他可能有用的字段
+                verdict_type: case_.verdict_type || case_.verdictType,  // 判決類型
+                summary_ai: case_.summary_ai  // AI 摘要
             };
         });
 
@@ -3355,12 +3364,20 @@ async function analyzeCriticalPattern(caseDescription, criticalCases, distributi
 
         const analysisResult = JSON.parse(response.choices[0].message.content);
 
-        // 3. 確保引用格式一致
+        // 3. 確保引用格式一致（🆕 添加完整的判決書信息以支持點擊開啟）
         const citations = {};
         criticalCases.forEach((case_, index) => {
             citations[index + 1] = {
-                judgementId: `${case_.title} (${case_.court} ${case_.year}年)`,
-                originalText: case_.summaryAiFull || case_.summary_ai || '無摘要'
+                // 🆕 添加完整的判決書信息
+                JID: case_.id || case_.JID,  // 判決書唯一識別碼
+                JTITLE: case_.title,  // 判決書標題
+                judgementId: `${case_.title} (${case_.court} ${case_.year}年)`,  // 顯示用的判決書ID
+                originalText: case_.summaryAiFull || case_.summary_ai || '無摘要',  // 原始摘要文本
+                court: case_.court,  // 法院
+                year: case_.year,  // 年份
+                // 🆕 添加其他可能有用的字段
+                verdict_type: case_.verdict_type || case_.verdictType,  // 判決類型
+                summary_ai: case_.summary_ai  // AI 摘要
             };
         });
 
