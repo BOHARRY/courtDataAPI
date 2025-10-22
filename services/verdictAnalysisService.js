@@ -47,11 +47,14 @@ export function analyzeVerdictFromPositionData(case_, position) {
     // 4. 基於 overall_result 判斷勝負
     const overallResult = perspective.overall_result;
 
-    // ✅ ES 查詢驗證: overall_result 只有 3 種值
-    // - major_victory: 大勝
-    // - partial_success: 部分成功
-    // - major_defeat: 大敗
-    if (!['major_victory', 'partial_success', 'major_defeat'].includes(overallResult)) {
+    // ✅ 更新: overall_result 現在有 5 種值 (2025-10-22 重新處理判決書後)
+    // - major_victory: 主要訴求全部勝訴，無重大瑕疵或嚴厲批評
+    // - substantial_victory: 主要訴求勝訴，但有部分失敗或遭法院批評
+    // - partial_success: 部分勝訴部分敗訴，或勝訴但代價高昂
+    // - minor_victory: 形式上勝訴但實質利益有限
+    // - major_defeat: 主要訴求全部敗訴
+    const validResults = ['major_victory', 'substantial_victory', 'partial_success', 'minor_victory', 'major_defeat'];
+    if (!validResults.includes(overallResult)) {
         console.warn(`[analyzeVerdictFromPositionData] ⚠️ 未知的 overall_result 值: ${overallResult}`);
     }
 
@@ -62,10 +65,12 @@ export function analyzeVerdictFromPositionData(case_, position) {
         caseValue: perspective.case_value,  // ⚠️ 注意: 被告使用 example (model_defense, neutral_example, negative_example)
                                             //          原告使用 precedent (positive_precedent, neutral_precedent, negative_precedent)
 
-        // 勝負判斷 (✅ 只有 major_victory 才算勝利!)
-        isWin: overallResult === 'major_victory',
-        isPartialWin: overallResult === 'partial_success',
-        isLose: overallResult === 'major_defeat',
+        // 勝負判斷 (✅ 更新: 擴展為 5 級評級)
+        isWin: overallResult === 'major_victory',  // 完全勝訴
+        isSubstantialWin: overallResult === 'substantial_victory',  // 實質勝訴
+        isPartialWin: overallResult === 'partial_success',  // 部分勝訴
+        isMinorWin: overallResult === 'minor_victory',  // 形式勝訴
+        isLose: overallResult === 'major_defeat',  // 敗訴
 
         // 為了向後兼容，保留 isPartial 欄位
         isPartial: overallResult === 'partial_success',
@@ -98,17 +103,21 @@ export function analyzeVerdictDistributionByPosition(cases, position) {
     const verdictStats = {};
     const totalCases = cases.length;
 
-    // ✅ 定義 overall_result 的中文標籤
+    // ✅ 定義 overall_result 的中文標籤 (更新為 5 級評級)
     const resultLabels = {
         'major_victory': position === 'plaintiff' ? '原告重大勝訴' : '被告重大勝訴',
+        'substantial_victory': position === 'plaintiff' ? '原告實質勝訴' : '被告實質勝訴',
         'partial_success': position === 'plaintiff' ? '原告部分勝訴' : '被告部分勝訴',
+        'minor_victory': position === 'plaintiff' ? '原告形式勝訴' : '被告形式勝訴',
         'major_defeat': position === 'plaintiff' ? '原告重大敗訴' : '被告重大敗訴'
     };
 
     // 🔍 調試計數器
     const debugCounter = {
         'major_victory': 0,
+        'substantial_victory': 0,
         'partial_success': 0,
+        'minor_victory': 0,
         'major_defeat': 0,
         '未知': 0
     };
@@ -150,12 +159,14 @@ export function analyzeVerdictDistributionByPosition(cases, position) {
         verdictStats[label].percentage = Math.round((verdictStats[label].count / totalCases) * 100);
     });
 
-    // ✅ 排序邏輯：按照 major_victory > partial_success > major_defeat 的順序
-    // 這樣律師可以清楚看到：重大勝訴 > 部分勝訴 > 重大敗訴
+    // ✅ 排序邏輯：按照勝訴程度排序 (更新為 5 級評級)
+    // 重大勝訴 > 實質勝訴 > 部分勝訴 > 形式勝訴 > 重大敗訴
     const orderPriority = {
         'major_victory': 1,
-        'partial_success': 2,
-        'major_defeat': 3
+        'substantial_victory': 2,
+        'partial_success': 3,
+        'minor_victory': 4,
+        'major_defeat': 5
     };
 
     const sortedVerdicts = Object.entries(verdictStats)

@@ -255,11 +255,25 @@ function generatePositionStats(similarCases, position) {
     }
 
     // 計算立場導向統計
-    // ✅ 修復: 只有 major_victory 才算成功，不應該用 case_value 判斷
-    // case_value (model_defense, neutral_example, negative_example) 只是案例的參考價值，不代表勝負
-    const successCases = casesWithPositionData.filter(c => {
+    // ✅ 更新: 支持 5 級評級系統，提供更細緻的統計
+    const majorVictoryCases = casesWithPositionData.filter(c => {
         const analysis = c.positionAnalysis[positionKey];
         return analysis.overall_result === 'major_victory';
+    });
+
+    const substantialVictoryCases = casesWithPositionData.filter(c => {
+        const analysis = c.positionAnalysis[positionKey];
+        return analysis.overall_result === 'substantial_victory';
+    });
+
+    const partialSuccessCases = casesWithPositionData.filter(c => {
+        const analysis = c.positionAnalysis[positionKey];
+        return analysis.overall_result === 'partial_success';
+    });
+
+    const minorVictoryCases = casesWithPositionData.filter(c => {
+        const analysis = c.positionAnalysis[positionKey];
+        return analysis.overall_result === 'minor_victory';
     });
 
     const riskCases = casesWithPositionData.filter(c => {
@@ -267,15 +281,25 @@ function generatePositionStats(similarCases, position) {
         return analysis.overall_result === 'major_defeat';
     });
 
-    const successRate = Math.round((successCases.length / casesWithPositionData.length) * 100);
+    // 成功率計算: major_victory + substantial_victory 算作成功
+    const successCases = majorVictoryCases.length + substantialVictoryCases.length;
+    const successRate = Math.round((successCases / casesWithPositionData.length) * 100);
 
     return {
         analysisType: position,
         totalCases: similarCases.length,
         positionDataAvailable: true,
         casesWithPositionData: casesWithPositionData.length,
-        successCases: successCases.length,
+
+        // 細緻的勝負統計
+        majorVictoryCases: majorVictoryCases.length,
+        substantialVictoryCases: substantialVictoryCases.length,
+        partialSuccessCases: partialSuccessCases.length,
+        minorVictoryCases: minorVictoryCases.length,
         riskCases: riskCases.length,
+
+        // 向後兼容的欄位
+        successCases: successCases,
         successRate,
         riskRate: Math.round((riskCases.length / casesWithPositionData.length) * 100)
     };
@@ -319,7 +343,8 @@ function generateStrategicInsights(similarCases, position, verdictAnalysis) {
     casesWithPositionData.forEach(c => {
         const analysis = c.positionAnalysis[positionKey];
 
-        if (analysis.overall_result === 'major_victory') {
+        // ✅ 更新: 從 major_victory 和 substantial_victory 中提取成功策略
+        if (analysis.overall_result === 'major_victory' || analysis.overall_result === 'substantial_victory') {
             if (analysis.successful_strategies) {
                 successStrategies.push(...(Array.isArray(analysis.successful_strategies) ?
                     analysis.successful_strategies : [analysis.successful_strategies]));
@@ -340,13 +365,21 @@ function generateStrategicInsights(similarCases, position, verdictAnalysis) {
 
     const positionLabel = position === 'plaintiff' ? '原告方' : '被告方';
 
-    // ✅ 修復：只計算 major_victory 作為成功（與 generatePositionStats 一致）
+    // ✅ 更新: 支持 5 級評級統計
     const majorVictoryCount = casesWithPositionData.filter(c =>
         c.positionAnalysis[positionKey].overall_result === 'major_victory'
     ).length;
 
+    const substantialVictoryCount = casesWithPositionData.filter(c =>
+        c.positionAnalysis[positionKey].overall_result === 'substantial_victory'
+    ).length;
+
     const partialSuccessCount = casesWithPositionData.filter(c =>
         c.positionAnalysis[positionKey].overall_result === 'partial_success'
+    ).length;
+
+    const minorVictoryCount = casesWithPositionData.filter(c =>
+        c.positionAnalysis[positionKey].overall_result === 'minor_victory'
     ).length;
 
     const majorDefeatCount = casesWithPositionData.filter(c =>
@@ -355,47 +388,63 @@ function generateStrategicInsights(similarCases, position, verdictAnalysis) {
 
     // ✅ 計算各種比例
     const majorVictoryRate = Math.round((majorVictoryCount / casesWithPositionData.length) * 100);
+    const substantialVictoryRate = Math.round((substantialVictoryCount / casesWithPositionData.length) * 100);
     const partialSuccessRate = Math.round((partialSuccessCount / casesWithPositionData.length) * 100);
+    const minorVictoryRate = Math.round((minorVictoryCount / casesWithPositionData.length) * 100);
     const majorDefeatRate = Math.round((majorDefeatCount / casesWithPositionData.length) * 100);
 
-    // ✅ 生成清晰的洞察文案（按照重大勝訴 > 部分勝訴 > 重大敗訴的順序）
+    // ✅ 生成清晰的洞察文案（按照 5 級評級順序）
     const insights = [];
 
     // 第一行：重大勝訴率
-    insights.push(`${positionLabel}重大勝訴率：${majorVictoryRate}% (${majorVictoryCount} 件)`);
+    if (majorVictoryCount > 0) {
+        insights.push(`${positionLabel}重大勝訴率：${majorVictoryRate}% (${majorVictoryCount} 件)`);
+    }
 
-    // 第二行：部分勝訴率（如果有）
+    // 第二行：實質勝訴率
+    if (substantialVictoryCount > 0) {
+        insights.push(`${positionLabel}實質勝訴率：${substantialVictoryRate}% (${substantialVictoryCount} 件)`);
+    }
+
+    // 第三行：部分勝訴率
     if (partialSuccessCount > 0) {
         insights.push(`${positionLabel}部分勝訴率：${partialSuccessRate}% (${partialSuccessCount} 件)`);
     }
 
-    // 第三行：重大敗訴率（如果有）
+    // 第四行：形式勝訴率
+    if (minorVictoryCount > 0) {
+        insights.push(`${positionLabel}形式勝訴率：${minorVictoryRate}% (${minorVictoryCount} 件)`);
+    }
+
+    // 第五行：重大敗訴率
     if (majorDefeatCount > 0) {
         insights.push(`${positionLabel}重大敗訴率：${majorDefeatRate}% (${majorDefeatCount} 件)`);
     }
 
-    // 第四行：關鍵成功策略
+    // 關鍵成功策略
     if (successStrategies.length > 0) {
         insights.push(`關鍵成功策略：${[...new Set(successStrategies)].slice(0, 3).join('、')}`);
-    } else {
-        insights.push('成功策略數據不足');
     }
 
-    // 第五行：主要風險因素
+    // 主要風險因素
     if (riskFactors.length > 0) {
         insights.push(`主要風險因素：${[...new Set(riskFactors)].slice(0, 3).join('、')}`);
-    } else {
-        insights.push('風險因素數據不足');
     }
 
     return {
         type: position,
         positionLabel,
-        successRate: majorVictoryRate,  // 只計算 major_victory
+
+        // ✅ 更新: 返回完整的 5 級評級統計
+        successRate: majorVictoryRate + substantialVictoryRate,  // 成功率 = 重大勝訴 + 實質勝訴
         majorVictoryCount,
         majorVictoryRate,
+        substantialVictoryCount,
+        substantialVictoryRate,
         partialSuccessCount,
         partialSuccessRate,
+        minorVictoryCount,
+        minorVictoryRate,
         majorDefeatCount,
         majorDefeatRate,
         insights: insights
