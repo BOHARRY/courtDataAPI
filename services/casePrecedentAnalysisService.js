@@ -2254,7 +2254,7 @@ ${smartRecommendations.nextSteps.map(step => `• ${step}`).join('\n')}`;
                 positionBasedAnalysis: {
                     selectedPosition: analysisData.position || 'neutral',
                     positionStats: generatePositionStats(similarCases, analysisData.position || 'neutral'),
-                    strategicInsights: generateStrategicInsights(similarCases, analysisData.position || 'neutral', verdictAnalysis)
+                    strategicInsights: await generateStrategicInsights(similarCases, analysisData.position || 'neutral', verdictAnalysis)
                 },
 
                 // ✅ 修復: 將 distribution 對象轉換為前端期望的數組格式
