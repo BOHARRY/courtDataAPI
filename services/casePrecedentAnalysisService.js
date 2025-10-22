@@ -650,15 +650,17 @@ async function performMultiAngleSearch(searchAngles, courtLevel, caseType, thres
                 });
 
                 // 🚨 調試：檢查搜尋結果的相關性
-                // if (hits.length > 0) {
-                //     console.log(`[casePrecedentAnalysisService] 🔍 角度「${angleName}」前3個結果:`, hits.slice(0, 3).map(hit => ({
-                //         title: hit._source?.JTITLE?.substring(0, 50) + '...',
-                //         score: hit._score,
-                //         main_reasons_sample: hit._source?.main_reasons_ai?.slice(0, 2),
-                //         has_text_embedding: !!hit._source?.text_embedding,
-                //         text_embedding_length: hit._source?.text_embedding?.length
-                //     })));
-                // }
+                if (hits.length > 0) {
+                    console.log(`[casePrecedentAnalysisService] 🔍 角度「${angleName}」前3個結果:`, hits.slice(0, 3).map(hit => ({
+                        title: hit._source?.JTITLE?.substring(0, 50) + '...',
+                        score: hit._score,
+                        score_type: typeof hit._score,
+                        score_times_100: hit._score ? Math.round(hit._score * 100) : 'N/A',
+                        main_reasons_sample: hit._source?.main_reasons_ai?.slice(0, 2),
+                        has_text_embedding: !!hit._source?.text_embedding,
+                        text_embedding_length: hit._source?.text_embedding?.length
+                    })));
+                }
 
                 // 篩選並標記來源角度
                 const filteredResults = hits
