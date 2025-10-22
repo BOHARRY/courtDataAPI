@@ -306,6 +306,25 @@ function generatePositionStats(similarCases, position) {
 }
 
 /**
+ * 🆕 清理文本中的引用標記
+ * 移除「參P1, P2」、「見P3」、「(參P4, P5, P6, P7)」等引用標記
+ */
+function cleanCitationMarkers(text) {
+    if (!text || typeof text !== 'string') return text;
+
+    return text
+        // 移除「參P1, P2, P3」格式
+        .replace(/[（(]?參\s*P\d+(?:\s*,\s*P\d+)*[）)]?/g, '')
+        // 移除「見P1」格式
+        .replace(/[（(]?見\s*P\d+[）)]?/g, '')
+        // 移除多餘的空格和標點
+        .replace(/\s+/g, ' ')
+        .replace(/、\s*、/g, '、')
+        .replace(/，\s*，/g, '，')
+        .trim();
+}
+
+/**
  * 🆕 生成立場導向策略洞察
  */
 function generateStrategicInsights(similarCases, position, verdictAnalysis) {
@@ -346,19 +365,25 @@ function generateStrategicInsights(similarCases, position, verdictAnalysis) {
         // ✅ 更新: 從 major_victory 和 substantial_victory 中提取成功策略
         if (analysis.overall_result === 'major_victory' || analysis.overall_result === 'substantial_victory') {
             if (analysis.successful_strategies) {
-                successStrategies.push(...(Array.isArray(analysis.successful_strategies) ?
-                    analysis.successful_strategies : [analysis.successful_strategies]));
+                const strategies = Array.isArray(analysis.successful_strategies) ?
+                    analysis.successful_strategies : [analysis.successful_strategies];
+                // 🔧 清理引用標記
+                successStrategies.push(...strategies.map(s => cleanCitationMarkers(s)));
             }
             if (analysis.winning_formula) {
-                successStrategies.push(...(Array.isArray(analysis.winning_formula) ?
-                    analysis.winning_formula : [analysis.winning_formula]));
+                const formulas = Array.isArray(analysis.winning_formula) ?
+                    analysis.winning_formula : [analysis.winning_formula];
+                // 🔧 清理引用標記
+                successStrategies.push(...formulas.map(f => cleanCitationMarkers(f)));
             }
         }
 
         if (analysis.overall_result === 'major_defeat') {
             if (analysis.critical_failures) {
-                riskFactors.push(...(Array.isArray(analysis.critical_failures) ?
-                    analysis.critical_failures : [analysis.critical_failures]));
+                const failures = Array.isArray(analysis.critical_failures) ?
+                    analysis.critical_failures : [analysis.critical_failures];
+                // 🔧 清理引用標記
+                riskFactors.push(...failures.map(f => cleanCitationMarkers(f)));
             }
         }
     });
