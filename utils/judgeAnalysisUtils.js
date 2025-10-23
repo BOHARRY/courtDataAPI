@@ -213,6 +213,51 @@ export function aggregateJudgeCaseData(esHits, judgeName) {
     });
     analytics.latestCourtName = courtForLatestDate; // 更新最新法院名稱
 
+    // 🆕 按細分案由統計判決分布（方案 B：後端聚合）
+    const caseTypeVerdictMap = {};
+
+    esHits.forEach(hit => {
+        const source = hit._source;
+        if (!source) return;
+
+        const caseType = source.case_type; // 例如："損害賠償"、"借貸糾紛"
+        const verdictType = source.verdict_type || '未知判決結果';
+        const mainType = determineMainCaseType(source); // 'civil', 'criminal', 'administrative'
+
+        if (!caseType) return;
+
+        // 初始化該案由的統計結構
+        if (!caseTypeVerdictMap[caseType]) {
+            caseTypeVerdictMap[caseType] = {
+                mainType: mainType, // 記錄主類型（用於前端過濾）
+                count: 0,
+                verdictTypes: {}
+            };
+        }
+
+        // 累加計數
+        caseTypeVerdictMap[caseType].count++;
+        caseTypeVerdictMap[caseType].verdictTypes[verdictType] =
+            (caseTypeVerdictMap[caseType].verdictTypes[verdictType] || 0) + 1;
+    });
+
+    // 計算百分比並排序
+    Object.keys(caseTypeVerdictMap).forEach(caseType => {
+        const entry = caseTypeVerdictMap[caseType];
+        entry.verdictTypeDetails = Object.entries(entry.verdictTypes)
+            .map(([verdictType, count]) => ({
+                verdict_type: verdictType,
+                count: count,
+                percent: calculateRate(count, entry.count)
+            }))
+            .sort((a, b) => b.count - a.count);
+    });
+
+    // 🆕 將案由判決分析結果添加到 analytics
+    analytics.caseTypeVerdictAnalysis = caseTypeVerdictMap;
+
+    console.log(`[aggregateJudgeCaseData] 📊 案由判決分析完成，共 ${Object.keys(caseTypeVerdictMap).length} 種案由`);
+
     // --- 格式化並計算百分比 ---
     const rawCaseTypesDistribution = formatCounterToPercentageArray(caseTypeCounter, analytics.caseStats.totalCases, 5);
     analytics.caseStats.caseTypes = rawCaseTypesDistribution.map(item => ({
