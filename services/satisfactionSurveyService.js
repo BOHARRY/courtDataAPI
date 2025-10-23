@@ -167,7 +167,12 @@ export async function getUserSurveyService(userId) {
       ...doc.data()
     };
 
-    console.log(`[Satisfaction Survey Service] 找到用戶 ${userId} 的調查記錄:`, surveyData.id);
+    console.log(`[Satisfaction Survey Service] 找到用戶 ${userId} 的調查記錄:`, {
+      id: surveyData.id,
+      hasReceivedReward: surveyData.hasReceivedReward,
+      submissionCount: surveyData.submissionCount,
+      createdAt: surveyData.createdAt
+    });
     return surveyData;
   } catch (error) {
     console.error(`[Satisfaction Survey Service] 查詢調查記錄失敗 User ${userId}:`, error);
