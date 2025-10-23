@@ -40,11 +40,11 @@ export async function submitSurveyService({ userId, userEmail, ratings, feedback
       userId,
       userEmail,
       ratings: {
-        judgmentSearch: ratings.judgmentSearch || 0,
-        judgeAnalysis: ratings.judgeAnalysis || 0,
-        lawyerProfile: ratings.lawyerProfile || 0,
-        aiPleading: ratings.aiPleading || 0,
-        canvasWorkspace: ratings.canvasWorkspace || 0
+        judgmentSearch: ratings.judgmentSearch || 0,      // 判決書搜尋的過程
+        judgmentDetail: ratings.judgmentDetail || 0,      // 判決書的展示頁面
+        judgeAnalysis: ratings.judgeAnalysis || 0,        // 查詢法官傾向
+        lawyerProfile: ratings.lawyerProfile || 0,        // 查詢對造律師
+        canvasWorkspace: ratings.canvasWorkspace || 0     // 工作區圖版功能
       },
       feedback: feedback.trim(),
       submittedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -153,17 +153,17 @@ export async function getSurveyStatistics() {
     // 計算各功能平均分
     const ratingsSums = {
       judgmentSearch: 0,
+      judgmentDetail: 0,
       judgeAnalysis: 0,
       lawyerProfile: 0,
-      aiPleading: 0,
       canvasWorkspace: 0
     };
 
     const ratingsCounts = {
       judgmentSearch: 0,
+      judgmentDetail: 0,
       judgeAnalysis: 0,
       lawyerProfile: 0,
-      aiPleading: 0,
       canvasWorkspace: 0
     };
 
