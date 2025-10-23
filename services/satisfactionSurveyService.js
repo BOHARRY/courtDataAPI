@@ -268,3 +268,72 @@ export async function getSurveyStatistics() {
   }
 }
 
+/**
+ * 🔧 管理員專用：獲取所有滿意度調查（支持分頁和排序）
+ * @param {Object} params - 查詢參數
+ * @param {number} params.page - 頁碼（從 1 開始）
+ * @param {number} params.limit - 每頁數量
+ * @param {string} params.sortBy - 排序欄位（createdAt, averageRating）
+ * @param {string} params.sortOrder - 排序方向（asc, desc）
+ * @returns {Promise<{surveys: Array, total: number, page: number, totalPages: number}>}
+ */
+export async function getAllSurveysForAdminService({ page = 1, limit = 20, sortBy = 'createdAt', sortOrder = 'desc' }) {
+  const db = admin.firestore();
+
+  try {
+    console.log(`[Satisfaction Survey Service] 🔍 管理員查詢所有調查 - Page: ${page}, Limit: ${limit}, Sort: ${sortBy} ${sortOrder}`);
+
+    // 建立基礎查詢
+    let query = db.collection('satisfaction_surveys');
+
+    // 排序
+    const orderDirection = sortOrder === 'asc' ? 'asc' : 'desc';
+    query = query.orderBy(sortBy, orderDirection);
+
+    // 獲取總數（用於分頁）
+    const totalSnapshot = await db.collection('satisfaction_surveys').count().get();
+    const total = totalSnapshot.data().count;
+
+    // 分頁
+    const offset = (page - 1) * limit;
+    query = query.offset(offset).limit(limit);
+
+    // 執行查詢
+    const snapshot = await query.get();
+
+    // 格式化結果
+    const surveys = [];
+    snapshot.forEach(doc => {
+      const data = doc.data();
+      surveys.push({
+        id: doc.id,
+        userId: data.userId,
+        userEmail: data.userEmail,
+        ratings: data.ratings,
+        feedback: data.feedback,
+        averageRating: data.averageRating,
+        createdAt: data.createdAt,
+        updatedAt: data.updatedAt,
+        submissionCount: data.submissionCount || 1,
+        hasReceivedReward: data.hasReceivedReward || false
+      });
+    });
+
+    const totalPages = Math.ceil(total / limit);
+
+    console.log(`[Satisfaction Survey Service] ✅ 查詢成功 - 返回 ${surveys.length} 筆，共 ${total} 筆`);
+
+    return {
+      surveys,
+      total,
+      page,
+      limit,
+      totalPages
+    };
+
+  } catch (error) {
+    console.error('[Satisfaction Survey Service] ❌ 管理員查詢失敗:', error);
+    throw error;
+  }
+}
+

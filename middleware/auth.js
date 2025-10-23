@@ -45,3 +45,45 @@ export async function verifyToken(req, res, next) {
     });
   }
 }
+
+/**
+ * 驗證管理員權限中間件
+ * 必須在 verifyToken 之後使用
+ */
+export async function verifyAdmin(req, res, next) {
+  const db = admin.firestore();
+
+  try {
+    // 從 Firestore 獲取用戶資料以檢查 isAdmin 欄位
+    const userDoc = await db.collection('users').doc(req.user.uid).get();
+
+    if (!userDoc.exists) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: '用戶資料不存在'
+      });
+    }
+
+    const userData = userDoc.data();
+
+    if (!userData.isAdmin) {
+      console.warn(`[verifyAdmin] 非管理員嘗試訪問: ${req.user.email}`);
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: '需要管理員權限'
+      });
+    }
+
+    // 將完整用戶資料附加到 req.user
+    req.user.isAdmin = true;
+    req.user.userData = userData;
+
+    next();
+  } catch (error) {
+    console.error('[verifyAdmin] 驗證管理員權限失敗:', error);
+    return res.status(500).json({
+      error: 'Internal Server Error',
+      message: '驗證權限時發生錯誤'
+    });
+  }
+}

@@ -1,7 +1,7 @@
 // controllers/satisfactionSurvey-controller.js
 // 🎯 滿意度調查控制器
 
-import { submitSurveyService, getUserSurveyService } from '../services/satisfactionSurveyService.js';
+import { submitSurveyService, getUserSurveyService, getAllSurveysForAdminService } from '../services/satisfactionSurveyService.js';
 
 /**
  * 提交滿意度調查
@@ -97,6 +97,63 @@ export async function getMySurveyController(req, res, next) {
     });
   } catch (error) {
     console.error(`[Satisfaction Survey Controller] 獲取調查失敗 User: ${userId}:`, error);
+    next(error);
+  }
+}
+
+/**
+ * 🔧 管理員專用：獲取所有滿意度調查
+ * GET /api/satisfaction-survey/admin/all
+ */
+export async function getAllSurveysForAdminController(req, res, next) {
+  try {
+    // 解析查詢參數
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const sortBy = req.query.sortBy || 'createdAt';
+    const sortOrder = req.query.sortOrder || 'desc';
+
+    // 驗證參數
+    if (page < 1) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'page 必須大於 0'
+      });
+    }
+
+    if (limit < 1 || limit > 100) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'limit 必須在 1-100 之間'
+      });
+    }
+
+    if (!['createdAt', 'averageRating', 'updatedAt'].includes(sortBy)) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'sortBy 必須是 createdAt, averageRating 或 updatedAt'
+      });
+    }
+
+    if (!['asc', 'desc'].includes(sortOrder)) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'sortOrder 必須是 asc 或 desc'
+      });
+    }
+
+    // 調用 Service
+    const result = await getAllSurveysForAdminService({
+      page,
+      limit,
+      sortBy,
+      sortOrder
+    });
+
+    res.status(200).json(result);
+
+  } catch (error) {
+    console.error('[Satisfaction Survey Controller] 管理員查詢失敗:', error);
     next(error);
   }
 }
