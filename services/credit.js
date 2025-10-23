@@ -169,3 +169,55 @@ export async function grantSignupBonus(userId) {
     throw error;
   }
 }
+
+// 🎁 新手任務完成獎勵的特定函數
+export async function grantOnboardingTasksCompletionReward(userId) {
+  // 從配置文件讀取獎勵金額
+  const { CREDIT_REWARDS } = await import('../config/creditCosts.js');
+  const rewardAmount = CREDIT_REWARDS.ONBOARDING_TASKS_COMPLETION;
+
+  // 檢查用戶是否已經領取過新手任務完成獎勵，避免重複發放
+  const userDocRef = admin.firestore().collection('users').doc(userId);
+  const userDoc = await userDocRef.get();
+
+  if (!userDoc.exists) {
+    console.error(`[Credit Service] User ${userId} does not exist.`);
+    throw new Error('User not found');
+  }
+
+  const userData = userDoc.data();
+  const metadata = userData.onboardingTasksMetadata || {};
+
+  // 檢查是否已領取
+  if (metadata.hasReceivedCompletionReward) {
+    console.log(`[Credit Service] User ${userId} has already received onboarding tasks completion reward.`);
+    return { message: "Onboarding tasks completion reward already granted." };
+  }
+
+  // 檢查是否真的完成了所有任務
+  if (!metadata.allTasksCompletedAt) {
+    console.error(`[Credit Service] User ${userId} has not completed all onboarding tasks.`);
+    throw new Error('All onboarding tasks must be completed before claiming reward');
+  }
+
+  try {
+    await addUserCreditsAndLog(
+      userId,
+      rewardAmount,
+      'onboarding_tasks_completion',
+      { description: `新手任務全部完成獎勵 ${rewardAmount} 點` }
+    );
+
+    // 標記已領取
+    await userDocRef.update({
+      'onboardingTasksMetadata.hasReceivedCompletionReward': true,
+      'onboardingTasksMetadata.rewardClaimedAt': admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    console.log(`[Credit Service] Onboarding tasks completion reward of ${rewardAmount} granted to user ${userId}.`);
+    return { message: "Onboarding tasks completion reward granted successfully.", rewardAmount };
+  } catch (error) {
+    console.error(`[Credit Service] Failed to grant onboarding tasks completion reward to user ${userId}:`, error);
+    throw error;
+  }
+}

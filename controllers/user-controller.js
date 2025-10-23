@@ -2,7 +2,10 @@ import { updateUserSubscriptionLevel } from '../services/user.js';
 import { plans as frontendPlansData } from '../config/plansData.js';
 // controllers/user-controller.js
 import * as userService from '../services/user.js';
-import { grantSignupBonus as grantSignupBonusService } from '../services/credit.js';
+import {
+  grantSignupBonus as grantSignupBonusService,
+  grantOnboardingTasksCompletionReward as grantOnboardingRewardService // 🎁 新手任務獎勵
+} from '../services/credit.js';
 
 
 // 這裡的 plans 是從 config/plansData.js 引入的，
@@ -63,6 +66,33 @@ export async function recordSignupBonusController(req, res, next) {
         if (error.message && error.message.includes("already granted")) {
             return res.status(200).json({ message: error.message }); // 已經發放過，也算成功
         }
+        next(error);
+    }
+}
+
+// 🎁 新手任務完成獎勵 Controller
+export async function claimOnboardingTasksRewardController(req, res, next) {
+    const userId = req.user.uid;
+    try {
+        const result = await grantOnboardingRewardService(userId);
+        res.status(200).json({
+            message: "Onboarding tasks reward claimed successfully.",
+            rewardAmount: result.rewardAmount
+        });
+    } catch (error) {
+        console.error(`[User Controller - Onboarding Reward Error] User: ${userId}:`, error);
+
+        // 根據錯誤類型返回不同狀態碼
+        if (error.message && error.message.includes("already granted")) {
+            return res.status(200).json({ message: error.message });
+        }
+        if (error.message && error.message.includes("not completed")) {
+            return res.status(400).json({ error: 'Bad Request', message: error.message });
+        }
+        if (error.message && error.message.includes("not found")) {
+            return res.status(404).json({ error: 'Not Found', message: error.message });
+        }
+
         next(error);
     }
 }
