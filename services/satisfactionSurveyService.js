@@ -290,14 +290,17 @@ export async function getAllSurveysForAdminService({ page = 1, limit = 20, sortB
 
     const total = allSnapshot.size;
 
-    // 格式化所有結果
+    // 格式化所有結果，並獲取用戶名稱
     const allSurveys = [];
+    const userPromises = [];
+
     allSnapshot.forEach(doc => {
       const data = doc.data();
-      allSurveys.push({
+      const surveyData = {
         id: doc.id,
         userId: data.userId,
         userEmail: data.userEmail,
+        userName: null, // 稍後填充
         ratings: data.ratings,
         feedback: data.feedback,
         averageRating: data.averageRating,
@@ -305,8 +308,34 @@ export async function getAllSurveysForAdminService({ page = 1, limit = 20, sortB
         updatedAt: data.updatedAt,
         submissionCount: data.submissionCount || 1,
         hasReceivedReward: data.hasReceivedReward || false
-      });
+      };
+
+      allSurveys.push(surveyData);
+
+      // 獲取用戶名稱
+      if (data.userId) {
+        userPromises.push(
+          db.collection('users').doc(data.userId).get()
+            .then(userDoc => {
+              if (userDoc.exists) {
+                const userData = userDoc.data();
+                surveyData.userName = userData.displayName || userData.email || '未知用戶';
+              } else {
+                surveyData.userName = '未知用戶';
+              }
+            })
+            .catch(err => {
+              console.error(`[Satisfaction Survey Service] 獲取用戶名稱失敗 (${data.userId}):`, err);
+              surveyData.userName = '未知用戶';
+            })
+        );
+      } else {
+        surveyData.userName = '未知用戶';
+      }
     });
+
+    // 等待所有用戶名稱獲取完成
+    await Promise.all(userPromises);
 
     // 在內存中排序
     allSurveys.sort((a, b) => {
