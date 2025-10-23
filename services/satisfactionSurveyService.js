@@ -284,39 +284,41 @@ export async function getAllSurveysForAdminService({ page = 1, limit = 20, sortB
     console.log(`[Satisfaction Survey Service] 🔍 管理員查詢所有調查 - Page: ${page}, Limit: ${limit}, Sort: ${sortBy} ${sortOrder}`);
 
     // 建立基礎查詢
-    let query = db.collection('satisfaction_surveys');
-
-    // 排序
     const orderDirection = sortOrder === 'asc' ? 'asc' : 'desc';
-    query = query.orderBy(sortBy, orderDirection);
 
-    // 獲取總數（用於分頁）
-    const totalSnapshot = await db.collection('satisfaction_surveys').count().get();
-    const total = totalSnapshot.data().count;
+    // 先獲取所有數據（因為 offset 有問題）
+    const allSnapshot = await db.collection('satisfaction_surveys')
+      .orderBy(sortBy, orderDirection)
+      .get();
 
-    // 分頁
-    const offset = (page - 1) * limit;
-    query = query.offset(offset).limit(limit);
+    const total = allSnapshot.size;
 
-    // 執行查詢
-    const snapshot = await query.get();
+    // 手動實現分頁
+    const startIndex = (page - 1) * limit;
+    const endIndex = startIndex + limit;
 
     // 格式化結果
     const surveys = [];
-    snapshot.forEach(doc => {
-      const data = doc.data();
-      surveys.push({
-        id: doc.id,
-        userId: data.userId,
-        userEmail: data.userEmail,
-        ratings: data.ratings,
-        feedback: data.feedback,
-        averageRating: data.averageRating,
-        createdAt: data.createdAt,
-        updatedAt: data.updatedAt,
-        submissionCount: data.submissionCount || 1,
-        hasReceivedReward: data.hasReceivedReward || false
-      });
+    let currentIndex = 0;
+
+    allSnapshot.forEach(doc => {
+      // 只取當前頁的數據
+      if (currentIndex >= startIndex && currentIndex < endIndex) {
+        const data = doc.data();
+        surveys.push({
+          id: doc.id,
+          userId: data.userId,
+          userEmail: data.userEmail,
+          ratings: data.ratings,
+          feedback: data.feedback,
+          averageRating: data.averageRating,
+          createdAt: data.createdAt,
+          updatedAt: data.updatedAt,
+          submissionCount: data.submissionCount || 1,
+          hasReceivedReward: data.hasReceivedReward || false
+        });
+      }
+      currentIndex++;
     });
 
     const totalPages = Math.ceil(total / limit);
