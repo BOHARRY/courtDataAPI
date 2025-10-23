@@ -34,6 +34,7 @@ export const CREDIT_COSTS = {
 export const CREDIT_REWARDS = {
   SIGNUP_BONUS: 300, // 新用戶註冊獎勵
   ONBOARDING_TASKS_COMPLETION: 100, // 🎁 新手任務全部完成獎勵
+  SATISFACTION_SURVEY: 50, // 🎯 滿意度調查獎勵
 };
 
 // 也可以導出 purpose 的常數，以確保一致性
@@ -59,6 +60,7 @@ export const CREDIT_PURPOSES = {
   // 積分增加的 purpose
   SIGNUP_BONUS: 'signup_bonus',
   ONBOARDING_TASKS_COMPLETION: 'onboarding_tasks_completion', // 🎁 新手任務完成獎勵
+  SATISFACTION_SURVEY: 'satisfaction_survey', // 🎯 滿意度調查獎勵
   SUBSCRIPTION_MONTHLY_GRANT_BASIC: 'subscription_monthly_grant_basic',
   SUBSCRIPTION_MONTHLY_GRANT_ADVANCED: 'subscription_monthly_grant_advanced',
   PURCHASE_CREDITS_PKG_20: 'purchase_credits_PKG_20', // 範例

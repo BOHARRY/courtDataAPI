@@ -21,6 +21,7 @@ import aiAgentRoutes from './ai-agent.js';
 import citationRoutes from './citation.js';
 import auditLogRoutes from './auditLogs.js'; // 🔥 新增引用判決查詢路由
 import adminUsersRoutes from './adminUsers.js';
+import satisfactionSurveyRoutes from './satisfactionSurvey.js'; // 🎯 滿意度調查路由
 import { getCaseDetailController } from '../controllers/judgment-controller.js';
 import { verifyToken } from '../middleware/auth.js';
 
@@ -49,6 +50,7 @@ router.use('/ai-agent', aiAgentRoutes); // 新增 AI Agent 路由
 router.use('/citation', verifyToken, citationRoutes); // 🔥 新增引用判決查詢路由（需要身份驗證）
 router.use('/audit-logs', auditLogRoutes);
 router.use('/admin/users', adminUsersRoutes);
+router.use('/satisfaction-survey', satisfactionSurveyRoutes); // 🎯 滿意度調查路由
 
 // 案件詳情路由（用於律師表現浮動視窗）
 router.get('/case-detail/:id', verifyToken, getCaseDetailController);
