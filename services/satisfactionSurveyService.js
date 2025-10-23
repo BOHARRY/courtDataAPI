@@ -6,102 +6,148 @@ import { addUserCreditsAndLog } from './credit.js';
 import { CREDIT_REWARDS, CREDIT_PURPOSES } from '../config/creditCosts.js';
 
 const SURVEY_REWARD_AMOUNT = 50; // 滿意度調查獎勵積分
-const SURVEY_COOLDOWN_DAYS = 30; // 冷卻期 30 天
 
 /**
- * 提交滿意度調查
+ * 提交滿意度調查（支持新增和更新）
  * @param {Object} params - 調查參數
  * @param {string} params.userId - 用戶 ID
  * @param {string} params.userEmail - 用戶 Email
  * @param {Object} params.ratings - 功能評分 { judgmentSearch: 4, judgeAnalysis: 5, ... }
  * @param {string} params.feedback - 開放式反饋
- * @returns {Promise<{surveyId: string, rewardAmount: number}>}
+ * @returns {Promise<{surveyId: string, rewardAmount: number, isUpdate: boolean}>}
  */
 export async function submitSurveyService({ userId, userEmail, ratings, feedback }) {
   const db = admin.firestore();
-  const userDocRef = db.collection('users').doc(userId);
 
   try {
-    // 1. 檢查冷卻期
-    const lastSurvey = await getLastSurveySubmission(userId);
-    if (lastSurvey) {
-      const daysSinceLastSurvey = Math.floor(
-        (Date.now() - lastSurvey.submittedAt.toMillis()) / (1000 * 60 * 60 * 24)
-      );
+    // 1. 檢查是否已有調查記錄
+    const existingSurvey = await getUserSurveyService(userId);
 
-      if (daysSinceLastSurvey < SURVEY_COOLDOWN_DAYS) {
-        const remainingDays = SURVEY_COOLDOWN_DAYS - daysSinceLastSurvey;
-        throw new Error(`您已在 ${daysSinceLastSurvey} 天前提交過調查，請在 ${remainingDays} 天後再次提交`);
-      }
+    if (existingSurvey) {
+      // 🎯 更新模式：更新現有調查，不發放積分
+      return await updateExistingSurvey(existingSurvey.id, { ratings, feedback });
+    } else {
+      // 🎯 首次提交模式：創建新調查，發放積分
+      return await createNewSurvey({ userId, userEmail, ratings, feedback });
     }
-
-    // 2. 創建調查記錄
-    const surveyData = {
-      userId,
-      userEmail,
-      ratings: {
-        judgmentSearch: ratings.judgmentSearch || 0,      // 判決書搜尋的過程
-        judgmentDetail: ratings.judgmentDetail || 0,      // 判決書的展示頁面
-        judgeAnalysis: ratings.judgeAnalysis || 0,        // 查詢法官傾向
-        lawyerProfile: ratings.lawyerProfile || 0,        // 查詢對造律師
-        canvasWorkspace: ratings.canvasWorkspace || 0     // 工作區圖版功能
-      },
-      feedback: feedback.trim(),
-      submittedAt: admin.firestore.FieldValue.serverTimestamp(),
-      submittedFrom: 'web',
-      // 計算平均分數
-      averageRating: calculateAverageRating(ratings)
-    };
-
-    // 3. 寫入 Firestore
-    const surveyRef = await db.collection('satisfaction_surveys').add(surveyData);
-    const surveyId = surveyRef.id;
-
-    console.log(`[Satisfaction Survey Service] Survey ${surveyId} submitted by user ${userId}`);
-
-    // 4. 發放積分獎勵
-    let rewardAmount = 0;
-    try {
-      await addUserCreditsAndLog(
-        userId,
-        SURVEY_REWARD_AMOUNT,
-        CREDIT_PURPOSES.SATISFACTION_SURVEY,
-        {
-          description: `完成滿意度調查獲得 ${SURVEY_REWARD_AMOUNT} 點積分`,
-          relatedId: surveyId
-        }
-      );
-      rewardAmount = SURVEY_REWARD_AMOUNT;
-      console.log(`[Satisfaction Survey Service] Rewarded ${SURVEY_REWARD_AMOUNT} credits to user ${userId}`);
-    } catch (creditError) {
-      console.error(`[Satisfaction Survey Service] Failed to reward credits to user ${userId}:`, creditError);
-      // 即使積分發放失敗，調查仍然成功提交
-      // 可以考慮記錄到錯誤日誌或通知管理員
-    }
-
-    return {
-      surveyId,
-      rewardAmount
-    };
-
   } catch (error) {
     console.error(`[Satisfaction Survey Service] Error submitting survey for user ${userId}:`, error);
     throw error;
   }
 }
 
+}
+
 /**
- * 獲取用戶最後一次提交的調查
- * @param {string} userId - 用戶 ID
- * @returns {Promise<Object|null>}
+ * 創建新調查（首次提交）
+ * @param {Object} params - 調查參數
+ * @returns {Promise<{surveyId: string, rewardAmount: number, isUpdate: boolean}>}
  */
-async function getLastSurveySubmission(userId) {
+async function createNewSurvey({ userId, userEmail, ratings, feedback }) {
+  const db = admin.firestore();
+
+  const surveyData = {
+    userId,
+    userEmail,
+    ratings: {
+      judgmentSearch: ratings.judgmentSearch || 0,      // 判決書搜尋的過程
+      judgmentDetail: ratings.judgmentDetail || 0,      // 判決書的展示頁面
+      judgeAnalysis: ratings.judgeAnalysis || 0,        // 查詢法官傾向
+      lawyerProfile: ratings.lawyerProfile || 0,        // 查詢對造律師
+      canvasWorkspace: ratings.canvasWorkspace || 0     // 工作區圖版功能
+    },
+    feedback: feedback.trim(),
+    averageRating: calculateAverageRating(ratings),
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    submissionCount: 1,
+    hasReceivedReward: false,
+    submittedFrom: 'web'
+  };
+
+  // 寫入 Firestore
+  const surveyRef = await db.collection('satisfaction_surveys').add(surveyData);
+  const surveyId = surveyRef.id;
+
+  console.log(`[Satisfaction Survey Service] New survey ${surveyId} created by user ${userId}`);
+
+  // 發放積分獎勵
+  let rewardAmount = 0;
+  try {
+    await addUserCreditsAndLog(
+      userId,
+      SURVEY_REWARD_AMOUNT,
+      CREDIT_PURPOSES.SATISFACTION_SURVEY,
+      {
+        description: `完成滿意度調查獲得 ${SURVEY_REWARD_AMOUNT} 點積分`,
+        relatedId: surveyId
+      }
+    );
+    rewardAmount = SURVEY_REWARD_AMOUNT;
+
+    // 標記已領取獎勵
+    await surveyRef.update({ hasReceivedReward: true });
+
+    console.log(`[Satisfaction Survey Service] Rewarded ${SURVEY_REWARD_AMOUNT} credits to user ${userId}`);
+  } catch (creditError) {
+    console.error(`[Satisfaction Survey Service] Failed to reward credits to user ${userId}:`, creditError);
+    // 即使積分發放失敗，調查仍然成功提交
+  }
+
+  return {
+    surveyId,
+    rewardAmount,
+    isUpdate: false
+  };
+}
+
+/**
+ * 更新現有調查
+ * @param {string} surveyId - 調查 ID
+ * @param {Object} params - 更新參數
+ * @returns {Promise<{surveyId: string, rewardAmount: number, isUpdate: boolean}>}
+ */
+async function updateExistingSurvey(surveyId, { ratings, feedback }) {
+  const db = admin.firestore();
+  const surveyRef = db.collection('satisfaction_surveys').doc(surveyId);
+
+  const updateData = {
+    ratings: {
+      judgmentSearch: ratings.judgmentSearch || 0,
+      judgmentDetail: ratings.judgmentDetail || 0,
+      judgeAnalysis: ratings.judgeAnalysis || 0,
+      lawyerProfile: ratings.lawyerProfile || 0,
+      canvasWorkspace: ratings.canvasWorkspace || 0
+    },
+    feedback: feedback.trim(),
+    averageRating: calculateAverageRating(ratings),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    submissionCount: admin.firestore.FieldValue.increment(1)
+  };
+
+  await surveyRef.update(updateData);
+
+  console.log(`[Satisfaction Survey Service] Survey ${surveyId} updated (no reward)`);
+
+  return {
+    surveyId,
+    rewardAmount: 0,  // 更新時不發放積分
+    isUpdate: true
+  };
+}
+
+/**
+ * 獲取用戶的調查記錄
+ * @param {string} userId - 用戶 ID
+ * @returns {Promise<Object|null>} - 調查記錄（包含 id）或 null
+ */
+export async function getUserSurveyService(userId) {
   const db = admin.firestore();
 
   try {
     const snapshot = await db.collection('satisfaction_surveys')
       .where('userId', '==', userId)
-      .orderBy('submittedAt', 'desc')
+      .orderBy('createdAt', 'desc')
       .limit(1)
       .get();
 
@@ -109,10 +155,13 @@ async function getLastSurveySubmission(userId) {
       return null;
     }
 
-    return snapshot.docs[0].data();
+    const doc = snapshot.docs[0];
+    return {
+      id: doc.id,
+      ...doc.data()
+    };
   } catch (error) {
-    console.error(`[Satisfaction Survey Service] Error fetching last survey for user ${userId}:`, error);
-    // 如果查詢失敗（例如索引未建立），允許提交
+    console.error(`[Satisfaction Survey Service] Error fetching survey for user ${userId}:`, error);
     return null;
   }
 }

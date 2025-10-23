@@ -1,7 +1,7 @@
 // controllers/satisfactionSurvey-controller.js
 // 🎯 滿意度調查控制器
 
-import { submitSurveyService } from '../services/satisfactionSurveyService.js';
+import { submitSurveyService, getUserSurveyService } from '../services/satisfactionSurveyService.js';
 
 /**
  * 提交滿意度調查
@@ -72,6 +72,32 @@ export async function submitSurveyController(req, res, next) {
     }
 
     next(error); // 交給全局錯誤處理中間件
+  }
+}
+
+/**
+ * 獲取用戶的調查記錄
+ * GET /api/satisfaction-survey/my-survey
+ */
+export async function getMySurveyController(req, res, next) {
+  const userId = req.user.uid; // 來自 verifyToken 中間件
+
+  try {
+    const survey = await getUserSurveyService(userId);
+
+    if (!survey) {
+      return res.status(200).json({
+        survey: null,
+        message: '尚未提交過調查'
+      });
+    }
+
+    res.status(200).json({
+      survey
+    });
+  } catch (error) {
+    console.error(`[Satisfaction Survey Controller] 獲取調查失敗 User: ${userId}:`, error);
+    next(error);
   }
 }
 
