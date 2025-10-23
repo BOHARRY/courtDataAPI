@@ -283,43 +283,63 @@ export async function getAllSurveysForAdminService({ page = 1, limit = 20, sortB
   try {
     console.log(`[Satisfaction Survey Service] 🔍 管理員查詢所有調查 - Page: ${page}, Limit: ${limit}, Sort: ${sortBy} ${sortOrder}`);
 
-    // 建立基礎查詢
-    const orderDirection = sortOrder === 'asc' ? 'asc' : 'desc';
+    // 先獲取所有數據（不排序，避免索引問題）
+    const allSnapshot = await db.collection('satisfaction_surveys').get();
 
-    // 先獲取所有數據（因為 offset 有問題）
-    const allSnapshot = await db.collection('satisfaction_surveys')
-      .orderBy(sortBy, orderDirection)
-      .get();
+    console.log(`[Satisfaction Survey Service] 📊 從 Firestore 獲取到 ${allSnapshot.size} 筆原始數據`);
 
     const total = allSnapshot.size;
+
+    // 格式化所有結果
+    const allSurveys = [];
+    allSnapshot.forEach(doc => {
+      const data = doc.data();
+      allSurveys.push({
+        id: doc.id,
+        userId: data.userId,
+        userEmail: data.userEmail,
+        ratings: data.ratings,
+        feedback: data.feedback,
+        averageRating: data.averageRating,
+        createdAt: data.createdAt,
+        updatedAt: data.updatedAt,
+        submissionCount: data.submissionCount || 1,
+        hasReceivedReward: data.hasReceivedReward || false
+      });
+    });
+
+    // 在內存中排序
+    allSurveys.sort((a, b) => {
+      let aValue = a[sortBy];
+      let bValue = b[sortBy];
+
+      // 處理 Firestore Timestamp
+      if (aValue && typeof aValue.toDate === 'function') {
+        aValue = aValue.toDate().getTime();
+      }
+      if (bValue && typeof bValue.toDate === 'function') {
+        bValue = bValue.toDate().getTime();
+      }
+
+      // 處理 _seconds 格式
+      if (aValue && aValue._seconds) {
+        aValue = aValue._seconds * 1000;
+      }
+      if (bValue && bValue._seconds) {
+        bValue = bValue._seconds * 1000;
+      }
+
+      if (sortOrder === 'desc') {
+        return bValue > aValue ? 1 : -1;
+      } else {
+        return aValue > bValue ? 1 : -1;
+      }
+    });
 
     // 手動實現分頁
     const startIndex = (page - 1) * limit;
     const endIndex = startIndex + limit;
-
-    // 格式化結果
-    const surveys = [];
-    let currentIndex = 0;
-
-    allSnapshot.forEach(doc => {
-      // 只取當前頁的數據
-      if (currentIndex >= startIndex && currentIndex < endIndex) {
-        const data = doc.data();
-        surveys.push({
-          id: doc.id,
-          userId: data.userId,
-          userEmail: data.userEmail,
-          ratings: data.ratings,
-          feedback: data.feedback,
-          averageRating: data.averageRating,
-          createdAt: data.createdAt,
-          updatedAt: data.updatedAt,
-          submissionCount: data.submissionCount || 1,
-          hasReceivedReward: data.hasReceivedReward || false
-        });
-      }
-      currentIndex++;
-    });
+    const surveys = allSurveys.slice(startIndex, endIndex);
 
     const totalPages = Math.ceil(total / limit);
 
@@ -335,6 +355,7 @@ export async function getAllSurveysForAdminService({ page = 1, limit = 20, sortB
 
   } catch (error) {
     console.error('[Satisfaction Survey Service] ❌ 管理員查詢失敗:', error);
+    console.error('[Satisfaction Survey Service] 錯誤詳情:', error.message);
     throw error;
   }
 }
