@@ -47,13 +47,20 @@ export function analyzeVerdictFromPositionData(case_, position) {
     // 4. 基於 overall_result 判斷勝負
     const overallResult = perspective.overall_result;
 
-    // ✅ 更新: overall_result 現在有 5 種值 (2025-10-22 重新處理判決書後)
+    // ✅ 更新: overall_result 現在採用 7 級評級系統 (2025-10-23 ES 實際數據驗證)
+    // 勝訴方向（4 級）:
     // - major_victory: 主要訴求全部勝訴，無重大瑕疵或嚴厲批評
     // - substantial_victory: 主要訴求勝訴，但有部分失敗或遭法院批評
-    // - partial_success: 部分勝訴部分敗訴，或勝訴但代價高昂
+    // - partial_success: 部分勝訴部分敗訴，或勝訴但代價高昂（中性）
     // - minor_victory: 形式上勝訴但實質利益有限
+    // 敗訴方向（3 級）:
+    // - minor_defeat: 形式上敗訴但實質損失有限
+    // - substantial_defeat: 主要訴求敗訴，但有部分成功
     // - major_defeat: 主要訴求全部敗訴
-    const validResults = ['major_victory', 'substantial_victory', 'partial_success', 'minor_victory', 'major_defeat'];
+    const validResults = [
+        'major_victory', 'substantial_victory', 'partial_success', 'minor_victory',
+        'minor_defeat', 'substantial_defeat', 'major_defeat'
+    ];
     if (!validResults.includes(overallResult)) {
         console.warn(`[analyzeVerdictFromPositionData] ⚠️ 未知的 overall_result 值: ${overallResult}`);
     }
@@ -65,12 +72,16 @@ export function analyzeVerdictFromPositionData(case_, position) {
         caseValue: perspective.case_value,  // ⚠️ 注意: 被告使用 example (model_defense, neutral_example, negative_example)
                                             //          原告使用 precedent (positive_precedent, neutral_precedent, negative_precedent)
 
-        // 勝負判斷 (✅ 更新: 擴展為 5 級評級)
-        isWin: overallResult === 'major_victory',  // 完全勝訴
+        // 勝負判斷 (✅ 更新: 擴展為 7 級評級)
+        // 勝訴方向（4 級）
+        isWin: overallResult === 'major_victory',  // 重大勝訴
         isSubstantialWin: overallResult === 'substantial_victory',  // 實質勝訴
-        isPartialWin: overallResult === 'partial_success',  // 部分勝訴
+        isPartialWin: overallResult === 'partial_success',  // 部分勝訴（中性）
         isMinorWin: overallResult === 'minor_victory',  // 形式勝訴
-        isLose: overallResult === 'major_defeat',  // 敗訴
+        // 敗訴方向（3 級）
+        isMinorLose: overallResult === 'minor_defeat',  // 形式敗訴
+        isSubstantialLose: overallResult === 'substantial_defeat',  // 實質敗訴
+        isLose: overallResult === 'major_defeat',  // 重大敗訴
 
         // 為了向後兼容，保留 isPartial 欄位
         isPartial: overallResult === 'partial_success',
@@ -103,12 +114,16 @@ export function analyzeVerdictDistributionByPosition(cases, position) {
     const verdictStats = {};
     const totalCases = cases.length;
 
-    // ✅ 定義 overall_result 的中文標籤 (更新為 5 級評級)
+    // ✅ 定義 overall_result 的中文標籤 (更新為 7 級評級)
     const resultLabels = {
+        // 勝訴方向（4 級）
         'major_victory': position === 'plaintiff' ? '原告重大勝訴' : '被告重大勝訴',
         'substantial_victory': position === 'plaintiff' ? '原告實質勝訴' : '被告實質勝訴',
         'partial_success': position === 'plaintiff' ? '原告部分勝訴' : '被告部分勝訴',
         'minor_victory': position === 'plaintiff' ? '原告形式勝訴' : '被告形式勝訴',
+        // 敗訴方向（3 級）
+        'minor_defeat': position === 'plaintiff' ? '原告形式敗訴' : '被告形式敗訴',
+        'substantial_defeat': position === 'plaintiff' ? '原告實質敗訴' : '被告實質敗訴',
         'major_defeat': position === 'plaintiff' ? '原告重大敗訴' : '被告重大敗訴'
     };
 
@@ -118,6 +133,8 @@ export function analyzeVerdictDistributionByPosition(cases, position) {
         'substantial_victory': 0,
         'partial_success': 0,
         'minor_victory': 0,
+        'minor_defeat': 0,
+        'substantial_defeat': 0,
         'major_defeat': 0,
         '未知': 0
     };
@@ -159,14 +176,16 @@ export function analyzeVerdictDistributionByPosition(cases, position) {
         verdictStats[label].percentage = Math.round((verdictStats[label].count / totalCases) * 100);
     });
 
-    // ✅ 排序邏輯：按照勝訴程度排序 (更新為 5 級評級)
-    // 重大勝訴 > 實質勝訴 > 部分勝訴 > 形式勝訴 > 重大敗訴
+    // ✅ 排序邏輯：按照勝訴程度排序 (更新為 7 級評級)
+    // 重大勝訴 > 實質勝訴 > 部分勝訴 > 形式勝訴 > 形式敗訴 > 實質敗訴 > 重大敗訴
     const orderPriority = {
         'major_victory': 1,
         'substantial_victory': 2,
         'partial_success': 3,
         'minor_victory': 4,
-        'major_defeat': 5
+        'minor_defeat': 5,
+        'substantial_defeat': 6,
+        'major_defeat': 7
     };
 
     const sortedVerdicts = Object.entries(verdictStats)
