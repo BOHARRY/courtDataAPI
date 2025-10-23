@@ -30,6 +30,7 @@ const RESOURCE_LABELS = {
   complaint: '訴狀分析',
   payment: '付款',
   intake: '案件接案',
+  'satisfaction-survey': '滿意度調查',
 };
 
 const SUMMARIES = [
@@ -88,6 +89,11 @@ const SUMMARIES = [
   // 付款相關
   { match: ({ method, segments }) => method === 'POST' && segments[1] === 'payment' && segments[2] === 'create-order', text: '建立付款訂單' },
   { match: ({ method, segments }) => method === 'POST' && segments[1] === 'payment' && segments[2] === 'notify', text: '付款通知回調' },
+
+  // 滿意度調查相關
+  { match: ({ method, segments }) => method === 'GET' && segments[1] === 'satisfaction-survey' && segments[2] === 'my-survey', text: '查詢我的滿意度調查' },
+  { match: ({ method, segments }) => method === 'POST' && segments[1] === 'satisfaction-survey' && segments[2] === 'submit', text: '提交滿意度調查' },
+  { match: ({ method, segments }) => method === 'GET' && segments[1] === 'satisfaction-survey' && segments[2] === 'admin' && segments[3] === 'all', text: '管理員查詢所有滿意度調查' },
 ];
 
 const inferResource = (originalUrl = '') => {
