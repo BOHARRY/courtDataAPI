@@ -20,22 +20,24 @@ export async function submitSurveyService({ userId, userEmail, ratings, feedback
   const db = admin.firestore();
 
   try {
+    console.log(`[Satisfaction Survey Service] 🎯 開始處理調查提交 User: ${userId}`);
+
     // 1. 檢查是否已有調查記錄
     const existingSurvey = await getUserSurveyService(userId);
 
     if (existingSurvey) {
       // 🎯 更新模式：更新現有調查，不發放積分
+      console.log(`[Satisfaction Survey Service] ✏️ 更新模式 - 調查 ID: ${existingSurvey.id}`);
       return await updateExistingSurvey(existingSurvey.id, { ratings, feedback });
     } else {
       // 🎯 首次提交模式：創建新調查，發放積分
+      console.log(`[Satisfaction Survey Service] ✨ 首次提交模式 - 創建新調查`);
       return await createNewSurvey({ userId, userEmail, ratings, feedback });
     }
   } catch (error) {
-    console.error(`[Satisfaction Survey Service] Error submitting survey for user ${userId}:`, error);
+    console.error(`[Satisfaction Survey Service] ❌ 提交調查失敗 User ${userId}:`, error);
     throw error;
   }
-}
-
 }
 
 /**
@@ -69,7 +71,7 @@ async function createNewSurvey({ userId, userEmail, ratings, feedback }) {
   const surveyRef = await db.collection('satisfaction_surveys').add(surveyData);
   const surveyId = surveyRef.id;
 
-  console.log(`[Satisfaction Survey Service] New survey ${surveyId} created by user ${userId}`);
+  console.log(`[Satisfaction Survey Service] ✅ 新調查已創建 ID: ${surveyId}, User: ${userId}`);
 
   // 發放積分獎勵
   let rewardAmount = 0;
@@ -88,9 +90,9 @@ async function createNewSurvey({ userId, userEmail, ratings, feedback }) {
     // 標記已領取獎勵
     await surveyRef.update({ hasReceivedReward: true });
 
-    console.log(`[Satisfaction Survey Service] Rewarded ${SURVEY_REWARD_AMOUNT} credits to user ${userId}`);
+    console.log(`[Satisfaction Survey Service] 💰 已發放 ${SURVEY_REWARD_AMOUNT} 積分並標記為已領取 User: ${userId}`);
   } catch (creditError) {
-    console.error(`[Satisfaction Survey Service] Failed to reward credits to user ${userId}:`, creditError);
+    console.error(`[Satisfaction Survey Service] ❌ 積分發放失敗 User ${userId}:`, creditError);
     // 即使積分發放失敗，調查仍然成功提交
   }
 
@@ -111,6 +113,8 @@ async function updateExistingSurvey(surveyId, { ratings, feedback }) {
   const db = admin.firestore();
   const surveyRef = db.collection('satisfaction_surveys').doc(surveyId);
 
+  console.log(`[Satisfaction Survey Service] 📝 開始更新調查 ID: ${surveyId}`);
+
   const updateData = {
     ratings: {
       judgmentSearch: ratings.judgmentSearch || 0,
@@ -127,7 +131,7 @@ async function updateExistingSurvey(surveyId, { ratings, feedback }) {
 
   await surveyRef.update(updateData);
 
-  console.log(`[Satisfaction Survey Service] Survey ${surveyId} updated (no reward)`);
+  console.log(`[Satisfaction Survey Service] ✅ 調查已更新 ID: ${surveyId} (不發放積分)`);
 
   return {
     surveyId,
@@ -145,24 +149,30 @@ export async function getUserSurveyService(userId) {
   const db = admin.firestore();
 
   try {
+    console.log(`[Satisfaction Survey Service] 查詢用戶 ${userId} 的調查記錄...`);
+
     const snapshot = await db.collection('satisfaction_surveys')
       .where('userId', '==', userId)
-      .orderBy('createdAt', 'desc')
       .limit(1)
       .get();
 
     if (snapshot.empty) {
+      console.log(`[Satisfaction Survey Service] 用戶 ${userId} 沒有調查記錄`);
       return null;
     }
 
     const doc = snapshot.docs[0];
-    return {
+    const surveyData = {
       id: doc.id,
       ...doc.data()
     };
+
+    console.log(`[Satisfaction Survey Service] 找到用戶 ${userId} 的調查記錄:`, surveyData.id);
+    return surveyData;
   } catch (error) {
-    console.error(`[Satisfaction Survey Service] Error fetching survey for user ${userId}:`, error);
-    return null;
+    console.error(`[Satisfaction Survey Service] 查詢調查記錄失敗 User ${userId}:`, error);
+    // ⚠️ 查詢失敗時拋出錯誤，而不是返回 null
+    throw new Error(`無法查詢調查記錄: ${error.message}`);
   }
 }
 
