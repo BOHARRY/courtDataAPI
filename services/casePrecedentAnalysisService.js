@@ -36,6 +36,7 @@ function getThresholdValue(threshold) {
         case 'low': return 0.5;    // 🚨 降低到50%，獲取更多案例
         case 'medium': return 0.6; // 🚨 降低到60%，獲取更多案例
         case 'high': return 0.75;   // 🚨 降低到75%，獲取更多案例
+        case 'very_high': return 0.9; // 新增：極高相關性
         default: return 0.6;       // 🚨 預設降低到60%
     }
 }
