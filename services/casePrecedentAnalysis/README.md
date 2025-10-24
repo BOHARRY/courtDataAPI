@@ -23,13 +23,16 @@ casePrecedentAnalysis/
 ├── ai/                            # Phase 3 & 5: AI 分析邏輯
 │   ├── promptBuilder.js           # 提示詞構建 (~280 行)
 │   ├── insightSummarizer.js       # 洞察摘要生成 (~280 行)
-│   └── criticalAnalysisPrompts.js # 重大判決分析提示詞 (~170 行) ⭐ NEW (Phase 5)
+│   └── criticalAnalysisPrompts.js # 重大判決分析提示詞 (~170 行)
 ├── analysis/                      # Phase 3 & 5: 分析邏輯
 │   ├── strategicInsights.js       # 策略洞察分析 (~380 行)
-│   ├── criticalCaseAnalyzer.js    # 重大案例分析器 (~260 行) ⭐ NEW (Phase 5)
-│   └── criticalPatternAnalyzer.js # 重大判決模式分析 (~60 行) ⭐ NEW (Phase 5)
+│   ├── criticalCaseAnalyzer.js    # 重大案例分析器 (~260 行)
+│   └── criticalPatternAnalyzer.js # 重大判決模式分析 (~60 行)
 ├── task/                          # Phase 4: 任務管理
 │   └── taskManager.js             # 任務管理 (~170 行)
+├── case/                          # Phase 6: 案例處理 ⭐ NEW
+│   ├── caseDataFetcher.js         # 案例數據獲取 (~85 行) ⭐ NEW
+│   └── anomalyCaseProcessor.js    # 異常案例處理 (~260 行) ⭐ NEW
 ├── utils/                         # 工具模組
 │   ├── constants.js               # 常量定義 (~160 行)
 │   └── memoryMonitor.js           # 記憶體監控 (~50 行)
@@ -37,7 +40,8 @@ casePrecedentAnalysis/
 │   ├── phase2-modules.test.js     # Phase 2 模組測試
 │   ├── phase3-ai-modules.test.js  # Phase 3 模組測試
 │   ├── phase4-task-modules.test.js # Phase 4 模組測試
-│   └── phase5-verdict-modules.test.js # Phase 5 模組測試 ⭐ NEW
+│   ├── phase5-verdict-modules.test.js # Phase 5 模組測試
+│   └── phase6-case-modules.test.js # Phase 6 模組測試 ⭐ NEW
 ├── index.js                       # 主入口文件
 └── README.md                      # 本文件
 ```
@@ -305,11 +309,50 @@ npm test -- casePrecedentAnalysis/__tests__/phase2-modules.test.js
 - **累計減少**：1,492 行 (43%)
 - **累計新增模組**：14 個文件
 
+---
+
+## ✅ Phase 6 完成狀態 (2025-10-24)
+
+### 📦 新創建的模組
+
+#### 1. `case/caseDataFetcher.js` (~85 行)
+- **職責**：案例數據獲取
+- **導出**：
+  - `getJudgmentNodeData` - 獲取判決書 node 所需的完整數據
+  - `batchGetJudgmentData` - 批量獲取判決書數據
+
+#### 2. `case/anomalyCaseProcessor.js` (~260 行)
+- **職責**：異常案例處理
+- **導出**：
+  - `generateAnomalyDetailsFromPoolSimplified` - 從案例池生成異常案例詳情（簡化版）
+  - `generateAnomalyDetailsFromPool` - 從案例池生成異常案例詳情（完整版）
+  - `generateAnomalyDetails` - 生成異常案例詳情（舊版）
+
+### 📊 Phase 6 重構成果
+
+- **減少行數**：235 行 (12%)
+- **新增模組**：2 個文件
+- **已重構函數**：5 個
+
+### 🔧 Phase 6 已從原始文件重構的函數
+
+1. 判決書數據獲取邏輯 → `case/caseDataFetcher.js`
+2. 批量數據獲取邏輯 → `case/caseDataFetcher.js`
+3. 異常案例處理邏輯（簡化版）→ `case/anomalyCaseProcessor.js`
+4. 異常案例處理邏輯（完整版）→ `case/anomalyCaseProcessor.js`
+5. 異常案例處理邏輯（舊版）→ `case/anomalyCaseProcessor.js`
+
+### 📊 累計重構成果 (Phase 2 + Phase 3 + Phase 4 + Phase 5 + Phase 6)
+
+- **原始文件**：3,510 行
+- **當前文件**：1,783 行
+- **累計減少**：1,727 行 (49%)
+- **累計新增模組**：16 個文件
+
 ## 📝 下一步計劃
 
-### Phase 6: 案例處理模組化 (預計 ~300 行)
-- `case/caseProcessor.js` - 案例處理
-- `case/caseFormatter.js` - 案例格式化
+重構已接近完成！主服務文件已從 3,510 行減少到 1,783 行，減少了 49%。
+剩餘的代碼主要是核心業務邏輯和流程控制，建議保持現狀。
 
 ## 🎓 最佳實踐
 
@@ -332,6 +375,16 @@ npm test -- casePrecedentAnalysis/__tests__/phase2-modules.test.js
 - 測試驗證：待定
 
 ## 📅 更新日誌
+
+### 2025-10-24 (Phase 6)
+- ✅ 完成 Phase 6: 案例處理模組化
+- ✅ 創建 2 個新模組文件
+  - `case/caseDataFetcher.js` (~85 行)
+  - `case/anomalyCaseProcessor.js` (~260 行)
+- ✅ 從原始文件移除 235 行代碼
+- ✅ 累計減少 1,727 行代碼 (49%)
+- ✅ 所有測試通過
+- ✅ 更新文檔
 
 ### 2025-10-24 (Phase 5)
 - ✅ 完成 Phase 5: 判決分析模組化
