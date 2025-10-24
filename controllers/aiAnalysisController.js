@@ -6,6 +6,7 @@ import { startCitationAnalysis, cancelCitationAnalysisTask } from '../services/c
 import { startWritingAssistantTask } from '../services/writingAssistantService.js';
 import { startPleadingGenerationTask } from '../services/pleadingGenerationService.js';
 import { beautifyDescription } from '../services/descriptionBeautifyService.js';
+import { analyzeAmountData } from '../services/amountAnalysisService.js'; // 🆕 金額分析服務
 
 // 現有的 Controller
 export const analyzeSuccessFactorsController = async (req, res, next) => {
@@ -290,6 +291,46 @@ export const beautifyDescriptionController = async (req, res, next) => {
 
     } catch (error) {
         console.error('[BeautifyDescriptionController] 處理失敗:', error);
+        next(error);
+    }
+};
+
+
+// 🆕 請求獲准金額分析控制器
+export const amountAnalysisController = async (req, res, next) => {
+    try {
+        const { casePrecedentData, position } = req.body;
+        const userId = req.user.uid;
+
+        console.log('[amountAnalysisController] 收到金額分析請求:', {
+            userId,
+            position,
+            hasCasePrecedentData: !!casePrecedentData,
+            casesCount: casePrecedentData?.cases?.length || 0
+        });
+
+        if (!casePrecedentData || !casePrecedentData.cases || casePrecedentData.cases.length === 0) {
+            return res.status(400).json({ message: '缺少案件判決數據。' });
+        }
+
+        // 直接執行金額分析（不需要異步任務，因為是基於現有數據的統計計算）
+        const result = await analyzeAmountData(casePrecedentData, position || 'plaintiff');
+
+        console.log('[amountAnalysisController] 金額分析完成:', {
+            hasStatistics: !!result.statistics,
+            amountsCount: result.amounts?.length || 0,
+            hasError: !!result.error
+        });
+
+        // 返回結果
+        res.status(200).json({
+            success: !result.error,
+            amountAnalysis: result,
+            creditsUsed: 2
+        });
+
+    } catch (error) {
+        console.error('[amountAnalysisController] 金額分析失敗:', error);
         next(error);
     }
 };

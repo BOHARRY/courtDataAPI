@@ -1392,7 +1392,8 @@ async function getMainstreamCasesWithSummary(caseDescription, courtLevel, caseTy
                 'replicable_strategies_vector',
                 'main_reasons_ai_vector',
                 'text_embedding',
-                'legal_issues_vector' // ✅ 修正: legal_issues_embedding → legal_issues_vector
+                'legal_issues_vector', // ✅ 修正: legal_issues_embedding → legal_issues_vector
+                'key_metrics' // 🆕 金額分析需要（包含 civil_metrics.claim_amount 和 granted_amount）
             ],
             size: 50,
             timeout: '30s'

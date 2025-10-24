@@ -1,6 +1,6 @@
 // routes/aiAnalysisRoutes.js
 import express from 'express';
-import { analyzeSuccessFactorsController, summarizeCommonPointsController, getAnalysisResultController, casePrecedentAnalysisController, mainstreamAnalysisController, citationAnalysisController, writingAssistantController, cancelCitationAnalysisController, pleadingGenerationController, beautifyDescriptionController } from '../controllers/aiAnalysisController.js';
+import { analyzeSuccessFactorsController, summarizeCommonPointsController, getAnalysisResultController, casePrecedentAnalysisController, mainstreamAnalysisController, citationAnalysisController, writingAssistantController, cancelCitationAnalysisController, pleadingGenerationController, beautifyDescriptionController, amountAnalysisController } from '../controllers/aiAnalysisController.js';
 import { verifyToken } from '../middleware/auth.js';
 import { checkAndDeductCredits } from '../middleware/credit.js';
 import { CREDIT_COSTS, CREDIT_PURPOSES } from '../config/creditCosts.js';
@@ -133,6 +133,20 @@ router.post(
         }
     ),
     beautifyDescriptionController
+);
+
+// 🆕 POST /api/ai/amount-analysis - 請求獲准金額分析
+router.post(
+    '/amount-analysis',
+    verifyToken,
+    checkAndDeductCredits(
+        CREDIT_COSTS.AMOUNT_ANALYSIS, // 使用專用點數成本（2點）
+        CREDIT_PURPOSES.AMOUNT_ANALYSIS,
+        {
+            description: '請求獲准金額分析'
+        }
+    ),
+    amountAnalysisController
 );
 
 export default router;
