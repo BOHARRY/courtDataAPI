@@ -146,20 +146,37 @@ export function buildBasicFilters(courtLevel, caseType, caseDescription) {
     // 1. 法院層級過濾
     if (courtLevel && courtLevel !== '全部') {
         if (courtLevel === '地方法院') {
+            // ⚠️ 改進：地方法院需要排除高等法院和最高法院
             filters.push({
                 bool: {
-                    should: [
-                        { wildcard: { 'court.exact': '*地方法院*' } },
-                        { wildcard: { 'court.exact': '*簡易庭*' } },
-                        { wildcard: { 'court.exact': '*地院*' } }
+                    must: [
+                        // 必須包含地方法院相關關鍵字
+                        {
+                            bool: {
+                                should: [
+                                    { wildcard: { 'court.exact': '*地方法院*' } },
+                                    { wildcard: { 'court.exact': '*簡易庭*' } },
+                                    { wildcard: { 'court.exact': '*地院*' } }
+                                ],
+                                minimum_should_match: 1
+                            }
+                        }
                     ],
-                    minimum_should_match: 1
+                    must_not: [
+                        // 排除高等法院
+                        { wildcard: { 'court.exact': '*高等*' } },
+                        // 排除最高法院
+                        { wildcard: { 'court.exact': '*最高*' } }
+                    ]
                 }
             });
+            console.log(`[buildBasicFilters] 🏛️ 地方法院過濾：包含地方法院關鍵字，排除高等/最高法院`);
         } else if (courtLevel === '高等法院') {
             filters.push({ wildcard: { 'court.exact': '*高等*' } });
+            console.log(`[buildBasicFilters] 🏛️ 高等法院過濾：包含「高等」關鍵字`);
         } else if (courtLevel === '最高法院') {
             filters.push({ wildcard: { 'court.exact': '*最高*' } });
+            console.log(`[buildBasicFilters] 🏛️ 最高法院過濾：包含「最高」關鍵字`);
         }
     }
 
