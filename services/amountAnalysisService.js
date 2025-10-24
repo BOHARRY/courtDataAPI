@@ -8,7 +8,6 @@
 import {
     extractAmountData,
     calculateStatistics,
-    identifyOutliers,
     selectRepresentativeCases,
     formatAmount,
     formatApprovalRate
@@ -63,86 +62,70 @@ export async function analyzeAmountData(casePrecedentData, position = 'plaintiff
 
         console.log(`[analyzeAmountData] ✅ 成功獲取 ${cases.length} 件案例數據`);
 
-        // 2. 從案件列表中提取金額數據（分層提取）
+        // 2. 從案件列表中提取金額數據（排除請求或獲准金額為 0 的案件）
         const amountsData = extractAmountData(cases);
 
-        if (amountsData.all.length === 0) {
+        if (amountsData.valid.length === 0) {
             console.warn('[analyzeAmountData] ⚠️ 無有效金額數據');
             return {
-                error: '無有效金額數據（可能不是民事案件或缺少金額欄位）',
+                error: '無有效金額數據（所有案件的請求金額或獲准金額都是 0 元）',
                 statistics: null,
                 amounts: [],
-                outliers: { high: [], low: [] },
+                excludedCount: amountsData.excluded.length,
+                outliers: [],
                 representativeCases: { high: null, medium: null, low: null },
                 insights: []
             };
         }
 
-        console.log(`[analyzeAmountData] ✅ 成功提取金額數據 - 總計: ${amountsData.all.length}, 勝訴: ${amountsData.won.length}, 敗訴: ${amountsData.lost.length}, 異常: ${amountsData.abnormal.length}`);
+        console.log(`[analyzeAmountData] ✅ 成功提取金額數據 - 有效: ${amountsData.valid.length}, 排除: ${amountsData.excluded.length}`);
 
-        // 🎯 關鍵決策：如果勝訴案件太少，警告用戶
-        if (amountsData.won.length === 0) {
-            console.warn('[analyzeAmountData] ⚠️ 無勝訴案件（所有案件獲准金額都是 0）');
-            return {
-                error: '無勝訴案件數據（所有案件的獲准金額都是 0 元，可能都是敗訴案件）',
-                statistics: null,
-                amounts: amountsData.all,
-                lostCount: amountsData.lost.length,
-                outliers: { high: [], low: [] },
-                representativeCases: { high: null, medium: null, low: null },
-                insights: []
-            };
-        }
+        // 3. 計算統計數據（使用標準差排除異常值）
+        const result = calculateStatistics(amountsData);
 
-        // 3. 計算統計數據（分層統計）
-        const statistics = calculateStatistics(amountsData);
-
-        if (!statistics) {
+        if (!result || !result.statistics) {
             console.error('[analyzeAmountData] ❌ 統計計算失敗');
             return {
                 error: '統計計算失敗',
                 statistics: null,
-                amounts: amountsData.all,
-                outliers: { high: [], low: [] },
+                amounts: [],
+                outliers: [],
                 representativeCases: { high: null, medium: null, low: null },
                 insights: []
             };
         }
 
+        const { statistics, normalAmounts, outlierAmounts, excludedCases } = result;
+
         console.log('[analyzeAmountData] ✅ 統計計算完成');
 
-        // 4. 識別異常值（基於勝訴案件統計）
-        const outliers = identifyOutliers(amountsData.won, statistics.won);
-        console.log('[analyzeAmountData] ✅ 異常值識別完成');
-
-        // 5. 選擇代表性案例（基於勝訴案件）
-        const representativeCases = selectRepresentativeCases(amountsData.won, statistics.won);
+        // 4. 選擇代表性案例（基於正常範圍內的案件）
+        const representativeCases = selectRepresentativeCases(normalAmounts, statistics);
         console.log('[analyzeAmountData] ✅ 代表性案例選擇完成');
 
-        // 6. 使用 AI 生成洞察（基於勝訴案件統計）
+        // 6. 使用 AI 生成洞察
         let insights = [];
         try {
-            insights = await generateAmountInsights(statistics, amountsData, position);
+            insights = await generateAmountInsights(statistics, normalAmounts, position);
             console.log('[analyzeAmountData] ✅ AI 洞察生成完成');
         } catch (error) {
             console.error('[analyzeAmountData] ⚠️ AI 洞察生成失敗:', error);
             // 使用基本洞察作為後備
-            insights = generateBasicInsights(statistics, amountsData);
+            insights = generateBasicInsights(statistics, normalAmounts);
         }
 
-        const result = {
+        const analysisResult = {
             statistics,
-            amounts: amountsData.won,  // 🎯 前端只顯示勝訴案件
-            allAmounts: amountsData.all,  // 保留全部數據供參考
-            lostCount: amountsData.lost.length,
-            abnormalCases: amountsData.abnormal,
-            outliers,
+            amounts: normalAmounts,  // 🎯 正常範圍內的案件
+            excludedCount: excludedCases.length,  // 排除的案件數（請求或獲准金額為 0）
+            outlierCount: outlierAmounts.length,  // 異常值案件數
+            outliers: outlierAmounts,  // 異常值案件列表
             representativeCases,
             insights
         };
 
         console.log('[analyzeAmountData] 🎉 金額分析完成');
-        return result;
+        return analysisResult;
 
     } catch (error) {
         console.error('[analyzeAmountData] ❌ 金額分析過程中發生錯誤:', error);
@@ -159,58 +142,45 @@ export async function analyzeAmountData(casePrecedentData, position = 'plaintiff
 
 /**
  * 生成基本洞察（當 AI 生成失敗時使用）
- * @param {Object} statistics - 分層統計數據
- * @param {Object} amountsData - 分層金額數據
+ * @param {Object} statistics - 統計數據
+ * @param {Array} normalAmounts - 正常範圍內的案件數組
  * @returns {Array} 洞察數組
  */
-function generateBasicInsights(statistics, amountsData) {
+function generateBasicInsights(statistics, normalAmounts) {
     const insights = [];
 
-    // 使用勝訴案件統計（更有參考價值）
-    const wonStats = statistics.won;
-    const allStats = statistics.all;
-
-    if (!wonStats) {
-        insights.push('⚠️ 所有案件的獲准金額都是 0 元，無法提供有效的金額分析');
+    if (!statistics || normalAmounts.length === 0) {
+        insights.push('⚠️ 無有效金額數據，無法提供分析');
         return insights;
     }
 
-    // 洞察 1: 樣本數量和勝訴率
-    const winRate = statistics.winRate;
+    // 洞察 1: 樣本數量
     insights.push(
-        `分析了 ${allStats.totalCases} 件相同案由的民事判決，其中 ${wonStats.totalCases} 件獲得部分或全部勝訴（勝訴率 ${formatApprovalRate(winRate)}）`
+        `分析了 ${statistics.totalCases} 件相同案由的民事判決（排除 ${statistics.excludedCases} 件請求或獲准金額為 0 的案件）`
     );
 
-    // 洞察 2: 勝訴案件的中位數
+    // 洞察 2: 中位數
     insights.push(
-        `在勝訴案件中，請求金額中位數為 ${formatAmount(wonStats.claimAmount.median)}，` +
-        `法院實際准許金額中位數為 ${formatAmount(wonStats.grantedAmount.median)}`
+        `請求金額中位數為 ${formatAmount(statistics.claimAmount.median)}，` +
+        `法院實際准許金額中位數為 ${formatAmount(statistics.grantedAmount.median)}`
     );
 
-    // 洞察 3: 勝訴案件的平均獲准率
-    const avgRate = wonStats.approvalRate.median;  // 🔧 使用中位數而非平均數
+    // 洞察 3: 中位獲准率
+    const medianRate = statistics.approvalRate.median;
     insights.push(
-        `勝訴案件的中位獲准率為 ${formatApprovalRate(avgRate)}，` +
-        `表示法院通常會准許約 ${formatApprovalRate(avgRate)} 的請求金額`
+        `中位獲准率為 ${formatApprovalRate(medianRate)}，` +
+        `表示法院通常會准許約 ${formatApprovalRate(medianRate)} 的請求金額`
     );
 
-    // 洞察 4: IQR 範圍（勝訴案件）
+    // 洞察 4: IQR 範圍
     insights.push(
-        `多數勝訴案件的獲准金額落在 ${formatAmount(wonStats.grantedAmount.q1)} ～ ${formatAmount(wonStats.grantedAmount.q3)} 之間（IQR 範圍，代表中間 50% 的案件）`
+        `多數案件的獲准金額落在 ${formatAmount(statistics.grantedAmount.q1)} ～ ${formatAmount(statistics.grantedAmount.q3)} 之間（IQR 範圍，代表中間 50% 的案件）`
     );
 
-    // 洞察 5: 敗訴案件提示
-    if (statistics.lostCount > 0) {
-        const lostRate = statistics.lostCount / allStats.totalCases;
+    // 洞察 5: 異常值提示
+    if (statistics.outlierCases > 0) {
         insights.push(
-            `需注意：有 ${statistics.lostCount} 件案件完全敗訴（獲准金額為 0），佔比 ${formatApprovalRate(lostRate)}，建議評估案件強度和證據充分性`
-        );
-    }
-
-    // 洞察 6: 異常案件提示
-    if (statistics.abnormalCount > 0) {
-        insights.push(
-            `發現 ${statistics.abnormalCount} 件異常案件（獲准金額超過請求金額），可能涉及利息、違約金或多案合併，已排除於統計之外`
+            `發現 ${statistics.outlierCases} 件異常案件（超出標準差範圍），已排除於統計之外以確保數據準確性`
         );
     }
 
