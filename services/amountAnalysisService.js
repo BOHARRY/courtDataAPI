@@ -99,29 +99,29 @@ export async function analyzeAmountData(casePrecedentData, position = 'plaintiff
 
         console.log('[analyzeAmountData] ✅ 統計計算完成');
 
-        // 4. 選擇代表性案例（基於正常範圍內的案件）
-        const representativeCases = selectRepresentativeCases(normalAmounts, statistics);
-        console.log('[analyzeAmountData] ✅ 代表性案例選擇完成');
+        // 4. ❌ 移除代表性案例選擇（不再需要）
+        // const representativeCases = selectRepresentativeCases(normalAmounts, statistics);
+        // console.log('[analyzeAmountData] ✅ 代表性案例選擇完成');
 
-        // 6. 使用 AI 生成洞察
-        let insights = [];
-        try {
-            insights = await generateAmountInsights(statistics, normalAmounts, position);
-            console.log('[analyzeAmountData] ✅ AI 洞察生成完成');
-        } catch (error) {
-            console.error('[analyzeAmountData] ⚠️ AI 洞察生成失敗:', error);
-            // 使用基本洞察作為後備
-            insights = generateBasicInsights(statistics, normalAmounts);
-        }
+        // 6. ❌ 移除 AI 洞察生成（改為前端顯示箱型圖和案件列表）
+        // let insights = [];
+        // try {
+        //     insights = await generateAmountInsights(statistics, normalAmounts, position);
+        //     console.log('[analyzeAmountData] ✅ AI 洞察生成完成');
+        // } catch (error) {
+        //     console.error('[analyzeAmountData] ⚠️ AI 洞察生成失敗:', error);
+        //     // 使用基本洞察作為後備
+        //     insights = generateBasicInsights(statistics, normalAmounts);
+        // }
 
         const analysisResult = {
             statistics,
-            amounts: normalAmounts,  // 🎯 正常範圍內的案件
+            amounts: normalAmounts,  // 🎯 正常範圍內的案件（包含 caseId, caseTitle, claimAmount, grantedAmount）
             excludedCount: excludedCases.length,  // 排除的案件數（請求或獲准金額為 0）
             outlierCount: outlierAmounts.length,  // 異常值案件數
-            outliers: outlierAmounts,  // 異常值案件列表
-            representativeCases,
-            insights
+            outliers: outlierAmounts  // 異常值案件列表
+            // ❌ representativeCases: 移除
+            // ❌ insights: 移除
         };
 
         console.log('[analyzeAmountData] 🎉 金額分析完成');
@@ -133,9 +133,9 @@ export async function analyzeAmountData(casePrecedentData, position = 'plaintiff
             error: `金額分析失敗: ${error.message}`,
             statistics: null,
             amounts: [],
-            outliers: { high: [], low: [] },
-            representativeCases: { high: null, medium: null, low: null },
-            insights: []
+            excludedCount: 0,
+            outlierCount: 0,
+            outliers: []
         };
     }
 }
