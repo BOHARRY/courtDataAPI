@@ -46,6 +46,26 @@ import {
     generatePositionStats
 } from './casePrecedentAnalysis/analysis/strategicInsights.js';
 
+// 🆕 導入模組化組件 - Phase 4: 任務管理
+import {
+    createAnalysisTask,
+    createMainstreamAnalysisTask,
+    updateTaskComplete,
+    updateTaskFailed,
+    updateTaskError,
+    getOriginalTaskData,
+    getTaskRef,
+    validateAnalysisData
+} from './casePrecedentAnalysis/task/taskManager.js';
+
+// 🆕 導入模組化組件 - Phase 5: 判決分析
+import {
+    getCriticalCasesFromPool
+} from './casePrecedentAnalysis/analysis/criticalCaseAnalyzer.js';
+import {
+    analyzeCriticalPattern
+} from './casePrecedentAnalysis/analysis/criticalPatternAnalyzer.js';
+
 const openai = new OpenAI({
     apiKey: OPENAI_API_KEY,
 });
@@ -1276,8 +1296,8 @@ ${anomalyCases.map((c, i) => `${i+1}. 判決：${c.verdictType} - ${c.summary?.s
  * (背景執行) 真正的分析函式
  */
 async function executeAnalysisInBackground(taskId, analysisData, userId) {
-    const db = admin.firestore();
-    const taskRef = db.collection('aiAnalysisTasks').doc(taskId);
+    // 🆕 使用任務管理模組獲取任務引用
+    const taskRef = getTaskRef(taskId);
 
     try {
         logMemoryUsage('Start-Analysis');
@@ -1620,33 +1640,16 @@ ${smartRecommendations.nextSteps.map(step => `• ${step}`).join('\n')}`;
             console.log(`[casePrecedentAnalysisService] 沒有異常案例，跳過詳情生成`);
         }
 
-        // 5. 更新任務狀態為完成
-        console.log(`🔵 [FIRESTORE-UPDATE-START] 開始更新 Firestore，任務ID: ${taskId}`);
-        console.log(`🔵 [FIRESTORE-UPDATE-SIZE] 結果大小: ${JSON.stringify(result).length} 字元`);
-
-        try {
-            await taskRef.update({
-                status: 'complete',
-                completedAt: admin.firestore.FieldValue.serverTimestamp(),
-                result
-            });
-            console.log(`🟢 [FIRESTORE-UPDATE-SUCCESS] ✅ Firestore 更新成功，任務ID: ${taskId}`);
-        } catch (firestoreError) {
-            console.error(`🔴 [FIRESTORE-UPDATE-ERROR] ❌ Firestore 更新失敗:`, firestoreError);
-            throw firestoreError;
-        }
+        // 5. 🆕 使用任務管理模組更新任務狀態為完成
+        await updateTaskComplete(taskRef, result);
 
         console.log(`[casePrecedentAnalysisService] 分析完成，任務ID: ${taskId}`);
 
     } catch (error) {
         console.error(`[casePrecedentAnalysisService] 背景執行失敗，任務ID: ${taskId}`, error);
 
-        // 更新任務狀態為失敗
-        await taskRef.update({
-            status: 'failed',
-            completedAt: admin.firestore.FieldValue.serverTimestamp(),
-            error: error.message || '案件有利判決分析時發生未知錯誤'
-        });
+        // 🆕 使用任務管理模組更新任務狀態為失敗
+        await updateTaskFailed(taskRef, error);
     }
 }
 
@@ -1654,27 +1657,11 @@ ${smartRecommendations.nextSteps.map(step => `• ${step}`).join('\n')}`;
  * (入口函式) 啟動案件有利判決分析任務
  */
 export async function startCasePrecedentAnalysis(analysisData, userId) {
-    if (!analysisData.caseDescription || !analysisData.caseDescription.trim()) {
-        const error = new Error('案件描述為必填欄位');
-        error.statusCode = 400;
-        throw error;
-    }
+    // 🆕 使用任務管理模組驗證數據
+    validateAnalysisData(analysisData);
 
-    const db = admin.firestore();
-    const taskRef = db.collection('aiAnalysisTasks').doc();
-    const taskId = taskRef.id;
-
-    const taskData = {
-        userId,
-        taskId,
-        analysisType: 'favorable_judgment_analysis',
-        analysisData,
-        status: 'pending',
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    };
-
-    await taskRef.set(taskData);
-    console.log(`[casePrecedentAnalysisService] 任務 ${taskId} 已為用戶 ${userId} 創建`);
+    // 🆕 使用任務管理模組創建任務
+    const { taskId, taskRef } = await createAnalysisTask(analysisData, userId);
 
     // **非同步執行**，不等待其完成
     executeAnalysisInBackground(taskId, analysisData, userId);
@@ -2019,115 +2006,8 @@ function createTestAnomalyDetails(anomalies) {
     return testDetails;
 }
 
-/**
- * 🆕 從案例池中獲取重大判決案例（優先重大勝訴+重大敗訴，不足則補充部分勝訴）
- */
-async function getCriticalCasesFromPool(casePool, position, maxCount = 10) {
-    try {
-        console.log(`[getCriticalCasesFromPool] 🎯 從案例池獲取重大判決案例，立場: ${position}，最多: ${maxCount} 件`);
-
-        const positionKey = position === 'plaintiff' ? 'plaintiff_perspective' : 'defendant_perspective';
-
-        // 1. 分類案例
-        const majorVictory = [];  // 重大勝訴
-        const majorDefeat = [];   // 重大敗訴
-        const partialSuccess = []; // 部分勝訴
-
-        casePool.allCases.forEach(case_ => {
-            const analysis = case_.position_based_analysis?.[positionKey];
-            if (!analysis) return;
-
-            switch (analysis.overall_result) {
-                case 'major_victory':
-                    majorVictory.push(case_);
-                    break;
-                case 'major_defeat':
-                    majorDefeat.push(case_);
-                    break;
-                case 'partial_success':
-                    partialSuccess.push(case_);
-                    break;
-            }
-        });
-
-        console.log(`[getCriticalCasesFromPool] 📊 案例分類: 重大勝訴 ${majorVictory.length} 件, 重大敗訴 ${majorDefeat.length} 件, 部分勝訴 ${partialSuccess.length} 件`);
-
-        // 2. 優先選擇重大勝訴和重大敗訴
-        const selectedCases = [];
-
-        // 2.1 加入所有重大勝訴（最多5件）
-        selectedCases.push(...majorVictory.slice(0, 5));
-
-        // 2.2 加入所有重大敗訴（最多5件）
-        selectedCases.push(...majorDefeat.slice(0, 5));
-
-        // 2.3 如果不足 maxCount 件，從部分勝訴補充
-        if (selectedCases.length < maxCount) {
-            const remaining = maxCount - selectedCases.length;
-            selectedCases.push(...partialSuccess.slice(0, remaining));
-        }
-
-        console.log(`[getCriticalCasesFromPool] ✅ 選擇了 ${selectedCases.length} 件案例進行分析`);
-
-        // 3. 獲取完整的判決數據
-        const criticalCases = [];
-        for (let i = 0; i < selectedCases.length; i++) {
-            const case_ = selectedCases[i];
-
-            try {
-                const judgmentData = await getJudgmentNodeData(case_.id);
-                const analysis = case_.position_based_analysis?.[positionKey];
-
-                criticalCases.push({
-                    id: case_.id,
-                    title: case_.title,
-                    court: case_.court,
-                    year: case_.year,
-                    verdictType: case_.verdictType,
-                    overallResult: analysis?.overall_result,  // ✅ 新增
-                    similarity: case_.similarity,
-                    summaryAiFull: judgmentData.summary_ai_full ||
-                                  (Array.isArray(judgmentData.summary_ai) ?
-                                   judgmentData.summary_ai.join(' ') :
-                                   judgmentData.summary_ai || ''),
-                    positionAnalysis: case_.position_based_analysis,
-                    citationIndex: i + 1
-                });
-            } catch (error) {
-                console.warn(`[getCriticalCasesFromPool] 無法獲取案例 ${case_.id} 的完整數據:`, error.message);
-                const analysis = case_.position_based_analysis?.[positionKey];
-
-                // 即使獲取失敗，也添加基本信息
-                criticalCases.push({
-                    id: case_.id,
-                    title: case_.title,
-                    court: case_.court,
-                    year: case_.year,
-                    verdictType: case_.verdictType,
-                    overallResult: analysis?.overall_result,
-                    similarity: case_.similarity,
-                    summaryAiFull: `${case_.title} - ${case_.court} ${case_.year}年判決`,
-                    positionAnalysis: case_.position_based_analysis,
-                    citationIndex: i + 1
-                });
-            }
-        }
-
-        // 4. 統計分析的案例分布
-        const distribution = {
-            majorVictory: criticalCases.filter(c => c.overallResult === 'major_victory').length,
-            majorDefeat: criticalCases.filter(c => c.overallResult === 'major_defeat').length,
-            partialSuccess: criticalCases.filter(c => c.overallResult === 'partial_success').length
-        };
-
-        console.log(`[getCriticalCasesFromPool] 📊 分析案例分布: 重大勝訴 ${distribution.majorVictory} 件, 重大敗訴 ${distribution.majorDefeat} 件, 部分勝訴 ${distribution.partialSuccess} 件`);
-
-        return { cases: criticalCases, distribution };
-    } catch (error) {
-        console.error('[getCriticalCasesFromPool] 獲取重大判決案例失敗:', error);
-        throw error;
-    }
-}
+// 🗑️ 已移至 casePrecedentAnalysis/analysis/criticalCaseAnalyzer.js
+// async function getCriticalCasesFromPool(casePool, position, maxCount = 10) { ... }
 
 /**
  * 🆕 獲取主流判決案例的詳細數據（包含 summary_ai_full）- 使用立場導向搜索 (已棄用)
@@ -2323,196 +2203,12 @@ ${commonRequirements}
     }
 }
 
-/**
- * 🆕 生成重大判決分析的提示詞（讓 AI 自由發揮）
- */
-function getCriticalAnalysisPrompt(position, caseDescription, distribution, caseSummaries) {
-    const positionLabel = position === 'plaintiff' ? '原告' : '被告';
-    const strategyLabel = position === 'plaintiff' ? '攻擊' : '防禦';
-
-    const baseInfo = `**用戶案件描述：**
-${caseDescription}
-
-**分析案例分布：**
-- 重大勝訴：${distribution.majorVictory} 件
-- 重大敗訴：${distribution.majorDefeat} 件
-- 部分勝訴：${distribution.partialSuccess} 件
-
-🎯 **重要說明：以下案例優先選擇重大勝訴和重大敗訴，幫助律師學習成功策略和避免失敗陷阱**
-
-**重大判決案例：**
-${caseSummaries}`;
-
-    const commonRequirements = `
-**重要要求：**
-- 每個分析點都必須引用具體的判決書，使用格式 [數字]
-- 引用要精準，確保引用的判決書確實支持該論點
-- 分析要深入，不只是表面描述
-- 提供可操作的策略建議
-- 讓 AI 自由發揮，不限制固定維度`;
-
-    if (position === 'plaintiff') {
-        return `你是資深原告律師，擁有豐富的訴訟經驗。請分析以下重大判決案例，提供律師實戰可用的策略指導。
-
-${baseInfo}
-
-請從原告律師的專業角度進行深入分析，並按照以下四個維度組織內容：
-
-**1. 勝訴要素（plaintiffSuccessFactors）**
-- 分析重大勝訴案例的成功關鍵因素
-- 提煉可複製的勝訴要素
-- 每個要素都要引用具體判決書 [數字]
-
-**2. 攻擊策略（attackStrategies）**
-- 分析原告律師使用的有效攻擊策略
-- 從重大勝訴案例中學習成功經驗
-- 提供具體可操作的策略建議
-- 每個策略都要引用具體判決書 [數字]
-
-**3. 舉證要點（evidenceRequirements）**
-- 分析成功案例中的關鍵證據
-- 指出需要重點準備的證據類型
-- 說明證據的證明力和重要性
-- 每個要點都要引用具體判決書 [數字]
-
-**4. 避免陷阱（commonPitfalls）**
-- 分析重大敗訴和部分勝訴案例的失敗原因
-- 指出常見的錯誤和陷阱
-- 提供避免失敗的具體建議
-- 每個陷阱都要引用具體判決書 [數字]
-
-${commonRequirements}
-
-請以JSON格式回應，嚴格按照以下格式：
-{
-  "summaryText": "重大判決分析摘要（200-300字，概述分析的核心發現）",
-  "plaintiffSuccessFactors": [
-    "勝訴要素1：具體描述... [1][2]",
-    "勝訴要素2：具體描述... [3]",
-    "勝訴要素3：具體描述... [4][5]"
-  ],
-  "attackStrategies": [
-    "攻擊策略1：具體描述... [1][3]",
-    "攻擊策略2：具體描述... [2][4]",
-    "攻擊策略3：具體描述... [5]"
-  ],
-  "evidenceRequirements": [
-    "舉證要點1：具體描述... [1][2]",
-    "舉證要點2：具體描述... [3]",
-    "舉證要點3：具體描述... [4]"
-  ],
-  "commonPitfalls": [
-    "常見陷阱1：具體描述... [2][3]",
-    "常見陷阱2：具體描述... [4]",
-    "常見陷阱3：具體描述... [5]"
-  ]
-}`;
-    } else {
-        return `你是資深被告律師，擁有豐富的抗辯經驗。請分析以下重大判決案例，提供被告律師實戰可用的防禦指導。
-
-${baseInfo}
-
-請從被告律師的專業角度進行深入分析，並按照以下四個維度組織內容：
-
-**1. 勝訴要素（plaintiffSuccessFactors）**
-- 分析重大勝訴案例的成功防禦關鍵因素
-- 提煉可複製的防禦要素
-- 每個要素都要引用具體判決書 [數字]
-
-**2. 防禦策略（attackStrategies）**
-- 分析被告律師使用的有效防禦策略
-- 從重大勝訴案例中學習成功抗辯經驗
-- 提供具體可操作的防禦策略建議
-- 每個策略都要引用具體判決書 [數字]
-
-**3. 舉證要點（evidenceRequirements）**
-- 分析成功案例中的關鍵抗辯證據
-- 指出需要重點準備的證據類型
-- 說明證據的證明力和重要性
-- 每個要點都要引用具體判決書 [數字]
-
-**4. 避免陷阱（commonPitfalls）**
-- 分析重大敗訴和部分勝訴案例的失敗原因
-- 指出常見的防禦錯誤和陷阱
-- 提供避免失敗的具體建議
-- 每個陷阱都要引用具體判決書 [數字]
-
-${commonRequirements}
-
-請以JSON格式回應，嚴格按照以下格式：
-{
-  "summaryText": "重大判決分析摘要（200-300字，概述分析的核心發現）",
-  "plaintiffSuccessFactors": [
-    "勝訴要素1：具體描述... [1][2]",
-    "勝訴要素2：具體描述... [3]",
-    "勝訴要素3：具體描述... [4][5]"
-  ],
-  "attackStrategies": [
-    "防禦策略1：具體描述... [1][3]",
-    "防禦策略2：具體描述... [2][4]",
-    "防禦策略3：具體描述... [5]"
-  ],
-  "evidenceRequirements": [
-    "舉證要點1：具體描述... [1][2]",
-    "舉證要點2：具體描述... [3]",
-    "舉證要點3：具體描述... [4]"
-  ],
-  "commonPitfalls": [
-    "常見陷阱1：具體描述... [2][3]",
-    "常見陷阱2：具體描述... [4]",
-    "常見陷阱3：具體描述... [5]"
-  ]
-}`;
-    }
-}
+// 🗑️ 已移至 casePrecedentAnalysis/ai/criticalAnalysisPrompts.js
+// function getCriticalAnalysisPrompt(position, caseDescription, distribution, caseSummaries) { ... }
 
 
-/**
- * 🆕 準備包含立場分析的案例摘要
- */
-function prepareEnrichedCaseSummaries(mainStreamCases, position) {
-    return mainStreamCases.map((case_, index) => {
-        let summary = `[${index + 1}] ${case_.title} (${case_.court} ${case_.year}年)\n${case_.summaryAiFull}`;
-
-        // 🆕 如果有立場分析資料，加入相關資訊
-        if (case_.positionAnalysis && position !== 'neutral') {
-            const positionKey = position === 'plaintiff' ? 'plaintiff_perspective' : 'defendant_perspective';
-            const positionData = case_.positionAnalysis[positionKey];
-
-            if (positionData) {
-                summary += `\n\n📊 ${position === 'plaintiff' ? '原告方' : '被告方'}立場分析：`;
-
-                if (positionData.overall_result) {
-                    summary += `\n• 結果評估：${positionData.overall_result}`;
-                }
-
-                if (positionData.case_value) {
-                    summary += `\n• 案例價值：${positionData.case_value}`;
-                }
-
-                if (positionData.replicable_strategies) {
-                    summary += `\n• 可複製策略：${positionData.replicable_strategies}`;
-                }
-
-                if (positionData.key_lessons) {
-                    summary += `\n• 關鍵教訓：${positionData.key_lessons}`;
-                }
-
-                if (position === 'plaintiff' && positionData.successful_elements) {
-                    summary += `\n• 成功要素：${positionData.successful_elements}`;
-                } else if (position === 'defendant' && positionData.successful_elements) {
-                    summary += `\n• 防禦成功要素：${positionData.successful_elements}`;
-                }
-
-                if (positionData.critical_failures) {
-                    summary += `\n• 關鍵失敗點：${positionData.critical_failures}`;
-                }
-            }
-        }
-
-        return summary;
-    }).join('\n\n');
-}
+// 🗑️ 已移至 casePrecedentAnalysis/analysis/criticalCaseAnalyzer.js
+// function prepareEnrichedCaseSummaries(mainStreamCases, position) { ... }
 
 /**
  * 🆕 使用 AI 分析主流判決模式 - 立場導向版本
@@ -2570,61 +2266,8 @@ async function analyzeMainstreamPattern(caseDescription, mainStreamCases, mainPa
     }
 }
 
-/**
- * 🆕 使用 AI 分析重大判決模式 - 優先分析重大勝訴和重大敗訴
- */
-async function analyzeCriticalPattern(caseDescription, criticalCases, distribution, position = 'defendant') {
-    try {
-        console.log(`[analyzeCriticalPattern] 🎯 開始分析重大判決模式，立場: ${position}`);
-        console.log(`[analyzeCriticalPattern] 📊 案例分布: 重大勝訴 ${distribution.majorVictory} 件, 重大敗訴 ${distribution.majorDefeat} 件, 部分勝訴 ${distribution.partialSuccess} 件`);
-
-        // 1. 準備包含立場分析的案例摘要文本
-        const caseSummaries = prepareEnrichedCaseSummaries(criticalCases, position);
-
-        // 2. 使用新的提示詞（讓 AI 自由發揮）
-        const prompt = getCriticalAnalysisPrompt(position, caseDescription, distribution, caseSummaries);
-
-        const response = await openai.chat.completions.create({
-            model: ANALYSIS_MODEL,
-            messages: [{ role: 'user', content: prompt }],
-            temperature: 0.3,
-            response_format: { type: "json_object" }
-        });
-
-        const analysisResult = JSON.parse(response.choices[0].message.content);
-
-        // 3. 確保引用格式一致（🆕 添加完整的判決書信息以支持點擊開啟）
-        const citations = {};
-        criticalCases.forEach((case_, index) => {
-            citations[index + 1] = {
-                // 🆕 添加完整的判決書信息
-                JID: case_.id || case_.JID || '',  // 判決書唯一識別碼
-                JTITLE: case_.title || '',  // 判決書標題
-                judgementId: `${case_.title || '未知判決'} (${case_.court || '未知法院'} ${case_.year || '未知年份'}年)`,  // 顯示用的判決書ID
-                originalText: case_.summaryAiFull || '無摘要',  // 🔧 修復：使用正確的駝峰命名 summaryAiFull
-                court: case_.court || '',  // 法院
-                year: case_.year || '',  // 年份
-                // 🆕 添加其他可能有用的字段（確保不會是 undefined）
-                verdict_type: case_.verdict_type || case_.verdictType || '',  // 判決類型
-                summary_ai: case_.summaryAiFull || ''  // 🔧 修復：使用正確的駝峰命名 summaryAiFull，避免 undefined
-            };
-        });
-
-        analysisResult.citations = citations;
-
-        // 4. 添加立場信息和案例分布
-        analysisResult.position = position;
-        analysisResult.analysisType = position === 'plaintiff' ? '原告方重大判決分析' : '被告方重大判決分析';
-        analysisResult.caseDistribution = distribution;
-
-        console.log(`[analyzeCriticalPattern] ✅ 重大判決分析完成，立場: ${position}`);
-        return analysisResult;
-
-    } catch (error) {
-        console.error('[analyzeCriticalPattern] AI分析失敗:', error);
-        throw error;
-    }
-}
+// 🗑️ 已移至 casePrecedentAnalysis/analysis/criticalPatternAnalyzer.js
+// async function analyzeCriticalPattern(caseDescription, criticalCases, distribution, position = 'defendant') { ... }
 
 
 /**
@@ -2634,36 +2277,11 @@ async function analyzeCriticalPattern(caseDescription, criticalCases, distributi
  * @returns {Promise<{taskId: string}>} 新的分析任務ID
  */
 export async function startMainstreamAnalysis(originalTaskId, userId) {
-    const db = admin.firestore();
+    // 1. 🆕 使用任務管理模組獲取原始分析結果
+    const originalResult = await getOriginalTaskData(originalTaskId);
 
-    // 1. 獲取原始分析結果
-    const originalTaskRef = db.collection('aiAnalysisTasks').doc(originalTaskId);
-    const originalTaskDoc = await originalTaskRef.get();
-
-    if (!originalTaskDoc.exists) {
-        throw new Error('找不到原始分析任務');
-    }
-
-    const originalResult = originalTaskDoc.data().result;
-    if (!originalResult?.casePrecedentData) {
-        throw new Error('原始分析結果格式不正確');
-    }
-
-    // 2. 創建新的分析任務
-    const taskRef = db.collection('aiAnalysisTasks').doc();
-    const taskId = taskRef.id;
-
-    const taskData = {
-        userId,
-        taskId,
-        originalTaskId,
-        type: 'mainstream_analysis',
-        status: 'pending',
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    };
-
-    await taskRef.set(taskData);
-    console.log(`[casePrecedentAnalysisService] 主流判決分析任務 ${taskId} 已創建`);
+    // 2. 🆕 使用任務管理模組創建新的分析任務
+    const { taskId } = await createMainstreamAnalysisTask(originalTaskId, userId);
 
     // 3. 非同步執行分析
     executeMainstreamAnalysisInBackground(taskId, originalResult, userId);
@@ -2675,8 +2293,8 @@ export async function startMainstreamAnalysis(originalTaskId, userId) {
  * (背景執行) 主流判決分析函式
  */
 async function executeMainstreamAnalysisInBackground(taskId, originalResult, userId) {
-    const db = admin.firestore();
-    const taskRef = db.collection('aiAnalysisTasks').doc(taskId);
+    // 🆕 使用任務管理模組獲取任務引用
+    const taskRef = getTaskRef(taskId);
 
     try {
         console.log(`[casePrecedentAnalysisService] 開始執行主流判決分析，任務ID: ${taskId}`);
@@ -2711,27 +2329,21 @@ async function executeMainstreamAnalysisInBackground(taskId, originalResult, use
             position
         );
 
-        // 6. 更新任務狀態為完成
-        await taskRef.update({
-            status: 'complete',
-            completedAt: admin.firestore.FieldValue.serverTimestamp(),
-            result: {
-                report: analysisResult,
-                analyzedCount: criticalCases.length,  // ✅ 修復：使用 criticalCases.length
-                mainPattern: mainPattern,
-                originalCaseDescription: analysisParams.caseDescription
-            }
-        });
+        // 6. 🆕 使用任務管理模組更新任務狀態為完成
+        const result = {
+            report: analysisResult,
+            analyzedCount: criticalCases.length,
+            mainPattern: mainPattern,
+            originalCaseDescription: analysisParams.caseDescription
+        };
+        await updateTaskComplete(taskRef, result);
 
         console.log(`[casePrecedentAnalysisService] 重大判決分析完成，任務ID: ${taskId}`);
 
     } catch (error) {
         console.error(`[casePrecedentAnalysisService] 主流判決分析失敗，任務ID: ${taskId}`, error);
 
-        await taskRef.update({
-            status: 'error',
-            error: error.message,
-            completedAt: admin.firestore.FieldValue.serverTimestamp()
-        });
+        // 🆕 使用任務管理模組更新任務狀態為錯誤
+        await updateTaskError(taskRef, error);
     }
 }

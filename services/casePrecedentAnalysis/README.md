@@ -15,16 +15,29 @@
 
 ```
 casePrecedentAnalysis/
-├── core/                          # 核心功能模組
+├── core/                          # Phase 2: 核心搜索邏輯
 │   ├── embeddingService.js        # 向量生成服務 (~120 行)
 │   ├── searchStrategy.js          # 搜索策略 (~200 行)
 │   ├── multiAngleSearch.js        # 多角度搜索 (~250 行)
 │   └── resultMerger.js            # 結果合併 (~250 行)
+├── ai/                            # Phase 3 & 5: AI 分析邏輯
+│   ├── promptBuilder.js           # 提示詞構建 (~280 行)
+│   ├── insightSummarizer.js       # 洞察摘要生成 (~280 行)
+│   └── criticalAnalysisPrompts.js # 重大判決分析提示詞 (~170 行) ⭐ NEW (Phase 5)
+├── analysis/                      # Phase 3 & 5: 分析邏輯
+│   ├── strategicInsights.js       # 策略洞察分析 (~380 行)
+│   ├── criticalCaseAnalyzer.js    # 重大案例分析器 (~260 行) ⭐ NEW (Phase 5)
+│   └── criticalPatternAnalyzer.js # 重大判決模式分析 (~60 行) ⭐ NEW (Phase 5)
+├── task/                          # Phase 4: 任務管理
+│   └── taskManager.js             # 任務管理 (~170 行)
 ├── utils/                         # 工具模組
 │   ├── constants.js               # 常量定義 (~160 行)
 │   └── memoryMonitor.js           # 記憶體監控 (~50 行)
 ├── __tests__/                     # 測試文件
-│   └── phase2-modules.test.js     # Phase 2 模組測試
+│   ├── phase2-modules.test.js     # Phase 2 模組測試
+│   ├── phase3-ai-modules.test.js  # Phase 3 模組測試
+│   ├── phase4-task-modules.test.js # Phase 4 模組測試
+│   └── phase5-verdict-modules.test.js # Phase 5 模組測試 ⭐ NEW
 ├── index.js                       # 主入口文件
 └── README.md                      # 本文件
 ```
@@ -202,18 +215,101 @@ npm test -- casePrecedentAnalysis/__tests__/phase2-modules.test.js
 1. `summarizeStrategicInsights` → `ai/insightSummarizer.js`
 2. `generateStrategicInsights` → `analysis/strategicInsights.js`
 
-### 📊 累計重構成果
+### 📊 累計重構成果 (Phase 2 + Phase 3)
 
 - **原始文件**：3,510 行
-- **當前文件**：2,419 行
+- **Phase 3 後文件**：2,419 行
 - **累計減少**：1,091 行 (31%)
 - **累計新增模組**：10 個文件
 
+---
+
+## 📦 Phase 4 完成狀態
+
+### ✅ 已完成的模組
+
+#### 1. `task/taskManager.js`
+- **職責**：Firebase 任務管理
+- **主要函數**：
+  - `createAnalysisTask(analysisData, userId)` - 創建案件分析任務
+  - `createMainstreamAnalysisTask(originalTaskId, userId)` - 創建主流判決分析任務
+  - `updateTaskComplete(taskRef, result)` - 更新任務為完成狀態
+  - `updateTaskFailed(taskRef, error)` - 更新任務為失敗狀態
+  - `updateTaskError(taskRef, error)` - 更新任務為錯誤狀態
+  - `getOriginalTaskData(originalTaskId)` - 獲取原始任務數據
+  - `getTaskRef(taskId)` - 獲取任務引用
+  - `validateAnalysisData(analysisData)` - 驗證分析數據
+
+### 📉 Phase 4 重構成果
+
+- **Phase 3 後文件**：2,419 行
+- **Phase 4 後文件**：2,298 行
+- **減少行數**：121 行 (5%)
+- **新增模組**：1 個文件
+- **已重構函數**：8 個
+
+### 🔧 Phase 4 已從原始文件重構的函數
+
+1. 任務創建邏輯 → `task/taskManager.js`
+2. 任務更新邏輯 → `task/taskManager.js`
+3. 任務驗證邏輯 → `task/taskManager.js`
+
+### 📊 累計重構成果 (Phase 2 + Phase 3 + Phase 4)
+
+- **原始文件**：3,510 行
+- **當前文件**：2,298 行
+- **累計減少**：1,212 行 (35%)
+- **累計新增模組**：11 個文件
+
+---
+
+## ✅ Phase 5 完成狀態 (2025-10-24)
+
+### 📦 新創建的模組
+
+#### 1. `analysis/criticalCaseAnalyzer.js` (~260 行)
+- **職責**：重大案例分析器
+- **導出**：
+  - `getCriticalCasesFromPool` - 從案例池獲取重大判決案例
+  - `prepareEnrichedCaseSummaries` - 準備包含立場分析的案例摘要
+  - `buildCitations` - 構建引用信息
+  - `formatAnalysisResult` - 格式化分析結果
+
+#### 2. `ai/criticalAnalysisPrompts.js` (~170 行)
+- **職責**：重大判決分析提示詞生成
+- **導出**：
+  - `getCriticalAnalysisPrompt` - 生成重大判決分析的提示詞
+
+#### 3. `analysis/criticalPatternAnalyzer.js` (~60 行)
+- **職責**：重大判決模式分析
+- **導出**：
+  - `analyzeCriticalPattern` - 使用 AI 分析重大判決模式
+
+### 📊 Phase 5 重構成果
+
+- **減少行數**：280 行 (12%)
+- **新增模組**：3 個文件
+- **已重構函數**：4 個
+
+### 🔧 Phase 5 已從原始文件重構的函數
+
+1. 重大案例獲取邏輯 → `analysis/criticalCaseAnalyzer.js`
+2. 案例摘要準備邏輯 → `analysis/criticalCaseAnalyzer.js`
+3. 重大判決提示詞生成 → `ai/criticalAnalysisPrompts.js`
+4. 重大判決模式分析 → `analysis/criticalPatternAnalyzer.js`
+
+### 📊 累計重構成果 (Phase 2 + Phase 3 + Phase 4 + Phase 5)
+
+- **原始文件**：3,510 行
+- **當前文件**：2,018 行
+- **累計減少**：1,492 行 (43%)
+- **累計新增模組**：14 個文件
+
 ## 📝 下一步計劃
 
-### Phase 4: 任務管理模組化 (預計 ~500 行)
-- `tasks/taskManager.js` - 任務管理
-- `tasks/backgroundExecutor.js` - 後台執行器
+### Phase 6: 案例處理模組化 (預計 ~300 行)
+- `case/caseProcessor.js` - 案例處理
+- `case/caseFormatter.js` - 案例格式化
 
 ## 🎓 最佳實踐
 
@@ -236,6 +332,25 @@ npm test -- casePrecedentAnalysis/__tests__/phase2-modules.test.js
 - 測試驗證：待定
 
 ## 📅 更新日誌
+
+### 2025-10-24 (Phase 5)
+- ✅ 完成 Phase 5: 判決分析模組化
+- ✅ 創建 3 個新模組文件
+  - `analysis/criticalCaseAnalyzer.js` (~260 行)
+  - `ai/criticalAnalysisPrompts.js` (~170 行)
+  - `analysis/criticalPatternAnalyzer.js` (~60 行)
+- ✅ 從原始文件移除 280 行代碼
+- ✅ 累計減少 1,492 行代碼 (43%)
+- ✅ 所有測試通過
+- ✅ 更新文檔
+
+### 2025-10-24 (Phase 4)
+- ✅ 完成 Phase 4: 任務管理模組化
+- ✅ 創建 1 個新模組文件 (task/taskManager.js)
+- ✅ 從原始文件移除 121 行代碼
+- ✅ 累計減少 1,212 行代碼 (35%)
+- ✅ 所有測試通過
+- ✅ 更新文檔
 
 ### 2025-10-24 (Phase 3)
 - ✅ 完成 Phase 3: AI 分析邏輯模組化
