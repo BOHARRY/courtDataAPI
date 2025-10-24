@@ -306,12 +306,16 @@ export const amountAnalysisController = async (req, res, next) => {
             userId,
             position,
             hasCasePrecedentData: !!casePrecedentData,
-            jidsCount: casePrecedentData?.jids?.length || 0
+            casesCount: casePrecedentData?.cases?.length || 0,
+            jidsCount: casePrecedentData?.jids?.length || 0  // 🔧 兼容舊格式
         });
 
-        // 🔧 現在檢查 jids 而不是 cases
-        if (!casePrecedentData || !casePrecedentData.jids || casePrecedentData.jids.length === 0) {
-            return res.status(400).json({ message: '缺少判決書 ID 數據。' });
+        // 🔧 檢查新格式（cases）或舊格式（jids）
+        const hasCases = casePrecedentData?.cases && casePrecedentData.cases.length > 0;
+        const hasJids = casePrecedentData?.jids && casePrecedentData.jids.length > 0;
+
+        if (!casePrecedentData || (!hasCases && !hasJids)) {
+            return res.status(400).json({ message: '缺少判決書數據。' });
         }
 
         // 直接執行金額分析（會按需查詢 ES 獲取 key_metrics）
