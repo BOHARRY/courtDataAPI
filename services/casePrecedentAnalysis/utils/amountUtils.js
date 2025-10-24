@@ -8,34 +8,45 @@
 /**
  * 從判決列表中提取金額數據
  * @param {Array} cases - 判決案例列表
- * @returns {Array} 金額數據數組
+ * @returns {Object} 包含全部案件和勝訴案件的金額數據
  */
 export function extractAmountData(cases) {
     console.log('[extractAmountData] 開始提取金額數據，案例數量:', cases?.length || 0);
-    
+
     if (!cases || !Array.isArray(cases)) {
         console.warn('[extractAmountData] 無效的案例數據');
-        return [];
+        return { all: [], won: [], lost: [] };
     }
 
-    const amounts = [];
-    
+    const allAmounts = [];      // 所有有效案件（包含敗訴）
+    const wonAmounts = [];      // 勝訴案件（獲准金額 > 0）
+    const lostAmounts = [];     // 敗訴案件（獲准金額 = 0）
+    const abnormalCases = [];   // 異常案件（獲准率 > 100%）
+
     cases.forEach((case_, index) => {
         try {
             // 🔧 支持多種數據結構
             const source = case_._source || case_.source || case_;
             const keyMetrics = source?.key_metrics;
             const civilMetrics = keyMetrics?.civil_metrics;
-            
+
             if (civilMetrics) {
                 const claimAmount = civilMetrics.claim_amount;
                 const grantedAmount = civilMetrics.granted_amount;
-                
+
                 // 只保留有效數據（請求金額 > 0，獲准金額 >= 0）
                 if (claimAmount > 0 && grantedAmount >= 0) {
-                    const approvalRate = grantedAmount / claimAmount;
-                    
-                    amounts.push({
+                    // 🔧 計算獲准率，並限制在 0-100% 範圍內
+                    let approvalRate = grantedAmount / claimAmount;
+                    let isAbnormal = false;
+
+                    // 🚨 檢測異常值：獲准金額 > 請求金額
+                    if (approvalRate > 1.0) {
+                        isAbnormal = true;
+                        console.warn(`[extractAmountData] ⚠️ 異常案例 ${source.JID}: 獲准金額(${grantedAmount}) > 請求金額(${claimAmount}), 獲准率: ${(approvalRate * 100).toFixed(1)}%`);
+                    }
+
+                    const amountData = {
                         caseId: source.JID || `case_${index}`,
                         caseTitle: source.JTITLE || '無標題',
                         claimAmount: claimAmount,
@@ -43,10 +54,22 @@ export function extractAmountData(cases) {
                         approvalRate: approvalRate,
                         court: source.court || '未知法院',
                         year: source.JYEAR || '未知年份',
-                        verdictType: source.verdict_type || '未知'
-                    });
-                    
-                    console.log(`[extractAmountData] ✅ 案例 ${index + 1}: ${source.JID} - 請求: ${claimAmount}, 獲准: ${grantedAmount}, 獲准率: ${(approvalRate * 100).toFixed(1)}%`);
+                        verdictType: source.verdict_type || '未知',
+                        isAbnormal: isAbnormal
+                    };
+
+                    // 🎯 分類存儲
+                    allAmounts.push(amountData);
+
+                    if (isAbnormal) {
+                        abnormalCases.push(amountData);
+                    } else if (grantedAmount > 0) {
+                        wonAmounts.push(amountData);
+                    } else {
+                        lostAmounts.push(amountData);
+                    }
+
+                    console.log(`[extractAmountData] ✅ 案例 ${index + 1}: ${source.JID} - 請求: ${claimAmount}, 獲准: ${grantedAmount}, 獲准率: ${(approvalRate * 100).toFixed(1)}%${isAbnormal ? ' [異常]' : ''}${grantedAmount === 0 ? ' [敗訴]' : ''}`);
                 } else {
                     console.log(`[extractAmountData] ⚠️ 案例 ${index + 1}: ${source.JID} - 金額數據無效 (請求: ${claimAmount}, 獲准: ${grantedAmount})`);
                 }
@@ -57,39 +80,64 @@ export function extractAmountData(cases) {
             console.error(`[extractAmountData] ❌ 處理案例 ${index + 1} 時發生錯誤:`, error);
         }
     });
-    
-    console.log(`[extractAmountData] 完成提取，有效金額數據: ${amounts.length}/${cases.length}`);
-    return amounts;
+
+    console.log(`[extractAmountData] 完成提取 - 總計: ${allAmounts.length}, 勝訴: ${wonAmounts.length}, 敗訴: ${lostAmounts.length}, 異常: ${abnormalCases.length}`);
+
+    return {
+        all: allAmounts,
+        won: wonAmounts,
+        lost: lostAmounts,
+        abnormal: abnormalCases
+    };
 }
 
 /**
- * 計算統計數據
- * @param {Array} amounts - 金額數據數組
+ * 計算統計數據（支持分層統計）
+ * @param {Object} amountsData - 包含 all, won, lost, abnormal 的金額數據對象
  * @returns {Object|null} 統計結果
  */
-export function calculateStatistics(amounts) {
-    console.log('[calculateStatistics] 開始計算統計數據，數據量:', amounts?.length || 0);
-    
-    if (!amounts || amounts.length === 0) {
+export function calculateStatistics(amountsData) {
+    console.log('[calculateStatistics] 開始計算統計數據');
+
+    // 🔧 兼容舊版 API（如果傳入的是數組，轉換為新格式）
+    let amounts, wonAmounts, lostAmounts, abnormalAmounts;
+
+    if (Array.isArray(amountsData)) {
+        console.warn('[calculateStatistics] ⚠️ 使用舊版 API，建議更新為新版分層數據格式');
+        amounts = amountsData;
+        wonAmounts = amountsData.filter(a => a.grantedAmount > 0 && a.approvalRate <= 1.0);
+        lostAmounts = amountsData.filter(a => a.grantedAmount === 0);
+        abnormalAmounts = amountsData.filter(a => a.approvalRate > 1.0);
+    } else {
+        amounts = amountsData.all || [];
+        wonAmounts = amountsData.won || [];
+        lostAmounts = amountsData.lost || [];
+        abnormalAmounts = amountsData.abnormal || [];
+    }
+
+    console.log('[calculateStatistics] 數據分層:', {
+        total: amounts.length,
+        won: wonAmounts.length,
+        lost: lostAmounts.length,
+        abnormal: abnormalAmounts.length
+    });
+
+    if (amounts.length === 0) {
         console.warn('[calculateStatistics] 無有效金額數據');
         return null;
     }
-    
-    // 排序
-    const sortedClaim = amounts.map(a => a.claimAmount).sort((a, b) => a - b);
-    const sortedGranted = amounts.map(a => a.grantedAmount).sort((a, b) => a - b);
-    const sortedRate = amounts.map(a => a.approvalRate).sort((a, b) => a - b);
-    
-    // 計算中位數
+
+    // 🎯 核心統計函數
     const median = (arr) => {
+        if (arr.length === 0) return 0;
         const mid = Math.floor(arr.length / 2);
-        return arr.length % 2 === 0 
-            ? (arr[mid - 1] + arr[mid]) / 2 
+        return arr.length % 2 === 0
+            ? (arr[mid - 1] + arr[mid]) / 2
             : arr[mid];
     };
-    
-    // 計算四分位數
+
     const quartile = (arr, q) => {
+        if (arr.length === 0) return 0;
         const pos = (arr.length - 1) * q;
         const base = Math.floor(pos);
         const rest = pos - base;
@@ -97,11 +145,18 @@ export function calculateStatistics(amounts) {
             ? arr[base] + rest * (arr[base + 1] - arr[base])
             : arr[base];
     };
-    
-    // 計算平均數
-    const mean = (arr) => arr.reduce((sum, val) => sum + val, 0) / arr.length;
-    
-    const statistics = {
+
+    const mean = (arr) => {
+        if (arr.length === 0) return 0;
+        return arr.reduce((sum, val) => sum + val, 0) / arr.length;
+    };
+
+    // 🎯 計算全體案件統計（包含敗訴）
+    const sortedClaim = amounts.map(a => a.claimAmount).sort((a, b) => a - b);
+    const sortedGranted = amounts.map(a => a.grantedAmount).sort((a, b) => a - b);
+    const sortedRate = amounts.map(a => Math.min(a.approvalRate, 1.0)).sort((a, b) => a - b); // 🔧 限制獲准率上限為 100%
+
+    const allStatistics = {
         totalCases: amounts.length,
         claimAmount: {
             median: median(sortedClaim),
@@ -128,15 +183,66 @@ export function calculateStatistics(amounts) {
             max: sortedRate[sortedRate.length - 1]
         }
     };
-    
-    console.log('[calculateStatistics] 統計結果:', {
-        totalCases: statistics.totalCases,
-        claimMedian: statistics.claimAmount.median,
-        grantedMedian: statistics.grantedAmount.median,
-        approvalRateMedian: (statistics.approvalRate.median * 100).toFixed(1) + '%'
+
+    // 🎯 計算勝訴案件統計（排除敗訴和異常值）
+    let wonStatistics = null;
+    if (wonAmounts.length > 0) {
+        const wonSortedClaim = wonAmounts.map(a => a.claimAmount).sort((a, b) => a - b);
+        const wonSortedGranted = wonAmounts.map(a => a.grantedAmount).sort((a, b) => a - b);
+        const wonSortedRate = wonAmounts.map(a => a.approvalRate).sort((a, b) => a - b);
+
+        wonStatistics = {
+            totalCases: wonAmounts.length,
+            claimAmount: {
+                median: median(wonSortedClaim),
+                mean: mean(wonSortedClaim),
+                q1: quartile(wonSortedClaim, 0.25),
+                q3: quartile(wonSortedClaim, 0.75),
+                min: wonSortedClaim[0],
+                max: wonSortedClaim[wonSortedClaim.length - 1]
+            },
+            grantedAmount: {
+                median: median(wonSortedGranted),
+                mean: mean(wonSortedGranted),
+                q1: quartile(wonSortedGranted, 0.25),
+                q3: quartile(wonSortedGranted, 0.75),
+                min: wonSortedGranted[0],
+                max: wonSortedGranted[wonSortedGranted.length - 1]
+            },
+            approvalRate: {
+                median: median(wonSortedRate),
+                mean: mean(wonSortedRate),
+                q1: quartile(wonSortedRate, 0.25),
+                q3: quartile(wonSortedRate, 0.75),
+                min: wonSortedRate[0],
+                max: wonSortedRate[wonSortedRate.length - 1]
+            }
+        };
+    }
+
+    console.log('[calculateStatistics] 全體案件統計:', {
+        totalCases: allStatistics.totalCases,
+        claimMedian: allStatistics.claimAmount.median,
+        grantedMedian: allStatistics.grantedAmount.median,
+        approvalRateMedian: (allStatistics.approvalRate.median * 100).toFixed(1) + '%'
     });
-    
-    return statistics;
+
+    if (wonStatistics) {
+        console.log('[calculateStatistics] 勝訴案件統計:', {
+            totalCases: wonStatistics.totalCases,
+            claimMedian: wonStatistics.claimAmount.median,
+            grantedMedian: wonStatistics.grantedAmount.median,
+            approvalRateMedian: (wonStatistics.approvalRate.median * 100).toFixed(1) + '%'
+        });
+    }
+
+    return {
+        all: allStatistics,
+        won: wonStatistics,
+        lostCount: lostAmounts.length,
+        abnormalCount: abnormalAmounts.length,
+        winRate: wonAmounts.length / amounts.length
+    };
 }
 
 /**
