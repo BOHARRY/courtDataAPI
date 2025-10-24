@@ -306,14 +306,15 @@ export const amountAnalysisController = async (req, res, next) => {
             userId,
             position,
             hasCasePrecedentData: !!casePrecedentData,
-            casesCount: casePrecedentData?.cases?.length || 0
+            jidsCount: casePrecedentData?.jids?.length || 0
         });
 
-        if (!casePrecedentData || !casePrecedentData.cases || casePrecedentData.cases.length === 0) {
-            return res.status(400).json({ message: '缺少案件判決數據。' });
+        // 🔧 現在檢查 jids 而不是 cases
+        if (!casePrecedentData || !casePrecedentData.jids || casePrecedentData.jids.length === 0) {
+            return res.status(400).json({ message: '缺少判決書 ID 數據。' });
         }
 
-        // 直接執行金額分析（不需要異步任務，因為是基於現有數據的統計計算）
+        // 直接執行金額分析（會按需查詢 ES 獲取 key_metrics）
         const result = await analyzeAmountData(casePrecedentData, position || 'plaintiff');
 
         console.log('[amountAnalysisController] 金額分析完成:', {
