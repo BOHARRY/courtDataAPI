@@ -5,306 +5,74 @@ import { OPENAI_API_KEY, OPENAI_MODEL_NAME_CHAT } from '../config/environment.js
 import admin from 'firebase-admin';
 import { analyzeVerdictFromPositionData, analyzeVerdictDistribution, analyzeVerdictDistributionByPosition } from './verdictAnalysisService.js';
 
+// 🆕 導入模組化組件 - Phase 2: 核心搜索邏輯
+import {
+    generateEmbedding,
+    enrichCaseDescription
+} from './casePrecedentAnalysis/core/embeddingService.js';
+import {
+    getThresholdValue,
+    getCaseTypeFilter,
+    getCourtLevelFilter,
+    generateSearchAngles,
+    getPositionBasedSearchStrategy,
+    extractRelevantTags,
+    buildBasicFilters
+} from './casePrecedentAnalysis/core/searchStrategy.js';
+import {
+    performMultiAngleSearch
+} from './casePrecedentAnalysis/core/multiAngleSearch.js';
+import {
+    mergeMultiAngleResults
+} from './casePrecedentAnalysis/core/resultMerger.js';
+import {
+    ES_INDEX_NAME,
+    EMBEDDING_MODEL,
+    EMBEDDING_DIMENSIONS,
+    KNN_CONFIG,
+    ES_SOURCE_FIELDS,
+    SEARCH_ANGLE_WEIGHTS
+} from './casePrecedentAnalysis/utils/constants.js';
+import {
+    logMemoryUsage
+} from './casePrecedentAnalysis/utils/memoryMonitor.js';
+
+// 🆕 導入模組化組件 - Phase 3: AI 分析邏輯
+import {
+    summarizeStrategicInsights
+} from './casePrecedentAnalysis/ai/insightSummarizer.js';
+import {
+    generateStrategicInsights,
+    generatePositionStats
+} from './casePrecedentAnalysis/analysis/strategicInsights.js';
+
 const openai = new OpenAI({
     apiKey: OPENAI_API_KEY,
 });
 
-const ES_INDEX_NAME = 'search-boooook';
 const ANALYSIS_MODEL = OPENAI_MODEL_NAME_CHAT || 'gpt-4.1';
 
-// 記憶體監控工具
-const logMemoryUsage = (step) => {
-    const used = process.memoryUsage();
-    const heapUsedMB = Math.round(used.heapUsed / 1024 / 1024);
-    const rssMB = Math.round(used.rss / 1024 / 1024);
-    const externalMB = Math.round(used.external / 1024 / 1024);
-    console.log(`[Memory-${step}] Heap: ${heapUsedMB}MB, RSS: ${rssMB}MB, External: ${externalMB}MB`);
+// 🗑️ 已移至 casePrecedentAnalysis/core/searchStrategy.js
+// function getThresholdValue(threshold) { ... }
 
-    // 警告記憶體使用過高
-    if (heapUsedMB > 400) {
-        console.warn(`⚠️ [Memory Warning] Heap usage high: ${heapUsedMB}MB`);
-    }
-};
+// 🗑️ 已移至 casePrecedentAnalysis/core/searchStrategy.js
+// function getCaseTypeFilter(caseType) { ... }
+// function getCourtLevelFilter(courtLevel) { ... }
 
-/**
- * 將相似度門檻轉換為數值
- * ES cosine similarity 分數範圍是 0-1，公式：(1 + cosine_similarity) / 2
- * 用戶設定的百分比需要轉換為對應的分數閾值
- */
-function getThresholdValue(threshold) {
-    switch (threshold) {
-        case 'low': return 0.5;    // 低 (50%)：擴大量以找到更多判決
-        case 'medium': return 0.6; // 中 (60%)：預設值
-        case 'high': return 0.75;  // 高 (75%)：比較嚴格
-        case 'very_high': return 0.85; // 極高 (85%)：可能減少可用案例
-        default: return 0.6;       // 預設改用中等相關性
-    }
-}
+// 🗑️ 已移至 casePrecedentAnalysis/core/embeddingService.js
+// async function generateEmbedding(text) { ... }
 
-/**
- * 將案件類型轉換為 ES 查詢條件
- */
-function getCaseTypeFilter(caseType) {
-    switch (caseType) {
-        case '民事': return 'civil';
-        case '刑事': return 'criminal';
-        case '行政': return 'administrative';
-        default: return 'civil';
-    }
-}
+// 🗑️ 已移至 casePrecedentAnalysis/core/embeddingService.js
+// async function enrichCaseDescription(userInput) { ... }
 
-/**
- * 將法院層級轉換為 ES 查詢條件
- */
-function getCourtLevelFilter(courtLevel) {
-    switch (courtLevel) {
-        case '地方法院': return 'district';
-        case '高等法院': return 'high';
-        case '最高法院': return 'supreme';
-        default: return 'district';
-    }
-}
+// 🗑️ 已移至 casePrecedentAnalysis/core/searchStrategy.js
+// function extractRelevantTags(caseDescription) { ... }
 
-/**
- * 使用 OpenAI 生成案件描述的向量
- */
-async function generateEmbedding(text) {
-    try {
-        const response = await openai.embeddings.create({
-            model: 'text-embedding-3-large',
-            input: text,
-            dimensions: 1536
-        });
-        return response.data[0].embedding;
-    } catch (error) {
-        console.error('[casePrecedentAnalysisService] 生成向量失敗:', error);
-        throw new Error('無法生成案件描述的向量表示');
-    }
-}
+// 🗑️ 已移至 casePrecedentAnalysis/core/searchStrategy.js
+// function generateSearchAngles(userInput, enrichment) { ... }
 
-/**
- * 🆕 使用 GPT-4o 進行案件事由補足與分析（成本控制版）
- * 限制 token 使用量，專注於律師核心需求
- */
-async function enrichCaseDescription(userInput) {
-    try {
-        console.log(`🔵 [ENRICH-START] 使用 GPT-4o 補足案件事由: "${userInput}"`);
-
-        const prompt = `你是資深法律專家。請分析以下案件事由，提取核心法律爭點並轉換為搜尋查詢：
-
-案件事由：「${userInput}」
-
-請提供：
-1. 核心法律爭點：將案件轉換為法律問題形式（例如：「原告主張之損害賠償請求權是否成立？」）
-2. 法律術語：正式法律用詞（1-2個精準詞彙）
-3. 實務用詞：實務常用表達（1-2個常見說法）
-4. 爭點導向：具體法律爭點（1-2個核心爭點）
-
-要求：
-- 核心法律爭點要以問句形式呈現，模仿判決書中的法律爭點格式
-- 其他維度限制15字內
-- 使用繁體中文
-- 避免過於寬泛的詞彙
-
-JSON格式回應：
-{
-  "legalIssueQuery": "核心法律爭點（問句形式）",
-  "formalTerms": "正式法律術語",
-  "practicalTerms": "實務常用說法",
-  "specificIssues": "具體法律爭點"
-}`;
-
-        console.log(`🔵 [ENRICH-API-CALL] 開始調用 OpenAI API`);
-        const response = await openai.chat.completions.create({
-            model: "gpt-4o",
-            messages: [{ role: "user", content: prompt }],
-            max_tokens: 400, // 🎯 嚴格控制成本
-            temperature: 0.3,
-            response_format: { type: "json_object" }
-        });
-
-        console.log(`🔵 [ENRICH-API-SUCCESS] OpenAI API 調用成功`);
-        const enrichment = JSON.parse(response.choices[0].message.content);
-        console.log(`🔵 [ENRICH-RESULT] 事由補足結果:`, enrichment);
-        return enrichment;
-
-    } catch (error) {
-        console.error('🔴 [ENRICH-ERROR] 事由補足失敗');
-        console.error('🔴 [ENRICH-ERROR] 錯誤類型:', error.name);
-        console.error('🔴 [ENRICH-ERROR] 錯誤訊息:', error.message);
-        console.error('🔴 [ENRICH-ERROR] 錯誤堆疊:', error.stack);
-
-        // 降級策略：返回基本結構
-        const fallback = {
-            formalTerms: userInput,
-            practicalTerms: userInput,
-            specificIssues: userInput
-        };
-        console.log('🟡 [ENRICH-FALLBACK] 使用降級策略:', fallback);
-        return fallback;
-    }
-}
-
-/**
- * 🆕 從案件描述中提取相關標籤
- */
-function extractRelevantTags(caseDescription) {
-    const tags = [];
-    const desc = caseDescription.toLowerCase();
-
-    // 名譽權相關
-    if (desc.includes('名譽') || desc.includes('誹謗') || desc.includes('不實言論')) {
-        tags.push('名譽權', '侵權行為', '誹謗');
-    }
-
-    // 交通事故相關
-    if (desc.includes('車禍') || desc.includes('交通') || desc.includes('撞')) {
-        tags.push('侵權行為', '損害賠償');
-    }
-
-    // 契約相關
-    if (desc.includes('契約') || desc.includes('違約') || desc.includes('解除契約')) {
-        tags.push('契約', '損害賠償');
-    }
-
-    // 勞動相關
-    if (desc.includes('加班') || desc.includes('工資') || desc.includes('解僱') || desc.includes('勞動')) {
-        tags.push('損害賠償');
-    }
-
-    // 如果沒有匹配到特定標籤，返回空陣列（不過濾）
-    return [...new Set(tags)];  // 去重
-}
-
-/**
- * 🆕 生成四角度搜尋策略
- */
-function generateSearchAngles(userInput, enrichment) {
-    return {
-        法律爭點: {
-            query: enrichment.legalIssueQuery || userInput,  // ✅ 新增：法律爭點查詢
-            weight: 0.35,  // ✅ 最高權重
-            purpose: "法律爭點匹配（用於 legal_issues_vector）",
-            displayName: "法律爭點"
-        },
-        核心概念: {
-            query: userInput,
-            weight: 0.3,  // ✅ 調整權重
-            purpose: "保持用戶原始表達",
-            displayName: "核心概念"
-        },
-        法律術語: {
-            query: enrichment.formalTerms || userInput,
-            weight: 0.2,  // ✅ 調整權重
-            purpose: "正式法律用詞",
-            displayName: "法律術語"
-        },
-        實務用詞: {
-            query: enrichment.practicalTerms || userInput,
-            weight: 0.1,  // ✅ 調整權重
-            purpose: "實務常用表達",
-            displayName: "實務用詞"
-        },
-        爭點導向: {
-            query: enrichment.specificIssues || userInput,
-            weight: 0.05,  // ✅ 調整權重
-            purpose: "具體爭點角度",
-            displayName: "爭點導向"
-        }
-    };
-}
-
-/**
- * 🆕 生成立場導向統計數據
- */
-function generatePositionStats(similarCases, position) {
-    if (position === 'neutral') {
-        // 中性分析：提供通用統計
-        const verdictCounts = {};
-        similarCases.forEach(c => {
-            verdictCounts[c.verdictType] = (verdictCounts[c.verdictType] || 0) + 1;
-        });
-
-        const totalCases = similarCases.length;
-        const distribution = Object.entries(verdictCounts).map(([verdict, count]) => ({
-            verdict,
-            count,
-            percentage: Math.round((count / totalCases) * 100)
-        }));
-
-        return {
-            analysisType: 'neutral',
-            totalCases,
-            distribution,
-            mainPattern: distribution.sort((a, b) => b.count - a.count)[0]
-        };
-    }
-
-    // 立場導向分析：基於 position_based_analysis 數據
-    const positionKey = position === 'plaintiff' ? 'plaintiff_perspective' : 'defendant_perspective';
-    const casesWithPositionData = similarCases.filter(c =>
-        c.positionAnalysis && c.positionAnalysis[positionKey]
-    );
-
-    if (casesWithPositionData.length === 0) {
-        return {
-            analysisType: position,
-            totalCases: similarCases.length,
-            positionDataAvailable: false,
-            fallbackMessage: '立場分析數據不足，顯示通用統計'
-        };
-    }
-
-    // 計算立場導向統計
-    // ✅ 更新: 支持 5 級評級系統，提供更細緻的統計
-    const majorVictoryCases = casesWithPositionData.filter(c => {
-        const analysis = c.positionAnalysis[positionKey];
-        return analysis.overall_result === 'major_victory';
-    });
-
-    const substantialVictoryCases = casesWithPositionData.filter(c => {
-        const analysis = c.positionAnalysis[positionKey];
-        return analysis.overall_result === 'substantial_victory';
-    });
-
-    const partialSuccessCases = casesWithPositionData.filter(c => {
-        const analysis = c.positionAnalysis[positionKey];
-        return analysis.overall_result === 'partial_success';
-    });
-
-    const minorVictoryCases = casesWithPositionData.filter(c => {
-        const analysis = c.positionAnalysis[positionKey];
-        return analysis.overall_result === 'minor_victory';
-    });
-
-    const riskCases = casesWithPositionData.filter(c => {
-        const analysis = c.positionAnalysis[positionKey];
-        return analysis.overall_result === 'major_defeat';
-    });
-
-    // 成功率計算: major_victory + substantial_victory 算作成功
-    const successCases = majorVictoryCases.length + substantialVictoryCases.length;
-    const successRate = Math.round((successCases / casesWithPositionData.length) * 100);
-
-    return {
-        analysisType: position,
-        totalCases: similarCases.length,
-        positionDataAvailable: true,
-        casesWithPositionData: casesWithPositionData.length,
-
-        // 細緻的勝負統計
-        majorVictoryCases: majorVictoryCases.length,
-        substantialVictoryCases: substantialVictoryCases.length,
-        partialSuccessCases: partialSuccessCases.length,
-        minorVictoryCases: minorVictoryCases.length,
-        riskCases: riskCases.length,
-
-        // 向後兼容的欄位
-        successCases: successCases,
-        successRate,
-        riskRate: Math.round((riskCases.length / casesWithPositionData.length) * 100)
-    };
-}
+// 🗑️ 已移至 casePrecedentAnalysis/analysis/strategicInsights.js
+// function generatePositionStats(similarCases, position) { ... }
 
 /**
  * 🆕 清理文本中的引用標記
@@ -325,465 +93,18 @@ function cleanCitationMarkers(text) {
         .trim();
 }
 
-/**
- * 🆕 使用 AI 歸納策略洞察
- * 將 5-10 個原始洞察通過 AI 語義合併，生成 3-5 個精煉的核心要點
- *
- * @param {Array} rawInsights - 原始洞察列表 (5-10 個)
- * @param {String} type - 類型 ('success' | 'risk')
- * @param {String} position - 立場 ('plaintiff' | 'defendant')
- * @returns {Object} 歸納後的洞察 { summary: [], details: [], totalCases: number }
- */
-async function summarizeStrategicInsights(rawInsights, type, position) {
-    console.log(`[summarizeStrategicInsights] 開始歸納 ${type} 洞察，立場: ${position}，原始數量: ${rawInsights.length}`);
+// 🗑️ 已移至 casePrecedentAnalysis/ai/insightSummarizer.js
+// async function summarizeStrategicInsights(...) { ... }
 
-    if (rawInsights.length === 0) {
-        return {
-            summary: [],
-            details: [],
-            totalCases: 0
-        };
-    }
+// 🗑️ 已移至 casePrecedentAnalysis/analysis/strategicInsights.js
+// async function generateStrategicInsights(similarCases, position, verdictAnalysis) { ... }
 
-    try {
-        // 1. 清理引用標記
-        const cleanedInsights = rawInsights.map(insight => cleanCitationMarkers(insight));
-        console.log(`[summarizeStrategicInsights] 清理引用標記完成`);
+// 🗑️ 已移至 casePrecedentAnalysis/core/searchStrategy.js
+// function getPositionBasedSearchStrategy(position, caseType) { ... }
 
-        // 2. 去重
-        const uniqueInsights = [...new Set(cleanedInsights)].filter(s => s && s.trim());
-        console.log(`[summarizeStrategicInsights] 去重後數量: ${uniqueInsights.length}`);
-
-        // 3. 取前 10 個 (增加樣本數量)
-        const topInsights = uniqueInsights.slice(0, 10);
-        console.log(`[summarizeStrategicInsights] 取前 10 個進行 AI 分析`);
-
-        // 4. 如果數量太少，直接返回
-        if (topInsights.length <= 3) {
-            console.log(`[summarizeStrategicInsights] 數量太少 (${topInsights.length})，直接返回`);
-            return {
-                summary: topInsights,
-                details: topInsights.map(insight => ({
-                    category: insight,
-                    count: 1,
-                    examples: [insight]
-                })),
-                totalCases: rawInsights.length
-            };
-        }
-
-        // 5. 構建 AI 提示詞
-        const positionLabel = position === 'plaintiff' ? '原告方' : '被告方';
-        const typeLabel = type === 'success' ? '成功策略' : '風險因素';
-
-        let prompt;
-        if (type === 'success') {
-            // 成功策略提示詞
-            prompt = `你是資深訴訟律師。請將以下${positionLabel}的成功策略按照語義相似性進行分類合併。
-
-成功策略列表：
-${topInsights.map((insight, index) => `${index + 1}. ${insight}`).join('\n')}
-
-請按照以下規則分類：
-1. 將語義相似的策略歸為同一類
-2. 為每一類選擇一個簡潔明確的類別名稱，最多不超過10字
-3. 類別名稱應該是**可操作的策略**，例如「充分舉證證明損害」而非「舉證問題」
-4. 優先使用律師實務用語，便於律師理解和應用
-5. 如果某個策略很獨特，可以單獨成類
-6. 所有文字請使用繁體中文
-
-請以純JSON格式回應，不要包含任何markdown標記或說明文字：
-{
-  "策略類別1": ["具體策略1", "具體策略2"],
-  "策略類別2": ["具體策略3"],
-  ...
-}
-
-正確示範：
-{
-  "充分舉證證明損害": ["提供醫療單據證明傷害", "提供鑑定報告證明因果關係"],
-  "善用程序抗辯": ["主張時效抗辯成功", "主張管轄權異議成功"],
-  "法律適用正確": ["正確援引民法第184條", "正確主張侵權行為構成要件"]
-}
-
-重要：只返回JSON對象，不要添加任何其他文字或格式標記。`;
-        } else {
-            // 風險因素提示詞
-            prompt = `你是資深訴訟律師。請將以下${positionLabel}的失敗風險因素按照語義相似性進行分類合併。
-
-風險因素列表：
-${topInsights.map((insight, index) => `${index + 1}. ${insight}`).join('\n')}
-
-請按照以下規則分類：
-1. 將語義相似的風險歸為同一類
-2. 為每一類選擇一個簡潔明確的類別名稱，最多不超過10字
-3. 類別名稱應該是**明確的風險點**，例如「舉證不足」而非「證據問題」
-4. 優先使用律師實務用語，便於律師識別和規避
-5. 如果某個風險很獨特，可以單獨成類
-6. 所有文字請使用繁體中文
-
-請以純JSON格式回應，不要包含任何markdown標記或說明文字：
-{
-  "風險類別1": ["具體風險1", "具體風險2"],
-  "風險類別2": ["具體風險3"],
-  ...
-}
-
-正確示範：
-{
-  "舉證責任未盡": ["未能證明損害存在", "未能證明因果關係"],
-  "法律適用錯誤": ["錯誤援引法條", "未能證明構成要件"],
-  "程序瑕疵": ["逾期提出證據", "未依法送達"]
-}
-
-重要：只返回JSON對象，不要添加任何其他文字或格式標記。`;
-        }
-
-        // 6. 調用 AI
-        console.log(`[summarizeStrategicInsights] 調用 GPT-4o-mini 進行語義合併`);
-        const response = await openai.chat.completions.create({
-            model: 'gpt-4o-mini',
-            messages: [
-                {
-                    role: 'system',
-                    content: `你是專業的法律分析助手，擅長將相似的法律${typeLabel}進行分類整理，並提供給資深律師高度判斷價值。`
-                },
-                {
-                    role: 'user',
-                    content: prompt
-                }
-            ],
-            temperature: 0.1,
-            max_tokens: 1500
-        });
-
-        // 7. 處理 AI 響應
-        let responseContent = response.choices[0].message.content.trim();
-        console.log(`[summarizeStrategicInsights] AI 原始響應長度: ${responseContent.length}`);
-
-        // 移除可能的 markdown 代碼塊標記
-        if (responseContent.startsWith('```json')) {
-            responseContent = responseContent.replace(/^```json\s*/, '').replace(/\s*```$/, '');
-        } else if (responseContent.startsWith('```')) {
-            responseContent = responseContent.replace(/^```\s*/, '').replace(/\s*```$/, '');
-        }
-
-        const mergedCategories = JSON.parse(responseContent);
-        console.log(`[summarizeStrategicInsights] AI 合併完成，生成 ${Object.keys(mergedCategories).length} 個類別`);
-
-        // 8. 統計每個類別的重要性
-        const categoryStats = Object.entries(mergedCategories).map(([category, examples]) => ({
-            category: category,
-            count: examples.length,
-            examples: examples.slice(0, 2) // 保留 2 個代表性例子
-        }));
-
-        // 9. 按重要性排序 (出現次數降序)
-        categoryStats.sort((a, b) => b.count - a.count);
-
-        // 10. 取前 5 個核心要點
-        const topCategories = categoryStats.slice(0, 5);
-
-        // 11. 生成精煉的洞察文本
-        const summary = topCategories.map(cat => {
-            if (cat.count > 1) {
-                return `${cat.category} (${cat.count}件)`;
-            } else {
-                return cat.category;
-            }
-        });
-
-        console.log(`[summarizeStrategicInsights] 歸納完成，生成 ${summary.length} 個核心要點`);
-
-        return {
-            summary: summary,
-            details: categoryStats,
-            totalCases: rawInsights.length
-        };
-
-    } catch (error) {
-        console.error(`[summarizeStrategicInsights] AI 歸納失敗:`, error);
-
-        // Fallback: 返回前 5 個原始洞察
-        const cleanedInsights = rawInsights.map(insight => cleanCitationMarkers(insight));
-        const uniqueInsights = [...new Set(cleanedInsights)].filter(s => s && s.trim());
-        const fallbackSummary = uniqueInsights.slice(0, 5);
-
-        return {
-            summary: fallbackSummary,
-            details: fallbackSummary.map(insight => ({
-                category: insight,
-                count: 1,
-                examples: [insight]
-            })),
-            totalCases: rawInsights.length
-        };
-    }
-}
-
-/**
- * 🆕 生成立場導向策略洞察
- */
-async function generateStrategicInsights(similarCases, position, verdictAnalysis) {
-    if (position === 'neutral') {
-        // ✅ 修復: 使用正確的數據結構
-        const mainVerdict = verdictAnalysis.mostCommon || '未知';
-        const mainPercentage = verdictAnalysis.distribution?.[mainVerdict]?.percentage || 0;
-
-        return {
-            type: 'neutral',
-            insights: [
-                `基於 ${similarCases.length} 個相似案例的通用分析`,
-                `主流判決模式：${mainVerdict} (${mainPercentage}%)`,
-                '判決模式相對穩定'
-            ]
-        };
-    }
-
-    const positionKey = position === 'plaintiff' ? 'plaintiff_perspective' : 'defendant_perspective';
-    const casesWithPositionData = similarCases.filter(c =>
-        c.positionAnalysis && c.positionAnalysis[positionKey]
-    );
-
-    if (casesWithPositionData.length === 0) {
-        return {
-            type: position,
-            insights: ['立場分析數據不足，建議參考通用統計']
-        };
-    }
-
-    // 提取成功策略和風險因素
-    const successStrategies = [];
-    const riskFactors = [];
-
-    casesWithPositionData.forEach(c => {
-        const analysis = c.positionAnalysis[positionKey];
-
-        // ✅ 更新: 從 major_victory 和 substantial_victory 中提取成功策略
-        if (analysis.overall_result === 'major_victory' || analysis.overall_result === 'substantial_victory') {
-            if (analysis.successful_strategies) {
-                const strategies = Array.isArray(analysis.successful_strategies) ?
-                    analysis.successful_strategies : [analysis.successful_strategies];
-                // 🔧 清理引用標記
-                successStrategies.push(...strategies.map(s => cleanCitationMarkers(s)));
-            }
-            if (analysis.winning_formula) {
-                const formulas = Array.isArray(analysis.winning_formula) ?
-                    analysis.winning_formula : [analysis.winning_formula];
-                // 🔧 清理引用標記
-                successStrategies.push(...formulas.map(f => cleanCitationMarkers(f)));
-            }
-        }
-
-        if (analysis.overall_result === 'major_defeat') {
-            if (analysis.critical_failures) {
-                const failures = Array.isArray(analysis.critical_failures) ?
-                    analysis.critical_failures : [analysis.critical_failures];
-                // 🔧 清理引用標記
-                riskFactors.push(...failures.map(f => cleanCitationMarkers(f)));
-            }
-        }
-    });
-
-    const positionLabel = position === 'plaintiff' ? '原告方' : '被告方';
-
-    // ✅ 更新: 支持 5 級評級統計
-    const majorVictoryCount = casesWithPositionData.filter(c =>
-        c.positionAnalysis[positionKey].overall_result === 'major_victory'
-    ).length;
-
-    const substantialVictoryCount = casesWithPositionData.filter(c =>
-        c.positionAnalysis[positionKey].overall_result === 'substantial_victory'
-    ).length;
-
-    const partialSuccessCount = casesWithPositionData.filter(c =>
-        c.positionAnalysis[positionKey].overall_result === 'partial_success'
-    ).length;
-
-    const minorVictoryCount = casesWithPositionData.filter(c =>
-        c.positionAnalysis[positionKey].overall_result === 'minor_victory'
-    ).length;
-
-    const majorDefeatCount = casesWithPositionData.filter(c =>
-        c.positionAnalysis[positionKey].overall_result === 'major_defeat'
-    ).length;
-
-    // ✅ 計算各種比例
-    const majorVictoryRate = Math.round((majorVictoryCount / casesWithPositionData.length) * 100);
-    const substantialVictoryRate = Math.round((substantialVictoryCount / casesWithPositionData.length) * 100);
-    const partialSuccessRate = Math.round((partialSuccessCount / casesWithPositionData.length) * 100);
-    const minorVictoryRate = Math.round((minorVictoryCount / casesWithPositionData.length) * 100);
-    const majorDefeatRate = Math.round((majorDefeatCount / casesWithPositionData.length) * 100);
-
-    // ✅ 生成清晰的洞察文案（按照 5 級評級順序）
-    const insights = [];
-
-    // 第一行：重大勝訴率
-    if (majorVictoryCount > 0) {
-        insights.push(`${positionLabel}重大勝訴率：${majorVictoryRate}% (${majorVictoryCount} 件)`);
-    }
-
-    // 第二行：實質勝訴率
-    if (substantialVictoryCount > 0) {
-        insights.push(`${positionLabel}實質勝訴率：${substantialVictoryRate}% (${substantialVictoryCount} 件)`);
-    }
-
-    // 第三行：部分勝訴率
-    if (partialSuccessCount > 0) {
-        insights.push(`${positionLabel}部分勝訴率：${partialSuccessRate}% (${partialSuccessCount} 件)`);
-    }
-
-    // 第四行：形式勝訴率
-    if (minorVictoryCount > 0) {
-        insights.push(`${positionLabel}形式勝訴率：${minorVictoryRate}% (${minorVictoryCount} 件)`);
-    }
-
-    // 第五行：重大敗訴率
-    if (majorDefeatCount > 0) {
-        insights.push(`${positionLabel}重大敗訴率：${majorDefeatRate}% (${majorDefeatCount} 件)`);
-    }
-
-    // 🆕 關鍵成功策略 (使用 AI 歸納)
-    let successStrategiesDetails = null;
-    if (successStrategies.length > 0) {
-        console.log(`[generateStrategicInsights] 開始 AI 歸納成功策略，原始數量: ${successStrategies.length}`);
-
-        const summarized = await summarizeStrategicInsights(
-            successStrategies,
-            'success',
-            position
-        );
-
-        console.log(`[generateStrategicInsights] AI 歸納完成，生成 ${summarized.summary.length} 個核心策略`);
-
-        // 生成洞察文本
-        if (summarized.summary.length > 0) {
-            const strategiesText = summarized.summary.join('、');
-            insights.push(`關鍵成功策略：${strategiesText}`);
-
-            // 🆕 保存詳細數據供前端展開查看
-            successStrategiesDetails = summarized.details;
-        }
-    }
-
-    // 🆕 主要風險因素 (使用 AI 歸納)
-    let riskFactorsDetails = null;
-    if (riskFactors.length > 0) {
-        console.log(`[generateStrategicInsights] 開始 AI 歸納風險因素，原始數量: ${riskFactors.length}`);
-
-        const summarized = await summarizeStrategicInsights(
-            riskFactors,
-            'risk',
-            position
-        );
-
-        console.log(`[generateStrategicInsights] AI 歸納完成，生成 ${summarized.summary.length} 個核心風險`);
-
-        // 生成洞察文本
-        if (summarized.summary.length > 0) {
-            const risksText = summarized.summary.join('、');
-            insights.push(`主要風險因素：${risksText}`);
-
-            // 🆕 保存詳細數據供前端展開查看
-            riskFactorsDetails = summarized.details;
-        }
-    }
-
-    return {
-        type: position,
-        positionLabel,
-
-        // ✅ 更新: 返回完整的 5 級評級統計
-        successRate: majorVictoryRate + substantialVictoryRate,  // 成功率 = 重大勝訴 + 實質勝訴
-        majorVictoryCount,
-        majorVictoryRate,
-        substantialVictoryCount,
-        substantialVictoryRate,
-        partialSuccessCount,
-        partialSuccessRate,
-        minorVictoryCount,
-        minorVictoryRate,
-        majorDefeatCount,
-        majorDefeatRate,
-        insights: insights,
-
-        // 🆕 新增詳細數據
-        successStrategiesDetails: successStrategiesDetails,
-        riskFactorsDetails: riskFactorsDetails
-    };
-}
-
-/**
- * 🆕 根據立場和案件類型選擇向量欄位和權重策略
- * @param {string} position - 立場 (plaintiff/defendant/neutral)
- * @param {string} caseType - 案件類型 (民事/刑事/行政)
- */
-function getPositionBasedSearchStrategy(position, caseType = '民事') {
-    console.log(`[getPositionBasedSearchStrategy] 🎯 使用立場導向向量欄位進行 ${position} 立場搜尋 (案件類型: ${caseType})`);
-
-    // ✅ 根據案件類型映射正確的視角欄位
-    const perspectiveMap = {
-        '民事': {
-            plaintiff: 'plaintiff_perspective',
-            defendant: 'defendant_perspective'
-        },
-        '刑事': {
-            plaintiff: 'prosecutor_perspective',
-            defendant: 'defense_perspective'
-        },
-        '行政': {
-            plaintiff: 'citizen_perspective',
-            defendant: 'agency_perspective'
-        }
-    };
-
-    const perspectives = perspectiveMap[caseType] || perspectiveMap['民事'];
-
-    switch (position) {
-        case 'plaintiff':
-            const plaintiffPerspective = perspectives.plaintiff;
-            return {
-                primaryVectorField: 'legal_issues_vector',  // ✅ 修正：使用法律爭點向量
-                vectorFields: {
-                    'legal_issues_vector': 0.5,              // ✅ 法律爭點最重要
-                    'plaintiff_combined_vector': 0.3,        // ✅ 原告方綜合向量
-                    'main_reasons_ai_vector': 0.2            // ✅ 勝負關鍵因素
-                }
-                // ✅ 移除 filterQuery，讓搜尋結果更客觀
-                // 不再偏向有利判例，而是返回所有相關案例（包含成功和失敗）
-                // 這樣律師可以看到完整的判決分布，包括風險因素和失敗案例
-            };
-        case 'defendant':
-            const defendantPerspective = perspectives.defendant;
-            return {
-                primaryVectorField: 'legal_issues_vector',  // ✅ 修正：使用法律爭點向量
-                vectorFields: {
-                    'legal_issues_vector': 0.5,              // ✅ 法律爭點最重要
-                    'defendant_combined_vector': 0.3,        // ✅ 被告方綜合向量
-                    'main_reasons_ai_vector': 0.2            // ✅ 勝負關鍵因素
-                }
-                // ✅ 移除 filterQuery，讓搜尋結果更客觀
-                // 不再偏向有利判例，而是返回所有相關案例（包含成功和失敗）
-                // 這樣律師可以看到完整的判決分布，包括風險因素和失敗案例
-            };
-        default: // 'neutral'
-            return {
-                primaryVectorField: 'legal_issues_vector',  // ✅ 修正：使用法律爭點向量
-                vectorFields: {
-                    'legal_issues_vector': 0.4,              // ✅ 法律爭點最重要
-                    'main_reasons_ai_vector': 0.3,           // ✅ 勝負關鍵因素
-                    'replicable_strategies_vector': 0.2,     // ✅ 可複製策略
-                    'summary_ai_vector': 0.1                 // ✅ 案例摘要
-                },
-                filterQuery: null
-            };
-    }
-}
-
-/**
- * 🆕 執行立場導向的多角度並行語意搜尋
- */
-async function performMultiAngleSearch(searchAngles, courtLevel, caseType, threshold, position = 'neutral', caseDescription = '') {
+// 🗑️ 已移至 casePrecedentAnalysis/core/multiAngleSearch.js
+// async function performMultiAngleSearch(...) {
+/*
     try {
         console.log(`🟣 [MULTI-SEARCH-START] ===== 開始立場導向多角度搜尋 =====`);
         console.log(`🟣 [MULTI-SEARCH-START] 立場: ${position}，角度數量: ${Object.keys(searchAngles).length}`);
@@ -1042,15 +363,11 @@ async function performMultiAngleSearch(searchAngles, courtLevel, caseType, thres
         return searchResults;
 
     } catch (error) {
-        console.error('[casePrecedentAnalysisService] 立場導向多角度搜尋失敗:', error);
-        throw error;
-    }
-}
+*/
 
-/**
- * 🆕 混合智能合併策略（第二階段：律師價值優化）
- */
-function mergeMultiAngleResults(searchResults, userInput) {
+// 🗑️ 已移至 casePrecedentAnalysis/core/resultMerger.js
+// function mergeMultiAngleResults(searchResults, userInput) {
+/*
     try {
         console.log(`[casePrecedentAnalysisService] 🧠 開始混合智能合併多角度搜尋結果`);
 
@@ -1173,101 +490,12 @@ function mergeMultiAngleResults(searchResults, userInput) {
         return mergedResults;
 
     } catch (error) {
-        console.error('[casePrecedentAnalysisService] 結果合併失敗:', error);
-        throw error;
-    }
-}
+*/
 
-/**
- * 🆕 計算律師價值評分
- */
-function calculateLawyerValue(caseItem, userInput) {
-    // 1. 相關性評分（基於相似度和多角度命中）
-    const relevanceScore = caseItem.maxSimilarity * (caseItem.isIntersection ? 1.2 : 1.0);
-
-    // 2. 多樣性加分（不同角度發現的案例更有價值）
-    const diversityBonus = Math.min(caseItem.appearances * 0.1, 0.3);
-
-    // 3. 實務價值評分（基於判決類型和法院層級）
-    let practicalValue = 0.5; // 基礎分
-
-    // 勝訴案例加分
-    if (caseItem.case.verdictType?.includes('勝訴') || caseItem.case.verdictType?.includes('准許')) {
-        practicalValue += 0.2;
-    }
-
-    // 高等法院以上案例加分
-    if (caseItem.case.court?.includes('高等') || caseItem.case.court?.includes('最高')) {
-        practicalValue += 0.15;
-    }
-
-    // 近期案例加分
-    const currentYear = new Date().getFullYear();
-    const caseYear = parseInt(caseItem.case.year) || 0;
-    if (currentYear - caseYear <= 3) {
-        practicalValue += 0.1;
-    }
-
-    return {
-        relevanceScore: Math.min(relevanceScore, 1.0),
-        diversityBonus: diversityBonus,
-        practicalValue: Math.min(practicalValue, 1.0)
-    };
-}
-
-/**
- * 🆕 計算最終評分
- */
-function calculateFinalScore(caseItem, lawyerValue) {
-    const weights = {
-        relevance: 0.5,    // 相關性權重 50%
-        diversity: 0.2,    // 多樣性權重 20%
-        practical: 0.3     // 實務價值權重 30%
-    };
-
-    return (
-        lawyerValue.relevanceScore * weights.relevance +
-        lawyerValue.diversityBonus * weights.diversity +
-        lawyerValue.practicalValue * weights.practical
-    );
-}
-
-/**
- * 🆕 生成推薦理由
- */
-function generateRecommendationReason(caseItem) {
-    const reasons = [];
-
-    if (caseItem.isIntersection) {
-        reasons.push(`多角度命中 (${caseItem.appearances}個角度發現)`);
-    }
-
-    if (caseItem.maxSimilarity >= 0.85) {
-        reasons.push('高度相關');
-    } else if (caseItem.maxSimilarity >= 0.75) {
-        reasons.push('相關性良好');
-    }
-
-    if (caseItem.case.verdictType?.includes('勝訴')) {
-        reasons.push('勝訴案例');
-    }
-
-    if (caseItem.case.court?.includes('高等') || caseItem.case.court?.includes('最高')) {
-        reasons.push('高層級法院');
-    }
-
-    const currentYear = new Date().getFullYear();
-    const caseYear = parseInt(caseItem.case.year) || 0;
-    if (currentYear - caseYear <= 2) {
-        reasons.push('近期案例');
-    }
-
-    if (caseItem.sourceAngles.length >= 3) {
-        reasons.push('多維度匹配');
-    }
-
-    return reasons.length > 0 ? reasons.join('、') : '基礎相關';
-}
+// 🗑️ 已移至 casePrecedentAnalysis/core/resultMerger.js
+// function calculateLawyerValue(caseItem, userInput) { ... }
+// function calculateFinalScore(caseItem, lawyerValue) { ... }
+// function generateRecommendationReason(caseItem) { ... }
 
 /**
  * 🆕 生成智能推薦建議
