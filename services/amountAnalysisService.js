@@ -14,29 +14,30 @@ import {
     formatApprovalRate
 } from './casePrecedentAnalysis/utils/amountUtils.js';
 import { generateAmountInsights } from './ai/amountInsightsGenerator.js';
+import { batchGetKeyMetrics } from './casePrecedentAnalysis/utils/keyMetricsFetcher.js';
 
 /**
  * 分析金額數據
- * @param {Object} casePrecedentData - 案件判決分析數據
+ * @param {Object} casePrecedentData - 包含 jids 的數據對象
  * @param {string} position - 立場（plaintiff/defendant）
  * @returns {Promise<Object>} 金額分析結果
  */
 export async function analyzeAmountData(casePrecedentData, position = 'plaintiff') {
     console.log('[analyzeAmountData] 🚀 開始金額分析');
     console.log('[analyzeAmountData] 立場:', position);
-    console.log('[analyzeAmountData] 案件數據:', {
-        hasCases: !!casePrecedentData?.cases,
-        casesLength: casePrecedentData?.cases?.length || 0
+    console.log('[analyzeAmountData] 請求數據:', {
+        hasJids: !!casePrecedentData?.jids,
+        jidsLength: casePrecedentData?.jids?.length || 0
     });
 
     try {
-        // 1. 從案件列表中提取金額數據
-        const cases = casePrecedentData?.cases || [];
-        
-        if (cases.length === 0) {
-            console.warn('[analyzeAmountData] ⚠️ 無案件數據');
+        // 1. 從 JID 列表批量查詢 key_metrics
+        const jids = casePrecedentData?.jids || [];
+
+        if (jids.length === 0) {
+            console.warn('[analyzeAmountData] ⚠️ 無 JID 數據');
             return {
-                error: '無案件數據',
+                error: '無 JID 數據',
                 statistics: null,
                 amounts: [],
                 outliers: { high: [], low: [] },
@@ -45,8 +46,26 @@ export async function analyzeAmountData(casePrecedentData, position = 'plaintiff
             };
         }
 
+        console.log('[analyzeAmountData] 🔍 開始批量查詢 key_metrics...');
+        const cases = await batchGetKeyMetrics(jids);
+
+        if (cases.length === 0) {
+            console.warn('[analyzeAmountData] ⚠️ 批量查詢未返回任何案件');
+            return {
+                error: '無法獲取案件數據',
+                statistics: null,
+                amounts: [],
+                outliers: { high: [], low: [] },
+                representativeCases: { high: null, medium: null, low: null },
+                insights: []
+            };
+        }
+
+        console.log(`[analyzeAmountData] ✅ 成功獲取 ${cases.length} 件案例數據`);
+
+        // 2. 從案件列表中提取金額數據
         const amounts = extractAmountData(cases);
-        
+
         if (amounts.length === 0) {
             console.warn('[analyzeAmountData] ⚠️ 無有效金額數據');
             return {
@@ -61,7 +80,7 @@ export async function analyzeAmountData(casePrecedentData, position = 'plaintiff
 
         console.log(`[analyzeAmountData] ✅ 成功提取 ${amounts.length} 件案例的金額數據`);
 
-        // 2. 計算統計數據
+        // 3. 計算統計數據
         const statistics = calculateStatistics(amounts);
         
         if (!statistics) {
