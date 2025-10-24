@@ -38,7 +38,7 @@ export async function generateEmbedding(text) {
  */
 export async function enrichCaseDescription(userInput) {
     try {
-        console.log(`🔵 [ENRICH-START] 使用 GPT-4o 補足案件事由: "${userInput}"`);
+        console.log(`[VECTOR-TEST] 🔍 補足案件事由: "${userInput}"`);
 
         const prompt = `你是資深法律專家。請分析以下案件事由，提取核心法律爭點並轉換為搜尋查詢：
 
@@ -64,7 +64,6 @@ JSON格式回應：
   "specificIssues": "具體法律爭點"
 }`;
 
-        console.log(`🔵 [ENRICH-API-CALL] 開始調用 OpenAI API`);
         const response = await openai.chat.completions.create({
             model: AI_CONFIG.enrichment.model,
             messages: [{ role: "user", content: prompt }],
@@ -73,16 +72,12 @@ JSON格式回應：
             response_format: { type: "json_object" }
         });
 
-        console.log(`🔵 [ENRICH-API-SUCCESS] OpenAI API 調用成功`);
         const enrichment = JSON.parse(response.choices[0].message.content);
-        console.log(`🔵 [ENRICH-RESULT] 事由補足結果:`, enrichment);
+        console.log(`[VECTOR-TEST] ✅ 補足完成:`, enrichment);
         return enrichment;
 
     } catch (error) {
-        console.error('🔴 [ENRICH-ERROR] 事由補足失敗');
-        console.error('🔴 [ENRICH-ERROR] 錯誤類型:', error.name);
-        console.error('🔴 [ENRICH-ERROR] 錯誤訊息:', error.message);
-        console.error('🔴 [ENRICH-ERROR] 錯誤堆疊:', error.stack);
+        console.error('[VECTOR-TEST] ❌ 補足失敗:', error.message);
 
         // 降級策略：返回基本結構
         const fallback = {
@@ -90,7 +85,7 @@ JSON格式回應：
             practicalTerms: userInput,
             specificIssues: userInput
         };
-        console.log('🟡 [ENRICH-FALLBACK] 使用降級策略:', fallback);
+        console.log('[VECTOR-TEST] ⚠️ 使用降級策略');
         return fallback;
     }
 }

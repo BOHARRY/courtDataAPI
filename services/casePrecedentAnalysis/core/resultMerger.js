@@ -14,7 +14,7 @@ import {
  */
 export function mergeMultiAngleResults(searchResults, userInput) {
     try {
-        console.log(`[resultMerger] 🧠 開始混合智能合併多角度搜尋結果`);
+        console.log(`[VECTOR-TEST] 🔄 開始合併多角度搜尋結果...`);
 
         const caseMap = new Map();
         let totalProcessed = 0;
@@ -88,14 +88,13 @@ export function mergeMultiAngleResults(searchResults, userInput) {
             return b.maxSimilarity - a.maxSimilarity;
         }).slice(0, MERGE_CONFIG.max_results);
 
-        console.log(`[resultMerger] 🎯 智能合併完成: 處理 ${totalProcessed} 個結果，優化後 ${sortedResults.length} 個`);
-        console.log(`[resultMerger] 📊 高價值案例: ${sortedResults.filter(r => r.isIntersection).length} 個多角度命中`);
+        console.log(`[VECTOR-TEST] 🎯 合併完成: 處理 ${totalProcessed} 個 → 優化後 ${sortedResults.length} 個`);
+        console.log(`[VECTOR-TEST] 📊 多角度命中: ${sortedResults.filter(r => r.isIntersection).length} 個\n`);
 
         const mergedResults = sortedResults.map((item, index) => {
-            // 詳細日誌：檢查前 3 個合併後的案例
-            if (index < 3) {
-                console.log(`[mergeMultiAngleResults] 🔍 合併後案例 ${index + 1} (${item.case.id}):`);
-                console.log(`  - positionAnalysis 存在: ${!!item.case.positionAnalysis}`);
+            // 🔍 記錄前 10 個合併後案例的詳細信息
+            if (index < 10) {
+                console.log(`[VECTOR-TEST] 🏆 TOP ${index + 1}: ${item.case.id} | 相似度: ${(item.maxSimilarity * 100).toFixed(1)}% | 出現次數: ${item.appearances} | 案由: ${item.case.title?.substring(0, 30)}...`);
             }
 
             return {

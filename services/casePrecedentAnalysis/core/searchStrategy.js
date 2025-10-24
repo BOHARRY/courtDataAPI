@@ -87,13 +87,35 @@ export function generateSearchAngles(userInput, enrichment) {
 
 /**
  * 根據立場和案件類型選擇向量欄位和權重策略
- * 
+ *
  * @param {string} position - 立場 (plaintiff/defendant/neutral)
  * @param {string} caseType - 案件類型 (民事/刑事/行政)
  * @returns {Object} 搜索策略配置
  */
 export function getPositionBasedSearchStrategy(position, caseType = '民事') {
-    console.log(`[getPositionBasedSearchStrategy] 🎯 使用立場導向向量欄位進行 ${position} 立場搜尋 (案件類型: ${caseType})`);
+    // 🎯 根據立場選擇最合適的向量欄位
+    let primaryVectorField;
+    let vectorFieldReason;
+
+    if (position === 'plaintiff') {
+        primaryVectorField = 'plaintiff_combined_vector';
+        vectorFieldReason = '原告立場：使用原告策略向量（包含成功要素、失敗教訓、風險警告）';
+    } else if (position === 'defendant') {
+        primaryVectorField = 'defendant_combined_vector';
+        vectorFieldReason = '被告立場：使用被告策略向量（包含成功策略、勝訴公式、失敗策略）';
+    } else {
+        primaryVectorField = 'legal_issues_vector';
+        vectorFieldReason = '中立立場：使用法律爭點向量（包含爭點問題與法院判斷）';
+    }
+
+    // 🔍 清晰的日誌輸出
+    console.log(`\n${'='.repeat(80)}`);
+    console.log(`[VECTOR-TEST] 🎯 向量欄位選擇`);
+    console.log(`[VECTOR-TEST] 立場: ${position}`);
+    console.log(`[VECTOR-TEST] 案件類型: ${caseType}`);
+    console.log(`[VECTOR-TEST] 選擇向量欄位: ${primaryVectorField}`);
+    console.log(`[VECTOR-TEST] 選擇理由: ${vectorFieldReason}`);
+    console.log(`${'='.repeat(80)}\n`);
 
     // 根據案件類型映射正確的視角欄位
     const perspectives = PERSPECTIVE_MAP[caseType] || PERSPECTIVE_MAP['民事'];
@@ -102,7 +124,7 @@ export function getPositionBasedSearchStrategy(position, caseType = '民事') {
     const vectorFields = VECTOR_FIELD_WEIGHTS[position] || VECTOR_FIELD_WEIGHTS.neutral;
 
     return {
-        primaryVectorField: 'legal_issues_vector',
+        primaryVectorField: primaryVectorField,
         vectorFields: vectorFields,
         filterQuery: null  // 不再使用立場過濾，讓搜尋結果更客觀
     };
