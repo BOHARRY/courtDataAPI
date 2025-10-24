@@ -30,13 +30,18 @@ export async function analyzeAmountData(casePrecedentData, position = 'plaintiff
     });
 
     try {
-        // 1. 從 JID 列表批量查詢 key_metrics
-        const jids = casePrecedentData?.jids || [];
+        // 1. 從案件列表批量查詢 key_metrics（包含相似度信息）
+        const casesWithSimilarity = casePrecedentData?.cases || [];
+
+        // 🔧 兼容舊格式（只有 jids 的情況）
+        const jids = casesWithSimilarity.length > 0
+            ? casesWithSimilarity.map(c => c.jid)
+            : (casePrecedentData?.jids || []);
 
         if (jids.length === 0) {
-            console.warn('[analyzeAmountData] ⚠️ 無 JID 數據');
+            console.warn('[analyzeAmountData] ⚠️ 無案件數據');
             return {
-                error: '無 JID 數據',
+                error: '無案件數據',
                 statistics: null,
                 amounts: [],
                 outliers: { high: [], low: [] },
@@ -45,8 +50,20 @@ export async function analyzeAmountData(casePrecedentData, position = 'plaintiff
             };
         }
 
-        console.log('[analyzeAmountData] 🔍 開始批量查詢 key_metrics...');
-        const cases = await batchGetKeyMetrics(jids);
+        // 🎯 構建相似度映射表（JID -> similarity）
+        const similarityMap = {};
+        casesWithSimilarity.forEach(c => {
+            if (c.jid && c.similarity !== undefined) {
+                similarityMap[c.jid] = c.similarity;
+            }
+        });
+
+        console.log('[analyzeAmountData] 🔍 開始批量查詢 key_metrics...', {
+            casesCount: jids.length,
+            hasSimilarityData: Object.keys(similarityMap).length > 0
+        });
+
+        const cases = await batchGetKeyMetrics(jids, similarityMap);
 
         if (cases.length === 0) {
             console.warn('[analyzeAmountData] ⚠️ 批量查詢未返回任何案件');

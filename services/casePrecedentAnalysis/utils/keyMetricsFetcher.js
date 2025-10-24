@@ -11,11 +11,13 @@ import { ES_INDEX_NAME } from './constants.js';
 /**
  * 批量獲取判決書的 key_metrics
  * @param {Array<string>} jids - 判決書 ID 列表
- * @returns {Promise<Array>} 包含 key_metrics 的案件數組
+ * @param {Object} similarityMap - 相似度映射表（JID -> similarity）
+ * @returns {Promise<Array>} 包含 key_metrics 和 similarity 的案件數組
  */
-export async function batchGetKeyMetrics(jids) {
+export async function batchGetKeyMetrics(jids, similarityMap = {}) {
     console.log('[batchGetKeyMetrics] 開始批量查詢 key_metrics，JID 數量:', jids?.length || 0);
-    
+    console.log('[batchGetKeyMetrics] 相似度映射表大小:', Object.keys(similarityMap).length);
+
     if (!jids || jids.length === 0) {
         console.warn('[batchGetKeyMetrics] ⚠️ JID 列表為空');
         return [];
@@ -37,19 +39,21 @@ export async function batchGetKeyMetrics(jids) {
             notFound: response.docs.filter(doc => !doc.found).length
         });
 
-        // 提取找到的文檔
+        // 提取找到的文檔，並附加相似度信息
         const cases = response.docs
             .filter(doc => doc.found)
             .map(doc => ({
                 id: doc._id,
                 JID: doc._source.JID,
                 JTITLE: doc._source.JTITLE,
-                key_metrics: doc._source.key_metrics
+                key_metrics: doc._source.key_metrics,
+                similarity: similarityMap[doc._id] || similarityMap[doc._source.JID] || 0  // 🎯 添加相似度
             }));
 
         console.log('[batchGetKeyMetrics] ✅ 成功獲取 key_metrics:', {
             successCount: cases.length,
-            hasKeyMetrics: cases.filter(c => c.key_metrics).length
+            hasKeyMetrics: cases.filter(c => c.key_metrics).length,
+            hasSimilarity: cases.filter(c => c.similarity > 0).length
         });
 
         return cases;

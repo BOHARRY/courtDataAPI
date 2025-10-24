@@ -44,11 +44,12 @@ export function extractAmountData(cases) {
                         approvalRate: approvalRate,
                         court: source.court || '未知法院',
                         year: source.JYEAR || '未知年份',
-                        verdictType: source.verdict_type || '未知'
+                        verdictType: source.verdict_type || '未知',
+                        similarity: case_.similarity || 0  // 🎯 保留相似度分數
                     };
 
                     validAmounts.push(amountData);
-                    console.log(`[extractAmountData] ✅ 案例 ${index + 1}: ${source.JID} - 請求: ${claimAmount}, 獲准: ${grantedAmount}, 獲准率: ${(approvalRate * 100).toFixed(1)}%`);
+                    console.log(`[extractAmountData] ✅ 案例 ${index + 1}: ${source.JID} - 請求: ${claimAmount}, 獲准: ${grantedAmount}, 獲准率: ${(approvalRate * 100).toFixed(1)}%, 相似度: ${case_.similarity || 0}`);
                 } else {
                     // 排除請求金額 = 0 或 獲准金額 = 0 的案件
                     const reason = claimAmount <= 0 ? '請求金額為 0' : '獲准金額為 0';
