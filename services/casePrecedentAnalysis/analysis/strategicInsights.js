@@ -26,17 +26,28 @@ function cleanCitationMarkers(text) {
 function extractSuccessStrategies(cases, position) {
     const strategies = [];
 
+    // 將 position 轉換為正確的 key
+    const positionKey = position === 'plaintiff' ? 'plaintiff_perspective' :
+                       position === 'defendant' ? 'defendant_perspective' :
+                       position;
+
     for (const caseItem of cases) {
-        const positionAnalysis = caseItem.positionAnalysis;
+        const positionAnalysis = caseItem.position_based_analysis || caseItem.positionAnalysis;
         if (!positionAnalysis) continue;
 
-        const positionData = positionAnalysis[position];
+        const positionData = positionAnalysis[positionKey];
         if (!positionData) continue;
 
-        // 提取成功策略
-        if (positionData.outcome === 'win' || positionData.outcome === 'partial_win') {
-            if (positionData.key_strategies && Array.isArray(positionData.key_strategies)) {
-                strategies.push(...positionData.key_strategies);
+        // 提取成功策略 - 使用 successful_elements 或 successful_strategies
+        const overallResult = positionData.overall_result;
+        if (overallResult === 'major_victory' ||
+            overallResult === 'substantial_victory' ||
+            overallResult === 'partial_success') {
+
+            // 優先使用 successful_elements，其次使用 successful_strategies
+            const successElements = positionData.successful_elements || positionData.successful_strategies;
+            if (successElements && Array.isArray(successElements)) {
+                strategies.push(...successElements);
             }
         }
     }
@@ -53,17 +64,33 @@ function extractSuccessStrategies(cases, position) {
 function extractRiskFactors(cases, position) {
     const risks = [];
 
+    // 將 position 轉換為正確的 key
+    const positionKey = position === 'plaintiff' ? 'plaintiff_perspective' :
+                       position === 'defendant' ? 'defendant_perspective' :
+                       position;
+
     for (const caseItem of cases) {
-        const positionAnalysis = caseItem.positionAnalysis;
+        const positionAnalysis = caseItem.position_based_analysis || caseItem.positionAnalysis;
         if (!positionAnalysis) continue;
 
-        const positionData = positionAnalysis[position];
+        const positionData = positionAnalysis[positionKey];
         if (!positionData) continue;
 
-        // 提取風險因素
-        if (positionData.outcome === 'lose' || positionData.outcome === 'partial_lose') {
-            if (positionData.risk_factors && Array.isArray(positionData.risk_factors)) {
-                risks.push(...positionData.risk_factors);
+        // 提取風險因素 - 使用 critical_failures 或 failed_strategies
+        const overallResult = positionData.overall_result;
+
+        // 從所有案例中提取風險，不僅僅是失敗案例
+        // critical_failures 包含了即使部分成功也存在的關鍵失敗點
+        const criticalFailures = positionData.critical_failures;
+        if (criticalFailures && Array.isArray(criticalFailures)) {
+            risks.push(...criticalFailures);
+        }
+
+        // 如果是失敗案例，也提取 failed_strategies
+        if (overallResult === 'major_defeat' || overallResult === 'substantial_defeat') {
+            const failedStrategies = positionData.failed_strategies;
+            if (failedStrategies && Array.isArray(failedStrategies)) {
+                risks.push(...failedStrategies);
             }
         }
     }
@@ -78,35 +105,41 @@ function extractRiskFactors(cases, position) {
  * @returns {Object} 勝訴統計數據
  */
 function calculateVictoryStats(cases, position) {
-    let majorVictoryCount = 0;      // 重大勝訴 (win)
-    let substantialVictoryCount = 0; // 實質勝訴 (partial_win 且 win_degree >= 0.7)
-    let partialSuccessCount = 0;     // 部分勝訴 (partial_win 且 0.5 <= win_degree < 0.7)
-    let minorVictoryCount = 0;       // 形式勝訴 (partial_win 且 win_degree < 0.5)
-    let majorDefeatCount = 0;        // 重大敗訴 (lose)
+    let majorVictoryCount = 0;      // 重大勝訴 (major_victory)
+    let substantialVictoryCount = 0; // 實質勝訴 (substantial_victory)
+    let partialSuccessCount = 0;     // 部分勝訴 (partial_success)
+    let minorVictoryCount = 0;       // 形式勝訴 (minor_victory)
+    let majorDefeatCount = 0;        // 重大敗訴 (major_defeat)
 
     const totalCases = cases.length;
 
+    // 將 position 轉換為正確的 key
+    // 'plaintiff' -> 'plaintiff_perspective'
+    // 'defendant' -> 'defendant_perspective'
+    const positionKey = position === 'plaintiff' ? 'plaintiff_perspective' :
+                       position === 'defendant' ? 'defendant_perspective' :
+                       position;
+
     for (const caseItem of cases) {
-        const positionAnalysis = caseItem.positionAnalysis;
+        const positionAnalysis = caseItem.position_based_analysis || caseItem.positionAnalysis;
         if (!positionAnalysis) continue;
 
-        const positionData = positionAnalysis[position];
+        const positionData = positionAnalysis[positionKey];
         if (!positionData) continue;
 
-        const outcome = positionData.outcome;
-        const winDegree = positionData.win_degree || 0;
+        // 使用 overall_result 而不是 outcome
+        const overallResult = positionData.overall_result;
+        if (!overallResult) continue;
 
-        if (outcome === 'win') {
+        if (overallResult === 'major_victory') {
             majorVictoryCount++;
-        } else if (outcome === 'partial_win') {
-            if (winDegree >= 0.7) {
-                substantialVictoryCount++;
-            } else if (winDegree >= 0.5) {
-                partialSuccessCount++;
-            } else {
-                minorVictoryCount++;
-            }
-        } else if (outcome === 'lose') {
+        } else if (overallResult === 'substantial_victory') {
+            substantialVictoryCount++;
+        } else if (overallResult === 'partial_success') {
+            partialSuccessCount++;
+        } else if (overallResult === 'minor_victory') {
+            minorVictoryCount++;
+        } else if (overallResult === 'major_defeat' || overallResult === 'substantial_defeat') {
             majorDefeatCount++;
         }
     }
@@ -156,7 +189,16 @@ export async function generateStrategicInsights(similarCases, position, verdictA
     }
 
     // 檢查是否有立場分析數據
-    const hasPositionData = similarCases.some(c => c.positionAnalysis && c.positionAnalysis[position]);
+    // 將 position 轉換為正確的 key
+    const positionKey = position === 'plaintiff' ? 'plaintiff_perspective' :
+                       position === 'defendant' ? 'defendant_perspective' :
+                       position;
+
+    const hasPositionData = similarCases.some(c => {
+        const analysis = c.position_based_analysis || c.positionAnalysis;
+        return analysis && analysis[positionKey];
+    });
+
     if (!hasPositionData) {
         console.log(`[generateStrategicInsights] 沒有找到 ${position} 立場的分析數據`);
         return {
@@ -268,10 +310,68 @@ export async function generateStrategicInsights(similarCases, position, verdictA
  */
 export function generatePositionStats(similarCases, position) {
     const stats = calculateVictoryStats(similarCases, position);
-    
+
+    // 計算獲勝比例（明顯有利結果）
+    // successRate = major_victory + substantial_victory 的比例
+    const successCount = stats.majorVictoryCount + stats.substantialVictoryCount;
+    const successRate = similarCases.length > 0 ? Math.round((successCount / similarCases.length) * 100) : 0;
+
+    // 計算風險比例（明顯不利結果）
+    // riskRate = major_defeat 的比例
+    const riskRate = stats.majorDefeatRate;
+
+    // 生成判決分布數據（前端期望的格式）
+    const positionLabel = position === 'plaintiff' ? '原告' : position === 'defendant' ? '被告' : '';
+    const verdictDistribution = [];
+
+    if (stats.majorVictoryCount > 0) {
+        verdictDistribution.push({
+            verdict: `${positionLabel}重大勝訴`,
+            percentage: stats.majorVictoryRate,
+            count: stats.majorVictoryCount
+        });
+    }
+
+    if (stats.substantialVictoryCount > 0) {
+        verdictDistribution.push({
+            verdict: `${positionLabel}實質勝訴`,
+            percentage: stats.substantialVictoryRate,
+            count: stats.substantialVictoryCount
+        });
+    }
+
+    if (stats.partialSuccessCount > 0) {
+        verdictDistribution.push({
+            verdict: `${positionLabel}部分勝訴`,
+            percentage: stats.partialSuccessRate,
+            count: stats.partialSuccessCount
+        });
+    }
+
+    if (stats.minorVictoryCount > 0) {
+        verdictDistribution.push({
+            verdict: `${positionLabel}形式勝訴`,
+            percentage: stats.minorVictoryRate,
+            count: stats.minorVictoryCount
+        });
+    }
+
+    if (stats.majorDefeatCount > 0) {
+        verdictDistribution.push({
+            verdict: `${positionLabel}重大敗訴`,
+            percentage: stats.majorDefeatRate,
+            count: stats.majorDefeatCount
+        });
+    }
+
     return {
         position: position,
         totalCases: similarCases.length,
+        successRate: successRate,  // 前端期望的字段
+        riskRate: riskRate,        // 前端期望的字段
+        successCases: successCount, // 成功案例數
+        riskCases: stats.majorDefeatCount, // 風險案例數
+        verdictDistribution: verdictDistribution, // 前端期望的判決分布
         ...stats
     };
 }
