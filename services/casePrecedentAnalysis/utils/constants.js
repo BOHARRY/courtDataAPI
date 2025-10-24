@@ -16,9 +16,8 @@ export const EMBEDDING_DIMENSIONS = 1536;
 // 相似度門檻映射
 export const SIMILARITY_THRESHOLDS = {
     low: 0.5,        // 低 (50%)：擴大量以找到更多判決
-    medium: 0.6,     // 中 (60%)：預設值
-    high: 0.75,      // 高 (75%)：比較嚴格
-    very_high: 0.85  // 極高 (85%)：可能減少可用案例
+    medium: 0.7,     // 中 (70%)：預設值，更精準
+    high: 0.8        // 高 (80%)：嚴格篩選
 };
 
 // 預設相似度門檻
