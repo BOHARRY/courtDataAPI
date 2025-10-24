@@ -33,11 +33,11 @@ const logMemoryUsage = (step) => {
  */
 function getThresholdValue(threshold) {
     switch (threshold) {
-        case 'low': return 0.5;    // 🚨 降低到50%，獲取更多案例
-        case 'medium': return 0.6; // 🚨 降低到60%，獲取更多案例
-        case 'high': return 0.75;   // 🚨 降低到75%，獲取更多案例
-        case 'very_high': return 0.9; // 新增：極高相關性
-        default: return 0.6;       // 🚨 預設降低到60%
+        case 'low': return 0.5;    // 低 (50%)：擴大量以找到更多判決
+        case 'medium': return 0.6; // 中 (60%)：預設值
+        case 'high': return 0.75;  // 高 (75%)：比較嚴格
+        case 'very_high': return 0.85; // 極高 (85%)：可能減少可用案例
+        default: return 0.6;       // 預設改用中等相關性
     }
 }
 
