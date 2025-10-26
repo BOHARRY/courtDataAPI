@@ -30,6 +30,9 @@ export async function batchGetJudgmentsByJids(jids) {
                 // AI 摘要和分析
                 'summary_ai', 'main_reasons_ai',
 
+                // 立場分析（原告/被告勝敗結果）
+                'position_based_analysis',  // ✅ 包含 plaintiff_perspective 和 defendant_perspective
+
                 // 法律依據
                 'legal_basis', 'legal_issues',
 
