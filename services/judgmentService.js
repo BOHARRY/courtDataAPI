@@ -24,6 +24,9 @@ export async function batchGetJudgmentsByJids(jids) {
                 // 案件分類
                 'case_type', 'stage0_case_type', 'verdict_type',
 
+                // 案件難度分數
+                'SCORE',  // ✅ 案件難度分數（用於顯示難度球球）
+
                 // AI 摘要和分析
                 'summary_ai', 'main_reasons_ai',
 
@@ -34,7 +37,10 @@ export async function batchGetJudgmentsByJids(jids) {
                 'citable_paragraphs',
 
                 // 完整判決書
-                'JFULL'
+                'JFULL',
+
+                // 法院見解標記
+                'CourtInsightsStart', 'CourtInsightsEND'
             ]
         });
 
