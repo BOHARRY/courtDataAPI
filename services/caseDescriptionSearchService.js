@@ -202,11 +202,19 @@ async function keywordBroadSearch(termGroups, lawDomain) {
             index: ES_INDEX_NAME,
             query: query,
             _source: [
-                'JID', 'court', 'JDATE', 'JTITLE',
-                'summary_ai_full', 'legal_basis', 'legal_claim_basis',
-                'disposition.class', 'summary_ai_vector',
-                'plaintiff_combined_vector', 'defendant_combined_vector',
-                'position_based_analysis'
+                // 🟢 必要欄位（Layer 2-4 需要）
+                'JID',                          // 識別
+                'summary_ai_vector',            // Layer 2 語義過濾
+                'legal_basis',                  // Layer 3 法條一致性
+                'plaintiff_combined_vector',    // 立場排序
+                'defendant_combined_vector',    // 立場排序
+
+                // 🟡 可選欄位（快取預覽）
+                'summary_ai_full'               // 快取中的簡短摘要
+
+                // 🔴 移除不必要的欄位：
+                // - court, JDATE, JTITLE（從 batchGetFullJudgmentData 獲取）
+                // - legal_claim_basis, disposition.class, position_based_analysis（沒有使用）
             ],
             size: 200,
             sort: [
@@ -559,47 +567,35 @@ async function getCachedResults(cacheKey) {
 
 /**
  * 精簡候選資料以符合 Firestore 1MB 限制
- * 移除大型欄位（向量、完整內容等），只保留必要資訊
+ * 只保留恢復排序需要的欄位，前端需要的完整資料從 batchGetFullJudgmentData 獲取
  */
 function simplifyCandidate(candidate) {
     return {
-        // 基本識別資訊
+        // 🟢 識別（必要）
         JID: candidate.JID,
-        JTITLE: candidate.JTITLE,
-        JDATE: candidate.JDATE,
-        JYEAR: candidate.JYEAR,
-        JCASE: candidate.JCASE,
-        JNO: candidate.JNO,
-        court: candidate.court,
 
-        // 案件分類
-        case_type: candidate.case_type,
-        stage0_case_type: candidate.stage0_case_type,
-        verdict_type: candidate.verdict_type,
+        // 🟢 Layer 3 恢復需要（必要）
+        legal_basis: candidate.legal_basis || [],
 
-        // 法律依據（保留，用於 Layer 3 恢復）
-        legal_basis: candidate.legal_basis,
-
-        // 分數和排序資訊（保留，用於恢復排序）
+        // 🟢 分數和排序資訊（必要，用於恢復排序）
         keyword_score: candidate.keyword_score,
         semantic_score: candidate.semantic_score,
         law_alignment_score: candidate.law_alignment_score,
         sanity_check_reason: candidate.sanity_check_reason,
         core_statutes: candidate.core_statutes,
 
-        // 摘要（截斷到 500 字元以節省空間）
+        // 🟡 快速預覽（可選，截斷到 500 字元以節省空間）
         summary_ai_full: Array.isArray(candidate.summary_ai_full)
             ? candidate.summary_ai_full[0]?.substring(0, 500)
             : candidate.summary_ai_full?.substring(0, 500)
 
-        // 🚨 移除的大型欄位：
-        // - JFULL（完整判決書，數萬字）
-        // - summary_ai_vector（1536 維向量，12 KB）
-        // - plaintiff_combined_vector（1536 維向量，12 KB）
-        // - defendant_combined_vector（1536 維向量，12 KB）
-        // - legal_issues（nested，可能很大）
-        // - citable_paragraphs（nested，可能很大）
-        // - 其他不必要的欄位
+        // � 移除的欄位（從 batchGetFullJudgmentData 獲取）：
+        // - JTITLE, JDATE, JYEAR, JCASE, JNO, court（基本資訊）
+        // - case_type, stage0_case_type, verdict_type（案件分類）
+        // - JFULL（完整判決書）
+        // - summary_ai_vector（向量，12 KB）
+        // - plaintiff_combined_vector, defendant_combined_vector（向量，12 KB）
+        // - legal_issues, citable_paragraphs（nested，可能很大）
     };
 }
 
@@ -823,18 +819,23 @@ function formatResult(candidate, fullData) {
         }
     }
 
-    // 合併候選資料（包含分數）+ 完整資料（包含所有前端需要的欄位）
+    // 🔧 正確的合併邏輯：先展開 fullData，再覆蓋案由搜尋特有的欄位
+    // 不要用 ...candidate 覆蓋，因為 candidate 中可能沒有某些欄位（會是 undefined）
     return {
-        ...fullData,        // 展開完整資料（包括 summary_ai, main_reasons_ai, legal_issues, JFULL 等）
-        ...candidate,       // 展開候選資料（包含分數和排序資訊）
+        ...fullData,  // 展開完整資料（包括 JTITLE, JDATE, court, verdict_type, summary_ai, legal_issues, JFULL 等）
 
-        // 覆蓋/新增特定欄位以保持一致性
+        // 🟢 只覆蓋案由搜尋特有的欄位
         id: candidate.JID,
-        title: fullData?.JTITLE || candidate.JTITLE,
+        title: fullData?.JTITLE || '',
         summary: summaryText.substring(0, 200) + '...',  // 簡短摘要供列表顯示
         summary_ai: summaryAiString,  // 🆕 轉換為字串格式
 
-        // 案由搜索特有的額外資訊
+        // 🟢 案由搜索特有的分數和排序資訊（明確覆蓋，不用 ...candidate）
+        keyword_score: candidate.keyword_score,
+        semantic_score: candidate.semantic_score,
+        law_alignment_score: candidate.law_alignment_score,
+        perspective_similarity: candidate.perspective_similarity,
+        final_score: candidate.final_score,
         whyRelevant: candidate.sanity_check_reason || '案情相似',
         caseDescriptionScores: {
             semantic_score: candidate.semantic_score?.toFixed(2),
