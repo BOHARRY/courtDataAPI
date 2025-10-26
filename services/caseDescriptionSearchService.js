@@ -6,13 +6,14 @@
  * Layer 1: 關鍵字大抓（ES）
  * Layer 2: 語義過濾（summary_ai_vector）
  * Layer 3: 法條一致性過濾
- * Layer 4: GPT sanity check
+ * Layer 4: GPT sanity check（並行處理）
  */
 
 import esClient from '../config/elasticsearch.js';
 import { OpenAI } from 'openai';
 import { OPENAI_API_KEY, OPENAI_MODEL_NAME_EMBEDDING } from '../config/environment.js';
 import admin from 'firebase-admin';
+import pLimit from 'p-limit';
 
 const openai = new OpenAI({
     apiKey: OPENAI_API_KEY,
@@ -380,29 +381,32 @@ function lawAlignmentFilter(candidates) {
 }
 
 /**
- * Layer 4: GPT sanity check（型態保證）
+ * Layer 4: GPT sanity check（型態保證）- 並行處理版本
  *
  * @param {Array} candidates - Layer 3 的候選池
  * @param {string} normalizedSummary - 正規化的案情摘要
  * @returns {Promise<Array>} 最終候選池（約10-20筆）
  */
 async function gptSanityCheck(candidates, normalizedSummary) {
-    console.log(`[CaseDescriptionSearch] Layer 4: GPT 型態檢查...`);
+    console.log(`[CaseDescriptionSearch] Layer 4: GPT 型態檢查 (並行模式)...`);
+    console.log(`[CaseDescriptionSearch] 候選數量: ${candidates.length}, 並發數: 10`);
 
-    const validCandidates = [];
+    const startTime = Date.now();
+    const limit = pLimit(10); // 🚀 最多 10 個並行請求
 
-    // 批次處理以提高效率
-    for (const candidate of candidates) {
-        try {
-            // 處理 summary_ai_full 可能是陣列的情況
-            let summaryText = '';
-            if (Array.isArray(candidate.summary_ai_full)) {
-                summaryText = candidate.summary_ai_full[0] || '';
-            } else if (typeof candidate.summary_ai_full === 'string') {
-                summaryText = candidate.summary_ai_full;
-            }
+    // 創建並行任務陣列
+    const tasks = candidates.map((candidate, index) =>
+        limit(async () => {
+            try {
+                // 處理 summary_ai_full 可能是陣列的情況
+                let summaryText = '';
+                if (Array.isArray(candidate.summary_ai_full)) {
+                    summaryText = candidate.summary_ai_full[0] || '';
+                } else if (typeof candidate.summary_ai_full === 'string') {
+                    summaryText = candidate.summary_ai_full;
+                }
 
-            const prompt = `你是台灣法律專家。請判斷以下兩個案件是否屬於「同一類型爭議」。
+                const prompt = `你是台灣法律專家。請判斷以下兩個案件是否屬於「同一類型爭議」。
 
 **使用者案情**（已正規化）：
 ${normalizedSummary}
@@ -424,30 +428,48 @@ C. 是否不是完全不同領域？（例如：一個是買賣一個是繼承�
   "reason": "一句話說明理由"
 }`;
 
-            const response = await openai.chat.completions.create({
-                model: "gpt-4o-mini",
-                messages: [{ role: "user", content: prompt }],
-                temperature: 0.1,
-                max_tokens: 100,
-                response_format: { type: "json_object" }
-            });
+                console.log(`[Layer 4] 🚀 處理候選 ${index + 1}/${candidates.length}: ${candidate.JID}`);
 
-            const result = JSON.parse(response.choices[0].message.content);
-
-            if (result.is_same_type) {
-                validCandidates.push({
-                    ...candidate,
-                    sanity_check_reason: result.reason
+                const response = await openai.chat.completions.create({
+                    model: "gpt-4o-mini",
+                    messages: [{ role: "user", content: prompt }],
+                    temperature: 0.1,
+                    max_tokens: 100,
+                    response_format: { type: "json_object" }
                 });
+
+                const result = JSON.parse(response.choices[0].message.content);
+
+                if (result.is_same_type) {
+                    console.log(`[Layer 4] ✅ 候選 ${index + 1} 通過: ${result.reason}`);
+                    return {
+                        ...candidate,
+                        sanity_check_reason: result.reason
+                    };
+                } else {
+                    console.log(`[Layer 4] ❌ 候選 ${index + 1} 拒絕: ${result.reason}`);
+                    return null;
+                }
+
+            } catch (error) {
+                console.error(`[Layer 4] ⚠️ 候選 ${index + 1} 檢查失敗 (${candidate.JID}):`, error.message);
+                return null; // 失敗時返回 null，不中斷其他任務
             }
+        })
+    );
 
-        } catch (error) {
-            console.error(`[CaseDescriptionSearch] Layer 4 檢查失敗 (${candidate.JID}):`, error);
-            // 繼續處理下一筆
-        }
-    }
+    // 等待所有任務完成
+    const results = await Promise.all(tasks);
 
-    console.log(`[CaseDescriptionSearch] Layer 4 完成: ${validCandidates.length} 筆有效候選`);
+    // 過濾掉 null（失敗或拒絕的候選）
+    const validCandidates = results.filter(r => r !== null);
+
+    const elapsedTime = Date.now() - startTime;
+    const successRate = ((validCandidates.length / candidates.length) * 100).toFixed(1);
+
+    console.log(`[CaseDescriptionSearch] Layer 4 完成: ${validCandidates.length}/${candidates.length} 筆通過 (${successRate}%)`);
+    console.log(`[CaseDescriptionSearch] Layer 4 耗時: ${elapsedTime}ms (平均 ${(elapsedTime / candidates.length).toFixed(0)}ms/筆)`);
+
     return validCandidates;
 }
 
