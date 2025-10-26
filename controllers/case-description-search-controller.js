@@ -1,5 +1,6 @@
 // controllers/case-description-search-controller.js
 import * as caseDescriptionSearchService from '../services/caseDescriptionSearchService.js';
+import { batchGetJudgmentsByJids } from '../services/judgmentService.js';
 
 /**
  * 執行案由搜尋
@@ -76,6 +77,44 @@ export async function performCaseDescriptionSearchController(req, res, next) {
             });
         }
 
+        next(error);
+    }
+}
+
+/**
+ * 🆕 批次獲取判決資料（用於換頁）
+ */
+export async function batchGetJudgmentsController(req, res, next) {
+    try {
+        const { jids } = req.body;
+
+        // 基本驗證
+        if (!jids || !Array.isArray(jids) || jids.length === 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'Bad Request',
+                message: 'jids 必須是非空陣列'
+            });
+        }
+
+        if (jids.length > 50) {
+            return res.status(400).json({
+                success: false,
+                error: 'Bad Request',
+                message: 'jids 陣列長度不得超過 50'
+            });
+        }
+
+        // 批次獲取判決資料
+        const results = await batchGetJudgmentsByJids(jids);
+
+        res.json({
+            success: true,
+            results
+        });
+
+    } catch (error) {
+        console.error('[BatchGetJudgments] 批次獲取判決失敗:', error);
         next(error);
     }
 }

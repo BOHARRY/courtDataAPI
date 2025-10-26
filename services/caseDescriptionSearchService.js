@@ -718,6 +718,7 @@ export async function performCaseDescriptionSearch(
         return {
             success: true,
             results: paginatedResults.map(candidate => formatResult(candidate, fullDataMap[candidate.JID])),
+            jidList: rankedResults.map(r => r.JID),  // 🆕 返回完整的 JID 列表（已排序）
             total: rankedResults.length,
             totalPages: Math.ceil(rankedResults.length / pageSize),
             currentPage: page,
