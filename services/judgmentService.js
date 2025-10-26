@@ -43,32 +43,12 @@ export async function batchGetJudgmentsByJids(jids) {
             .map(doc => {
                 const source = doc._source;
 
-                // 處理 summary_ai 陣列 -> 字串
-                let summaryAiString = '';
-                if (source.summary_ai) {
-                    if (Array.isArray(source.summary_ai)) {
-                        summaryAiString = source.summary_ai[0] || '';
-                    } else {
-                        summaryAiString = source.summary_ai;
-                    }
-                }
-
-                // 處理 main_reasons_ai 陣列 -> 字串
-                let mainReasonsAiString = '';
-                if (source.main_reasons_ai) {
-                    if (Array.isArray(source.main_reasons_ai)) {
-                        mainReasonsAiString = source.main_reasons_ai[0] || '';
-                    } else {
-                        mainReasonsAiString = source.main_reasons_ai;
-                    }
-                }
-
+                // ✅ 保持原始格式，不做轉換
+                // 前端會根據需要處理陣列或字串格式
                 return {
                     ...source,
                     id: source.JID,
-                    title: source.JTITLE || '',
-                    summary_ai: summaryAiString,
-                    main_reasons_ai: mainReasonsAiString
+                    title: source.JTITLE || ''
                 };
             });
 
