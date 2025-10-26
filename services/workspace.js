@@ -135,7 +135,7 @@ export async function createWorkspace(userId, workspaceData) {
 export async function updateWorkspace(userId, workspaceId, updateData) {
   try {
     const workspaceRef = db.collection('users').doc(userId).collection('workspaces').doc(workspaceId);
-    
+
     // 準備更新資料
     const updates = {
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
@@ -145,7 +145,8 @@ export async function updateWorkspace(userId, workspaceId, updateData) {
     // 選擇性更新欄位
     if (updateData.name !== undefined) updates.name = updateData.name;
     if (updateData.description !== undefined) updates.description = updateData.description;
-    if (updateData.searchState !== undefined) updates.searchState = updateData.searchState;
+    if (updateData.searchState !== undefined) updates.searchState = updateData.searchState; // 🔧 保持向後相容（舊版單一模式）
+    if (updateData.searchStates !== undefined) updates.searchStates = updateData.searchStates; // 🆕 新增三模式結構支援
     if (updateData.tabs !== undefined) updates.tabs = updateData.tabs;
     if (updateData.activeTabId !== undefined) updates.activeTabId = updateData.activeTabId;
 
@@ -156,9 +157,9 @@ export async function updateWorkspace(userId, workspaceId, updateData) {
     }
 
     await workspaceRef.update(updates);
-    
+
     console.log(`[WorkspaceService] Updated workspace ${workspaceId} for user ${userId}`);
-    
+
     // 返回更新後的資料
     const updatedDoc = await workspaceRef.get();
     return {
