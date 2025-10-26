@@ -143,6 +143,12 @@ async function keywordBroadSearch(termGroups, lawDomain) {
 
         console.log(`[CaseDescriptionSearch] 構建的 should clauses 數量: ${shouldClauses.length}`);
 
+        // 🔧 動態計算 minimum_should_match
+        // 策略：至少命中 30% 的詞彙，但最少 2 個，最多不超過總數
+        const totalClauses = shouldClauses.length;
+        const minimumMatch = Math.max(2, Math.min(totalClauses, Math.ceil(totalClauses * 0.3)));
+        console.log(`[CaseDescriptionSearch] minimum_should_match: ${minimumMatch} (總詞彙: ${totalClauses})`);
+
         // 🔧 如果沒有任何關鍵詞,使用 match_all 查詢
         let query;
         if (shouldClauses.length === 0) {
@@ -162,7 +168,7 @@ async function keywordBroadSearch(termGroups, lawDomain) {
             query = {
                 bool: {
                     should: shouldClauses,
-                    minimum_should_match: 1, // 🔧 降低門檻：至少命中一個詞彙即可
+                    minimum_should_match: minimumMatch, // 🔧 動態調整門檻
                     filter: [
                         { term: { stage0_case_type: esLawDomain } }, // 🔧 使用正確的欄位名稱
                         { term: { is_procedural: false } }
