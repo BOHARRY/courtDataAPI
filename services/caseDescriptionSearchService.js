@@ -218,16 +218,35 @@ async function keywordBroadSearch(termGroups, lawDomain) {
  */
 function semanticFilter(candidates, queryVector, threshold = 0.70) {
     console.log(`[CaseDescriptionSearch] Layer 2: 語義過濾（門檻: ${threshold}）...`);
-    
+    console.log(`[CaseDescriptionSearch] queryVector 長度: ${queryVector ? queryVector.length : 'null'}`);
+    console.log(`[CaseDescriptionSearch] 候選數量: ${candidates.length}`);
+
+    // 🔧 Debug: 檢查前 3 筆候選的 summary_ai_vector
+    let hasVectorCount = 0;
+    let noVectorCount = 0;
+    const similarities = [];
+
     const filtered = candidates
-        .map(candidate => {
+        .map((candidate, index) => {
             if (!candidate.summary_ai_vector) {
+                noVectorCount++;
+                if (index < 3) {
+                    console.log(`[CaseDescriptionSearch] 候選 ${index}: 無 summary_ai_vector`);
+                }
                 return null;
             }
-            
+
+            hasVectorCount++;
+
             // 計算 cosine similarity
             const similarity = cosineSimilarity(queryVector, candidate.summary_ai_vector);
-            
+
+            if (index < 3) {
+                console.log(`[CaseDescriptionSearch] 候選 ${index}: similarity = ${similarity.toFixed(4)}`);
+            }
+
+            similarities.push(similarity);
+
             if (similarity >= threshold) {
                 return {
                     ...candidate,
@@ -238,7 +257,16 @@ function semanticFilter(candidates, queryVector, threshold = 0.70) {
         })
         .filter(c => c !== null)
         .sort((a, b) => b.semantic_score - a.semantic_score);
-    
+
+    // 🔧 Debug: 統計資訊
+    console.log(`[CaseDescriptionSearch] 有向量: ${hasVectorCount}, 無向量: ${noVectorCount}`);
+    if (similarities.length > 0) {
+        const maxSim = Math.max(...similarities);
+        const minSim = Math.min(...similarities);
+        const avgSim = similarities.reduce((a, b) => a + b, 0) / similarities.length;
+        console.log(`[CaseDescriptionSearch] 相似度範圍: ${minSim.toFixed(4)} ~ ${maxSim.toFixed(4)}, 平均: ${avgSim.toFixed(4)}`);
+    }
+
     console.log(`[CaseDescriptionSearch] Layer 2 完成: ${filtered.length} 筆候選`);
     return filtered;
 }
