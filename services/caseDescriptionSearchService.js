@@ -141,18 +141,39 @@ async function keywordBroadSearch(termGroups, lawDomain) {
             }
         });
 
-        // 構建完整查詢
-        const query = {
-            bool: {
-                should: shouldClauses,
-                minimum_should_match: 1, // 🔧 降低門檻：至少命中一個詞彙即可
-                filter: [
-                    { term: { stage0_case_type: esLawDomain } }, // 🔧 使用正確的欄位名稱
-                    { term: { is_procedural: false } }
-                ]
-            }
-        };
+        console.log(`[CaseDescriptionSearch] 構建的 should clauses 數量: ${shouldClauses.length}`);
+
+        // 🔧 如果沒有任何關鍵詞,使用 match_all 查詢
+        let query;
+        if (shouldClauses.length === 0) {
+            console.log('[CaseDescriptionSearch] ⚠️ 沒有提取到關鍵詞,使用 match_all 查詢');
+            query = {
+                bool: {
+                    must: [
+                        { match_all: {} }
+                    ],
+                    filter: [
+                        { term: { stage0_case_type: esLawDomain } },
+                        { term: { is_procedural: false } }
+                    ]
+                }
+            };
+        } else {
+            query = {
+                bool: {
+                    should: shouldClauses,
+                    minimum_should_match: 1, // 🔧 降低門檻：至少命中一個詞彙即可
+                    filter: [
+                        { term: { stage0_case_type: esLawDomain } }, // 🔧 使用正確的欄位名稱
+                        { term: { is_procedural: false } }
+                    ]
+                }
+            };
+        }
         
+        // 🔧 Debug: 輸出查詢結構
+        console.log('[CaseDescriptionSearch] ES 查詢結構:', JSON.stringify(query, null, 2));
+
         const esResult = await esClient.search({
             index: ES_INDEX_NAME,
             query: query,
@@ -169,12 +190,15 @@ async function keywordBroadSearch(termGroups, lawDomain) {
                 { 'JDATE': 'desc' }
             ]
         });
-        
+
+        const totalHits = typeof esResult.hits.total === 'number' ? esResult.hits.total : esResult.hits.total.value;
+        console.log(`[CaseDescriptionSearch] ES 返回總數: ${totalHits}`);
+
         const candidates = esResult.hits.hits.map(hit => ({
             ...hit._source,
             keyword_score: hit._score
         }));
-        
+
         console.log(`[CaseDescriptionSearch] Layer 1 完成: ${candidates.length} 筆候選`);
         return candidates;
         
