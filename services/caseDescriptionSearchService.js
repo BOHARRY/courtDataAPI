@@ -14,6 +14,7 @@ import { OpenAI } from 'openai';
 import { OPENAI_API_KEY, OPENAI_MODEL_NAME_EMBEDDING } from '../config/environment.js';
 import admin from 'firebase-admin';
 import pLimit from 'p-limit';
+import crypto from 'crypto';
 
 const openai = new OpenAI({
     apiKey: OPENAI_API_KEY,
@@ -604,8 +605,6 @@ function rankByPerspective(candidates, partySide, queryVector) {
  * 🆕 使用原始輸入的 hash，而不是向量，以提高快取命中率
  */
 function generateCacheKey(lawDomain, userCaseDescription) {
-    const crypto = require('crypto');
-
     // 標準化輸入：去除空白、轉小寫
     const normalized = userCaseDescription.trim().toLowerCase();
 
