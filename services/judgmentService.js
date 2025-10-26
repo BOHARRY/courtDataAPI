@@ -1,7 +1,7 @@
 // services/judgmentService.js
 import esClient from '../config/elasticsearch.js';
 
-const ES_INDEX_NAME = process.env.ES_INDEX_NAME || 'taiwan_judgments';
+const ES_INDEX_NAME = 'search-boooook';  // ✅ 與 caseDescriptionSearchService 使用相同的索引
 
 /**
  * 批次獲取判決資料（根據 JID 列表）
