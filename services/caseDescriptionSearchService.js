@@ -69,7 +69,7 @@ ${userCaseDescription}
         const response = await openai.chat.completions.create({
             model: "gpt-4o-mini",
             messages: [{ role: "user", content: prompt }],
-            temperature: 0.1, // 低溫度確保穩定性
+            temperature: 0, // 🆕 完全確定性，消除變異
             max_tokens: 600,  // 🆕 增加 token 限制以容納新欄位
             response_format: { type: "json_object" }
         });
@@ -327,55 +327,65 @@ function cosineSimilarity(vecA, vecB) {
 
 /**
  * Layer 3: 法條一致性過濾
- * 
+ *
  * @param {Array} candidates - Layer 2 的候選池
  * @returns {Array} 過濾後的候選池（約20-30筆）
  */
 function lawAlignmentFilter(candidates) {
     console.log(`[CaseDescriptionSearch] Layer 3: 法條一致性過濾...`);
-    
+
+    // 🔧 處理空候選池
+    if (candidates.length === 0) {
+        console.log(`[CaseDescriptionSearch] Layer 3 完成: 0 筆候選（輸入為空）`);
+        return [];
+    }
+
     // 從語義分數最高的前10筆統計核心法條
     const top10 = candidates.slice(0, 10);
     const statuteCount = {};
-    
+
     top10.forEach(candidate => {
         const statutes = candidate.legal_basis || [];
         statutes.forEach(statute => {
             statuteCount[statute] = (statuteCount[statute] || 0) + 1;
         });
     });
-    
-    // 找出出現次數 >= 3 的法條作為 core_statutes
+
+    // 🆕 動態門檻：至少 30% 的候選包含該法條，最少 2 次
+    const candidateCount = Math.min(candidates.length, 10);
+    const threshold = Math.max(2, Math.ceil(candidateCount * 0.3));
+
     const coreStatutes = Object.keys(statuteCount)
-        .filter(statute => statuteCount[statute] >= 3);
-    
-    console.log(`[CaseDescriptionSearch] 核心法條:`, coreStatutes);
-    
+        .filter(statute => statuteCount[statute] >= threshold);
+
+    console.log(`[CaseDescriptionSearch] 核心法條 (門檻 ${threshold}/${candidateCount}):`, coreStatutes);
+
     // 計算每筆候選的 law_alignment_score
     const filtered = candidates
         .map(candidate => {
             const candidateStatutes = candidate.legal_basis || [];
             const matchCount = candidateStatutes.filter(s => coreStatutes.includes(s)).length;
-            
+
             let law_alignment_score = 0;
             if (matchCount === 0) law_alignment_score = 0;
             else if (matchCount === 1) law_alignment_score = 1;
             else law_alignment_score = 2;
-            
+
             return {
                 ...candidate,
                 law_alignment_score,
                 core_statutes: coreStatutes
             };
         })
-        .filter(c => c.law_alignment_score > 0) // 移除 score = 0 的案件
+        // 🆕 不過濾，保留所有候選（即使 law_alignment_score = 0）
+        // 這樣可以避免在候選數量少時出現 0 筆結果
         .sort((a, b) => {
             // 綜合排序：語義分數 + 法條分數
             const scoreA = a.semantic_score * 0.7 + a.law_alignment_score * 0.3;
             const scoreB = b.semantic_score * 0.7 + b.law_alignment_score * 0.3;
             return scoreB - scoreA;
         });
-    
+
     console.log(`[CaseDescriptionSearch] Layer 3 完成: ${filtered.length} 筆候選`);
     return filtered;
 }
@@ -433,7 +443,7 @@ C. 是否不是完全不同領域？（例如：一個是買賣一個是繼承�
                 const response = await openai.chat.completions.create({
                     model: "gpt-4.1-nano",  // 🆕 升級到 GPT-4.1-nano（更快更便宜）
                     messages: [{ role: "user", content: prompt }],
-                    temperature: 0.1,
+                    temperature: 0, // 🆕 完全確定性，消除變異
                     max_tokens: 100,
                     response_format: { type: "json_object" }
                 });
@@ -591,13 +601,22 @@ function rankByPerspective(candidates, partySide, queryVector) {
 
 /**
  * 生成快取 Key
+ * 🆕 使用原始輸入的 hash，而不是向量，以提高快取命中率
  */
-function generateCacheKey(lawDomain, queryVector) {
-    // 使用向量的前10個維度生成簡化的 hash
-    const vectorHash = queryVector.slice(0, 10)
-        .map(v => v.toFixed(4))
-        .join('_');
-    return `${lawDomain}_${vectorHash}`;
+function generateCacheKey(lawDomain, userCaseDescription) {
+    const crypto = require('crypto');
+
+    // 標準化輸入：去除空白、轉小寫
+    const normalized = userCaseDescription.trim().toLowerCase();
+
+    // 生成 MD5 hash（取前 16 字元）
+    const hash = crypto
+        .createHash('md5')
+        .update(normalized)
+        .digest('hex')
+        .substring(0, 16);
+
+    return `${lawDomain}_${hash}`;
 }
 
 /**
@@ -718,16 +737,30 @@ export async function performCaseDescriptionSearch(
         console.log(`案件類型: ${lawDomain}`);
         console.log(`立場: ${partySide}`);
 
-        // Layer 0: 正規化 + 提取關鍵詞
-        const layer0Result = await normalizeAndExtractTerms(userCaseDescription, lawDomain);
-        const { normalized_summary, ...termGroups } = layer0Result;
-
-        // 生成向量
-        const queryVector = await getEmbedding(normalized_summary);
-
-        // 檢查快取
-        const cacheKey = generateCacheKey(lawDomain, queryVector);
+        // 🆕 檢查快取（使用原始輸入）
+        const cacheKey = generateCacheKey(lawDomain, userCaseDescription);
         const cachedResults = await getCachedResults(cacheKey);
+
+        let queryVector;
+        let layer0Result;
+        let normalized_summary;
+        let termGroups;
+
+        if (cachedResults) {
+            // 快取命中，仍需生成向量用於立場排序
+            layer0Result = await normalizeAndExtractTerms(userCaseDescription, lawDomain);
+            normalized_summary = layer0Result.normalized_summary;
+            termGroups = layer0Result;
+            delete termGroups.normalized_summary;
+            queryVector = await getEmbedding(normalized_summary);
+        } else {
+            // 快取未命中，執行完整流程
+            layer0Result = await normalizeAndExtractTerms(userCaseDescription, lawDomain);
+            normalized_summary = layer0Result.normalized_summary;
+            termGroups = layer0Result;
+            delete termGroups.normalized_summary;
+            queryVector = await getEmbedding(normalized_summary);
+        }
 
         let relevantCases;
 
