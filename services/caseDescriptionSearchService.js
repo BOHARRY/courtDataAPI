@@ -620,9 +620,10 @@ export async function performCaseDescriptionSearch(
 
 /**
  * 格式化結果供前端使用
+ * 返回完整的原始資料 + 案由搜索特有的額外資訊
  */
 function formatResult(candidate) {
-    // 處理 summary_ai_full 可能是陣列的情況
+    // 處理 summary_ai_full 可能是陣列的情況（用於簡短摘要）
     let summaryText = '';
     if (Array.isArray(candidate.summary_ai_full)) {
         summaryText = candidate.summary_ai_full[0] || '';
@@ -630,19 +631,21 @@ function formatResult(candidate) {
         summaryText = candidate.summary_ai_full;
     }
 
+    // 返回所有原始欄位 + 案由搜索特有的額外資訊
     return {
+        ...candidate,  // 展開所有原始欄位（包括 summary_ai, main_reasons_ai, legal_issues, JFULL 等）
+
+        // 覆蓋/新增特定欄位以保持一致性
         id: candidate.JID,
         title: candidate.JTITLE,
-        court: candidate.court,
-        date: candidate.JDATE,
-        caseType: candidate.case_type,
-        verdict: candidate.disposition?.class,
-        summary: summaryText.substring(0, 200) + '...',
-        keyStatutes: candidate.legal_basis || [],
+        summary: summaryText.substring(0, 200) + '...',  // 簡短摘要供列表顯示
+
+        // 案由搜索特有的額外資訊
         whyRelevant: candidate.sanity_check_reason || '案情相似',
-        scores: {
+        caseDescriptionScores: {
             semantic_score: candidate.semantic_score?.toFixed(2),
             law_alignment_score: candidate.law_alignment_score,
+            perspective_similarity: candidate.perspective_similarity?.toFixed(2),
             final_score: candidate.final_score?.toFixed(2)
         }
     };
