@@ -93,20 +93,29 @@ async function getEmbedding(text) {
 
 /**
  * Layer 1: 關鍵字大抓（ES bool query）
- * 
+ *
  * @param {Object} termGroups - Layer 0 產出的關鍵詞群
- * @param {string} lawDomain - 案件類型
+ * @param {string} lawDomain - 案件類型（民事/刑事/行政）
  * @returns {Promise<Array>} 候選池 v0（約200筆）
  */
 async function keywordBroadSearch(termGroups, lawDomain) {
     try {
         console.log(`[CaseDescriptionSearch] Layer 1: 關鍵字大抓...`);
-        
+
         const { parties_terms, technical_terms, legal_action_terms, statute_terms } = termGroups;
-        
+
+        // 🔧 將中文案件類型映射為英文（ES 欄位值）
+        const lawDomainMap = {
+            '民事': 'civil',
+            '刑事': 'criminal',
+            '行政': 'administrative'
+        };
+        const esLawDomain = lawDomainMap[lawDomain] || lawDomain;
+        console.log(`[CaseDescriptionSearch] 案件類型映射: ${lawDomain} -> ${esLawDomain}`);
+
         // 構建 should 查詢
         const shouldClauses = [];
-        
+
         // 搜索欄位
         const searchFields = [
             'summary_ai_full',
@@ -115,7 +124,7 @@ async function keywordBroadSearch(termGroups, lawDomain) {
             'legal_claim_basis',
             'main_reasons_ai'
         ];
-        
+
         // 添加各組詞彙的查詢
         [parties_terms, technical_terms, legal_action_terms, statute_terms].forEach((terms, index) => {
             if (terms && terms.length > 0) {
@@ -131,14 +140,14 @@ async function keywordBroadSearch(termGroups, lawDomain) {
                 });
             }
         });
-        
+
         // 構建完整查詢
         const query = {
             bool: {
                 should: shouldClauses,
-                minimum_should_match: 2, // 至少命中兩組
+                minimum_should_match: 1, // 🔧 降低門檻：至少命中一個詞彙即可
                 filter: [
-                    { term: { case_type: lawDomain } },
+                    { term: { stage0_case_type: esLawDomain } }, // 🔧 使用正確的欄位名稱
                     { term: { is_procedural: false } }
                 ]
             }

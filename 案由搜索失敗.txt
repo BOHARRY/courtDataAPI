@@ -1,0 +1,46 @@
+2025-10-26T08:25:25.968958073Z [Request] 2025-10-26T08:25:25.968Z POST /api/case-description-search
+2025-10-26T08:25:25Z clientIP="1.164.238.210" requestID="da0f0401-d8b6-4758" responseTimeMS=3 responseBytes=400 userAgent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36 Edg/141.0.0.0"
+2025-10-26T08:25:26.047784738Z [Credit Service - Transaction] User RM5G8h3V7Jhih7norRmlUU6bZxc2: 5 credits deducted for CASE_DESCRIPTION_SEARCH. Balance: 3767 -> 3762. Transaction logged.
+2025-10-26T08:25:26.115711406Z [Credit Middleware] Successfully deducted 5 credits from user RM5G8h3V7Jhih7norRmlUU6bZxc2. Remaining: 3762
+2025-10-26T08:25:26.115728606Z [CaseDescriptionSearch] 開始搜尋...
+2025-10-26T08:25:26.115733326Z 案情長度: 39 字
+2025-10-26T08:25:26.115737166Z 案件類型: 民事
+2025-10-26T08:25:26.115740867Z 立場: plaintiff
+2025-10-26T08:25:26.115744867Z [CaseDescriptionSearch] Layer 0: 正規化案情描述...
+2025-10-26T08:25:26.339390268Z [Request] 2025-10-26T08:25:26.339Z GET /api/system/maintenance
+2025-10-26T08:25:26.473791088Z [Request] 2025-10-26T08:25:26.473Z GET /api/satisfaction-survey/my-survey
+2025-10-26T08:25:26.475136481Z [Satisfaction Survey Service] 查詢用戶 RM5G8h3V7Jhih7norRmlUU6bZxc2 的調查記錄...
+2025-10-26T08:25:26.597701231Z [Satisfaction Survey Service] 找到用戶 RM5G8h3V7Jhih7norRmlUU6bZxc2 的調查記錄: {
+2025-10-26T08:25:26.597726851Z   id: 'Qwr024ymd8dsGqomTSUy',
+2025-10-26T08:25:26.597731411Z   hasReceivedReward: true,
+2025-10-26T08:25:26.597736072Z   submissionCount: 2,
+2025-10-26T08:25:26.597739712Z   createdAt: undefined
+2025-10-26T08:25:26.597743272Z }
+2025-10-26T08:25:26Z clientIP="1.164.238.210" requestID="fed7ed0f-a6b8-45d3" responseTimeMS=1 responseBytes=423 userAgent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36 Edg/141.0.0.0"
+2025-10-26T08:25:26Z clientIP="1.164.238.210" requestID="4af164f3-d762-4a0a" responseTimeMS=64 responseBytes=308 userAgent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36 Edg/141.0.0.0"
+2025-10-26T08:25:26Z clientIP="1.164.238.210" requestID="52fd9733-b01b-4c7d" responseTimeMS=126 responseBytes=309 userAgent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36 Edg/141.0.0.0"
+2025-10-26T08:25:29.698408495Z [CaseDescriptionSearch] Layer 0 完成: {
+2025-10-26T08:25:29.698437096Z   normalized_summary: '本件為承租人與出租人之間的民事糾紛。承租人與出租人簽訂租賃契約，約定租期為兩年。然而，出租人在租期未滿時要求承租人搬離，並拒絕退還承租人所支付之押金。',
+2025-10-26T08:25:29.698442516Z   parties_terms: [ '承租人', '出租人' ],
+2025-10-26T08:25:29.698447707Z   technical_terms: [ '租賃契約', '押金', '租期', '搬離' ],
+2025-10-26T08:25:29.698451347Z   legal_action_terms: [ '返還押金', '提前終止租約' ],
+2025-10-26T08:25:29.698454177Z   statute_terms: [ '民法第767條', '租賃契約' ]
+2025-10-26T08:25:29.698457017Z }
+2025-10-26T08:25:30.950371776Z [CaseDescriptionSearch] 快取未命中: 民事_0.0443_-0.0648_0.0097_-0.0204_-0.0213_-0.0203_0.0222_0.0250_-0.0063_-0.0284
+2025-10-26T08:25:30.950417788Z [CaseDescriptionSearch] Layer 1: 關鍵字大抓...
+2025-10-26T08:25:30.980487886Z [CaseDescriptionSearch] Layer 1 完成: 0 筆候選
+2025-10-26T08:25:30.980576358Z [CaseDescriptionSearch] Layer 2: 語義過濾（門檻: 0.7）...
+2025-10-26T08:25:30.98064926Z [CaseDescriptionSearch] Layer 2 完成: 0 筆候選
+2025-10-26T08:25:30.980688751Z [CaseDescriptionSearch] Layer 3: 法條一致性過濾...
+2025-10-26T08:25:30.980815844Z [CaseDescriptionSearch] 核心法條: []
+2025-10-26T08:25:30.980878735Z [CaseDescriptionSearch] Layer 3 完成: 0 筆候選
+2025-10-26T08:25:30.980962397Z [CaseDescriptionSearch] Layer 4: GPT 型態檢查...
+2025-10-26T08:25:30.981012648Z [CaseDescriptionSearch] Layer 4 完成: 0 筆有效候選
+2025-10-26T08:25:31.04991551Z [CaseDescriptionSearch] ✅ 結果已快取: 民事_0.0443_-0.0648_0.0097_-0.0204_-0.0213_-0.0203_0.0222_0.0250_-0.0063_-0.0284
+2025-10-26T08:25:31.049942521Z [CaseDescriptionSearch] 根據立場排序: plaintiff
+2025-10-26T08:25:31.049950911Z [CaseDescriptionSearch] 搜尋完成，耗時 4934ms
+2025-10-26T08:25:31Z clientIP="1.164.238.210" requestID="56a34efe-fcc2-4832" responseTimeMS=5085 responseBytes=696 userAgent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36 Edg/141.0.0.0"
+2025-10-26T08:25:36.729795224Z [Request] 2025-10-26T08:25:36.729Z PUT /api/workspaces/TMObsxd6EoSuxSXBB2OV
+2025-10-26T08:25:36.962608051Z [WorkspaceService] Updated workspace TMObsxd6EoSuxSXBB2OV for user RM5G8h3V7Jhih7norRmlUU6bZxc2
+2025-10-26T08:25:37Z clientIP="1.164.238.210" requestID="d3a97320-9136-4512" responseTimeMS=304 responseBytes=2384 userAgent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36 Edg/141.0.0.0"
+2025-10-26T08:25:36Z clientIP="1.164.238.210" requestID="8fa8f056-0d35-4d44" responseTimeMS=2 responseBytes=400 userAgent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36 Edg/141.0.0.0"

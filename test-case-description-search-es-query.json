@@ -1,0 +1,264 @@
+# 案由搜尋 ES 查詢測試
+
+## 測試 1: 檢查 stage0_case_type 欄位的值分布
+
+```json
+GET /search-boooook/_search
+{
+  "size": 0,
+  "aggs": {
+    "case_types": {
+      "terms": {
+        "field": "stage0_case_type",
+        "size": 10
+      }
+    }
+  }
+}
+```
+
+## 測試 2: 檢查是否有民事案件
+
+```json
+GET /search-boooook/_search
+{
+  "size": 5,
+  "query": {
+    "bool": {
+      "filter": [
+        { "term": { "stage0_case_type": "civil" } },
+        { "term": { "is_procedural": false } }
+      ]
+    }
+  },
+  "_source": ["JID", "JTITLE", "stage0_case_type", "is_procedural"]
+}
+```
+
+## 測試 3: 測試關鍵字搜索（租賃相關）
+
+```json
+GET /search-boooook/_search
+{
+  "size": 10,
+  "query": {
+    "bool": {
+      "should": [
+        {
+          "multi_match": {
+            "query": "承租人",
+            "fields": ["summary_ai_full", "JFULL", "JTITLE", "legal_claim_basis", "main_reasons_ai"],
+            "type": "best_fields"
+          }
+        },
+        {
+          "multi_match": {
+            "query": "出租人",
+            "fields": ["summary_ai_full", "JFULL", "JTITLE", "legal_claim_basis", "main_reasons_ai"],
+            "type": "best_fields"
+          }
+        },
+        {
+          "multi_match": {
+            "query": "租賃契約",
+            "fields": ["summary_ai_full", "JFULL", "JTITLE", "legal_claim_basis", "main_reasons_ai"],
+            "type": "best_fields"
+          }
+        },
+        {
+          "multi_match": {
+            "query": "押金",
+            "fields": ["summary_ai_full", "JFULL", "JTITLE", "legal_claim_basis", "main_reasons_ai"],
+            "type": "best_fields"
+          }
+        }
+      ],
+      "minimum_should_match": 1,
+      "filter": [
+        { "term": { "stage0_case_type": "civil" } },
+        { "term": { "is_procedural": false } }
+      ]
+    }
+  },
+  "_source": ["JID", "JTITLE", "stage0_case_type", "summary_ai_full"],
+  "sort": [
+    { "_score": "desc" }
+  ]
+}
+```
+
+## 測試 4: 檢查 is_procedural 欄位
+
+```json
+GET /search-boooook/_search
+{
+  "size": 0,
+  "aggs": {
+    "procedural_distribution": {
+      "terms": {
+        "field": "is_procedural",
+        "size": 10
+      }
+    }
+  }
+}
+```
+
+## 測試 5: 完整的案由搜尋查詢（修正版）
+
+```json
+GET /search-boooook/_search
+{
+  "size": 200,
+  "query": {
+    "bool": {
+      "should": [
+        {
+          "multi_match": {
+            "query": "承租人",
+            "fields": ["summary_ai_full", "JFULL", "JTITLE", "legal_claim_basis", "main_reasons_ai"],
+            "type": "best_fields"
+          }
+        },
+        {
+          "multi_match": {
+            "query": "出租人",
+            "fields": ["summary_ai_full", "JFULL", "JTITLE", "legal_claim_basis", "main_reasons_ai"],
+            "type": "best_fields"
+          }
+        },
+        {
+          "multi_match": {
+            "query": "租賃契約",
+            "fields": ["summary_ai_full", "JFULL", "JTITLE", "legal_claim_basis", "main_reasons_ai"],
+            "type": "best_fields"
+          }
+        },
+        {
+          "multi_match": {
+            "query": "押金",
+            "fields": ["summary_ai_full", "JFULL", "JTITLE", "legal_claim_basis", "main_reasons_ai"],
+            "type": "best_fields"
+          }
+        },
+        {
+          "multi_match": {
+            "query": "租期",
+            "fields": ["summary_ai_full", "JFULL", "JTITLE", "legal_claim_basis", "main_reasons_ai"],
+            "type": "best_fields"
+          }
+        },
+        {
+          "multi_match": {
+            "query": "搬離",
+            "fields": ["summary_ai_full", "JFULL", "JTITLE", "legal_claim_basis", "main_reasons_ai"],
+            "type": "best_fields"
+          }
+        },
+        {
+          "multi_match": {
+            "query": "返還押金",
+            "fields": ["summary_ai_full", "JFULL", "JTITLE", "legal_claim_basis", "main_reasons_ai"],
+            "type": "best_fields",
+            "boost": 1.2
+          }
+        },
+        {
+          "multi_match": {
+            "query": "提前終止租約",
+            "fields": ["summary_ai_full", "JFULL", "JTITLE", "legal_claim_basis", "main_reasons_ai"],
+            "type": "best_fields",
+            "boost": 1.2
+          }
+        },
+        {
+          "multi_match": {
+            "query": "民法第767條",
+            "fields": ["summary_ai_full", "JFULL", "JTITLE", "legal_claim_basis", "main_reasons_ai"],
+            "type": "best_fields",
+            "boost": 1.5
+          }
+        }
+      ],
+      "minimum_should_match": 1,
+      "filter": [
+        { "term": { "stage0_case_type": "civil" } },
+        { "term": { "is_procedural": false } }
+      ]
+    }
+  },
+  "_source": [
+    "JID", "court", "JDATE", "JTITLE",
+    "summary_ai_full", "legal_basis", "legal_claim_basis",
+    "disposition.class", "stage0_case_type", "is_procedural"
+  ],
+  "sort": [
+    { "_score": "desc" },
+    { "JDATE": "desc" }
+  ]
+}
+```
+
+## 問題診斷
+
+根據 log 分析，問題出在：
+
+1. **欄位名稱錯誤**：
+   - ❌ 使用了 `case_type`（這是陣列，值是具體案件類型如「公寓大廈管理」）
+   - ✅ 應該使用 `stage0_case_type`（值是 "civil", "criminal", "administrative"）
+
+2. **minimum_should_match 太嚴格**：
+   - ❌ `minimum_should_match: 2` 要求至少命中兩組詞彙
+   - ✅ 應該改為 `minimum_should_match: 1` 或更靈活的設定
+
+3. **中文 vs 英文**：
+   - 前端傳入：`"caseType": "民事"`
+   - ES 欄位值：`"civil"`
+   - 需要在後端做映射轉換
+
+## 修正方案
+
+### 方案 1: 修改後端代碼
+
+在 `caseDescriptionSearchService.js` 中：
+
+1. 將 `lawDomain`（民事/刑事/行政）映射為英文：
+   ```javascript
+   const lawDomainMap = {
+     '民事': 'civil',
+     '刑事': 'criminal',
+     '行政': 'administrative'
+   };
+   const esLawDomain = lawDomainMap[lawDomain] || lawDomain;
+   ```
+
+2. 修改 filter 條件：
+   ```javascript
+   filter: [
+     { "term": { "stage0_case_type": esLawDomain } },
+     { "term": { "is_procedural": false } }
+   ]
+   ```
+
+3. 降低 `minimum_should_match`：
+   ```javascript
+   minimum_should_match: 1  // 至少命中一個詞彙即可
+   ```
+
+### 方案 2: 檢查 is_procedural 欄位
+
+如果 `is_procedural` 欄位不存在或值不是 boolean，可能需要調整查詢：
+
+```javascript
+filter: [
+  { "term": { "stage0_case_type": esLawDomain } }
+  // 暫時移除 is_procedural 過濾，看是否有結果
+]
+```
+
+## 下一步
+
+1. 在 Kibana Dev Tools 執行上述測試查詢
+2. 確認 `stage0_case_type` 和 `is_procedural` 的實際值
+3. 根據測試結果修正後端代碼
+
