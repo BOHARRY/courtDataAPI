@@ -506,12 +506,37 @@ async function batchGetPerspectiveVectors(jids) {
 }
 
 /**
+ * 🆕 計算勝負加權分數
+ * 根據 overall_result 給予不同的加權分數
+ *
+ * @param {string} overallResult - 勝負結果（major_victory, substantial_victory, etc.）
+ * @returns {number} 加權分數（0.0 - 1.0）
+ */
+function calculateVictoryBonus(overallResult) {
+    const bonusMap = {
+        // 勝訴方向（4 級）
+        'major_victory': 1.0,          // 完全勝訴 +100%
+        'substantial_victory': 0.8,    // 實質勝訴 +80%
+        'minor_victory': 0.6,          // 形式勝訴 +60%
+        'partial_success': 0.4,        // 部分勝訴 +40%（中性）
+
+        // 敗訴方向（3 級）
+        'minor_defeat': 0.2,           // 形式敗訴 +20%
+        'substantial_defeat': 0.1,     // 實質敗訴 +10%
+        'major_defeat': 0.0            // 完全敗訴 +0%
+    };
+
+    return bonusMap[overallResult] !== undefined ? bonusMap[overallResult] : 0.4; // 預設中性
+}
+
+/**
  * 根據立場排序結果
+ * 🆕 優化: 將勝負結果納入排序權重，優先顯示該立場的勝訴案例
  *
  * @param {Array} candidates - 候選池
  * @param {string} partySide - 立場（plaintiff/defendant）
  * @param {Array} queryVector - 查詢向量
- * @returns {Array} 排序後的結果（Top 5-10）
+ * @returns {Array} 排序後的結果
  */
 function rankByPerspective(candidates, partySide, queryVector) {
     console.log(`[CaseDescriptionSearch] 根據立場排序: ${partySide}`);
@@ -521,27 +546,46 @@ function rankByPerspective(candidates, partySide, queryVector) {
         : 'defendant_combined_vector';
 
     const ranked = candidates.map(candidate => {
-        // 計算立場向量相似度
+        // 1. 計算立場向量相似度
         const perspectiveVector = candidate[vectorField];
         const perspectiveSimilarity = perspectiveVector
             ? cosineSimilarity(queryVector, perspectiveVector)
             : 0;
 
-        // 綜合評分
+        // 🆕 2. 計算勝負加權分數
+        const positionAnalysis = candidate.position_based_analysis;
+        const perspective = partySide === 'plaintiff'
+            ? positionAnalysis?.plaintiff_perspective
+            : positionAnalysis?.defendant_perspective;
+
+        const victoryBonus = calculateVictoryBonus(perspective?.overall_result);
+
+        // 🆕 3. 綜合評分（加入勝負權重）
+        // 調整權重分配：語義 35% + 法條 25% + 立場 25% + 勝負 15%
         const finalScore =
-            candidate.semantic_score * 0.4 +
-            candidate.law_alignment_score * 0.3 +
-            perspectiveSimilarity * 0.3;
+            candidate.semantic_score * 0.35 +           // 語義相似度 35%
+            candidate.law_alignment_score * 0.25 +      // 法條對齊度 25%
+            perspectiveSimilarity * 0.25 +              // 立場相似度 25%
+            victoryBonus * 0.15;                        // 🆕 勝負加權 15%
 
         return {
             ...candidate,
             perspective_similarity: perspectiveSimilarity,
+            victory_bonus: victoryBonus,  // 🆕 保存勝負加權分數
             final_score: finalScore
         };
     }).sort((a, b) => b.final_score - a.final_score);
 
     // 🔧 返回全部候選（已排序），不截斷
     // 分頁邏輯在主函數中處理，這裡只負責排序
+
+    // 🆕 統計勝負分布
+    const victoryCount = ranked.filter(c => c.victory_bonus >= 0.6).length;
+    const defeatCount = ranked.filter(c => c.victory_bonus <= 0.2).length;
+    const partialCount = ranked.filter(c => c.victory_bonus > 0.2 && c.victory_bonus < 0.6).length;
+
+    console.log(`[CaseDescriptionSearch] 勝負分布: 勝訴 ${victoryCount} 筆, 部分勝訴 ${partialCount} 筆, 敗訴 ${defeatCount} 筆`);
+
     return ranked;
 }
 
@@ -746,6 +790,7 @@ export async function performCaseDescriptionSearch(
                 semantic_score: r.semantic_score,
                 law_alignment_score: r.law_alignment_score,
                 perspective_similarity: r.perspective_similarity,
+                victory_bonus: r.victory_bonus,  // 🆕 勝負加權分數
                 final_score: r.final_score,
                 sanity_check_reason: r.sanity_check_reason
             })),  // 🆕 返回完整的候選列表（包含分數，已排序）
@@ -869,12 +914,14 @@ function formatResult(candidate, fullData) {
         semantic_score: candidate.semantic_score,
         law_alignment_score: candidate.law_alignment_score,
         perspective_similarity: candidate.perspective_similarity,
+        victory_bonus: candidate.victory_bonus,  // 🆕 勝負加權分數
         final_score: candidate.final_score,
         whyRelevant: candidate.sanity_check_reason || '案情相似',
         caseDescriptionScores: {
             semantic_score: candidate.semantic_score?.toFixed(2),
             law_alignment_score: candidate.law_alignment_score,
             perspective_similarity: candidate.perspective_similarity?.toFixed(2),
+            victory_bonus: candidate.victory_bonus?.toFixed(2),  // 🆕 勝負加權分數
             final_score: candidate.final_score?.toFixed(2)
         }
     };
