@@ -368,6 +368,14 @@ async function gptSanityCheck(candidates, normalizedSummary) {
     // 批次處理以提高效率
     for (const candidate of candidates) {
         try {
+            // 處理 summary_ai_full 可能是陣列的情況
+            let summaryText = '';
+            if (Array.isArray(candidate.summary_ai_full)) {
+                summaryText = candidate.summary_ai_full[0] || '';
+            } else if (typeof candidate.summary_ai_full === 'string') {
+                summaryText = candidate.summary_ai_full;
+            }
+
             const prompt = `你是台灣法律專家。請判斷以下兩個案件是否屬於「同一類型爭議」。
 
 **使用者案情**（已正規化）：
@@ -375,7 +383,7 @@ ${normalizedSummary}
 
 **判決案件**：
 - 案由：${candidate.JTITLE}
-- 摘要：${candidate.summary_ai_full?.substring(0, 300)}
+- 摘要：${summaryText.substring(0, 300)}
 - 案件類型：${candidate.case_type}
 - 法律依據：${candidate.legal_basis?.join('、') || '無'}
 
@@ -569,8 +577,8 @@ export async function performCaseDescriptionSearch(
             // Layer 1: 關鍵字大抓
             const layer1Candidates = await keywordBroadSearch(termGroups, lawDomain);
 
-            // Layer 2: 語義過濾（降低門檻至 0.55，因為實測最高相似度約 0.65）
-            const layer2Candidates = semanticFilter(layer1Candidates, queryVector, 0.55);
+            // Layer 2: 語義過濾（門檻 0.63，根據實測相似度範圍調整）
+            const layer2Candidates = semanticFilter(layer1Candidates, queryVector, 0.63);
 
             // Layer 3: 法條一致性過濾
             const layer3Candidates = lawAlignmentFilter(layer2Candidates);
