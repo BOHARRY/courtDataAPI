@@ -24,21 +24,27 @@ const CACHE_COLLECTION = 'caseDescriptionSearchCache';
 
 /**
  * Layer 0: 使用 GPT-4o-mini 正規化案情描述並生成關鍵詞群
- * 
+ *
  * @param {string} userCaseDescription - 使用者輸入的案情描述
  * @param {string} lawDomain - 案件類型（民事/刑事/行政）
  * @returns {Promise<Object>} 正規化結果
+ * @throws {Error} 如果輸入與法律案由無關
  */
 async function normalizeAndExtractTerms(userCaseDescription, lawDomain) {
     try {
         console.log(`[CaseDescriptionSearch] Layer 0: 正規化案情描述...`);
-        
-        const prompt = `你是台灣法律專家。請將以下${lawDomain}案件的當事人描述，改寫成法院判決書風格的客觀摘要，並提取關鍵詞群。
+
+        const prompt = `你是台灣法律專家。請先判斷使用者輸入是否與法律案由相關，然後進行處理。
 
 **使用者案情描述**：
 ${userCaseDescription}
 
-**任務**：
+**第一步：案由相關性檢查**
+請判斷使用者輸入是否描述了一個法律糾紛、案件或法律問題。
+- 如果是法律相關（例如：合約糾紛、侵權行為、刑事案件、行政訴訟等），設定 is_legal_case: true
+- 如果完全無關（例如：天氣、美食、化妝品、日常閒聊等），設定 is_legal_case: false，並說明原因
+
+**第二步：正規化與關鍵詞提取**（僅在 is_legal_case: true 時執行）
 1. 將案情改寫成第三人稱、客觀、法院摘要風格
 2. 提取四組關鍵詞（每組最多5個詞）：
    - parties_terms: 當事人關係用語（例如：承租人、出租人、樓上住戶）
@@ -48,29 +54,41 @@ ${userCaseDescription}
 
 **回應格式**（必須是有效的 JSON）：
 {
+  "is_legal_case": true/false,
+  "rejection_reason": "如果 is_legal_case 為 false，請用一句話說明為什麼這不是法律案由",
   "normalized_summary": "本件為...之${lawDomain}糾紛...",
   "parties_terms": ["當事人1", "當事人2"],
   "technical_terms": ["技術詞1", "技術詞2"],
   "legal_action_terms": ["請求1", "請求2"],
   "statute_terms": ["法條1", "法條2"]
-}`;
+}
+
+**注意**：如果 is_legal_case 為 false，normalized_summary 和所有 terms 陣列可以為空。`;
 
         const response = await openai.chat.completions.create({
             model: "gpt-4o-mini",
             messages: [{ role: "user", content: prompt }],
             temperature: 0.1, // 低溫度確保穩定性
-            max_tokens: 500,
+            max_tokens: 600,  // 🆕 增加 token 限制以容納新欄位
             response_format: { type: "json_object" }
         });
 
         const result = JSON.parse(response.choices[0].message.content);
         console.log(`[CaseDescriptionSearch] Layer 0 完成:`, result);
-        
+
+        // 🆕 檢查案由相關性
+        if (result.is_legal_case === false) {
+            const reason = result.rejection_reason || '您的輸入似乎與法律案由無關';
+            console.log(`[CaseDescriptionSearch] Layer 0 拒絕: ${reason}`);
+            throw new Error(`INVALID_CASE_DESCRIPTION: ${reason}`);
+        }
+
         return result;
-        
+
     } catch (error) {
         console.error('[CaseDescriptionSearch] Layer 0 失敗:', error);
-        throw new Error(`案情正規化失敗: ${error.message}`);
+        // 🆕 保留原始錯誤訊息（包含 INVALID_CASE_DESCRIPTION 前綴）
+        throw error;
     }
 }
 

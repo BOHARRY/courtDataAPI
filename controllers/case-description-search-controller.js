@@ -64,6 +64,18 @@ export async function performCaseDescriptionSearchController(req, res, next) {
 
     } catch (error) {
         console.error('[CaseDescriptionSearchController] 搜尋失敗:', error);
+
+        // 🆕 處理案由相關性檢查失敗
+        if (error.message && error.message.startsWith('INVALID_CASE_DESCRIPTION:')) {
+            const reason = error.message.replace('INVALID_CASE_DESCRIPTION:', '').trim();
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid Case Description',
+                message: reason,
+                code: 'INVALID_CASE_DESCRIPTION'
+            });
+        }
+
         next(error);
     }
 }
