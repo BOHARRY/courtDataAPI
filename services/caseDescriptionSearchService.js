@@ -598,12 +598,16 @@ export async function performCaseDescriptionSearch(
         const end = start + pageSize;
         const paginatedResults = rankedResults.slice(start, end);
 
+        // 🆕 批次獲取當前頁的完整判決資料
+        const jidsToFetch = paginatedResults.map(r => r.JID);
+        const fullDataMap = await batchGetFullJudgmentData(jidsToFetch);
+
         const elapsedTime = Date.now() - startTime;
         console.log(`[CaseDescriptionSearch] 搜尋完成，耗時 ${elapsedTime}ms`);
 
         return {
             success: true,
-            results: paginatedResults.map(formatResult),
+            results: paginatedResults.map(candidate => formatResult(candidate, fullDataMap[candidate.JID])),
             total: rankedResults.length,
             totalPages: Math.ceil(rankedResults.length / pageSize),
             currentPage: page,
@@ -619,10 +623,74 @@ export async function performCaseDescriptionSearch(
 }
 
 /**
- * 格式化結果供前端使用
- * 返回完整的原始資料 + 案由搜索特有的額外資訊
+ * 🆕 批次獲取完整判決資料（使用 ES mget API）
+ * 只在最後階段獲取必要的完整資料，避免在 Layer 1-4 傳輸大量無用資料
  */
-function formatResult(candidate) {
+async function batchGetFullJudgmentData(jids) {
+    try {
+        console.log(`[CaseDescriptionSearch] 批次獲取 ${jids.length} 筆完整判決資料...`);
+
+        const result = await esClient.mget({
+            index: ES_INDEX_NAME,
+            body: {
+                ids: jids
+            },
+            _source: [
+                // 基本資訊
+                'JID', 'court', 'JDATE', 'JTITLE',
+
+                // 摘要和理由
+                'summary_ai',           // AI 摘要（陣列）
+                'summary_ai_full',      // 完整摘要（陣列）
+                'main_reasons_ai',      // 判決理由（陣列）
+
+                // 爭點和段落
+                'legal_issues',         // 爭點資訊（nested）
+                'citable_paragraphs',   // 可引用段落（nested）
+
+                // 完整判決文和法院見解
+                'JFULL',                // 完整判決文
+                'CourtInsightsStart',   // 法院見解起始
+                'CourtInsightsEND',     // 法院見解結束
+
+                // 難度和分數
+                'SCORE',                // 難度分數
+
+                // 法條和案件類型
+                'legal_basis',
+                'case_type',
+                'verdict_type',
+
+                // 其他前端可能需要的欄位
+                'tags',
+                'disposition'
+            ]
+        });
+
+        // 建立 JID -> 完整資料的映射
+        const dataMap = {};
+        if (result && result.docs) {
+            result.docs.forEach(doc => {
+                if (doc.found && doc._source) {
+                    dataMap[doc._id] = doc._source;
+                }
+            });
+        }
+
+        console.log(`[CaseDescriptionSearch] 成功獲取 ${Object.keys(dataMap).length}/${jids.length} 筆完整資料`);
+        return dataMap;
+
+    } catch (error) {
+        console.error('[CaseDescriptionSearch] 批次獲取完整資料失敗:', error);
+        return {};
+    }
+}
+
+/**
+ * 格式化結果供前端使用
+ * 合併輕量級候選資料 + 完整判決資料
+ */
+function formatResult(candidate, fullData) {
     // 處理 summary_ai_full 可能是陣列的情況（用於簡短摘要）
     let summaryText = '';
     if (Array.isArray(candidate.summary_ai_full)) {
@@ -631,13 +699,14 @@ function formatResult(candidate) {
         summaryText = candidate.summary_ai_full;
     }
 
-    // 返回所有原始欄位 + 案由搜索特有的額外資訊
+    // 合併候選資料（包含分數）+ 完整資料（包含所有前端需要的欄位）
     return {
-        ...candidate,  // 展開所有原始欄位（包括 summary_ai, main_reasons_ai, legal_issues, JFULL 等）
+        ...fullData,        // 展開完整資料（包括 summary_ai, main_reasons_ai, legal_issues, JFULL 等）
+        ...candidate,       // 展開候選資料（包含分數和排序資訊）
 
         // 覆蓋/新增特定欄位以保持一致性
         id: candidate.JID,
-        title: candidate.JTITLE,
+        title: fullData?.JTITLE || candidate.JTITLE,
         summary: summaryText.substring(0, 200) + '...',  // 簡短摘要供列表顯示
 
         // 案由搜索特有的額外資訊
