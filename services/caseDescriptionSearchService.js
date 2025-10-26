@@ -786,8 +786,8 @@ export async function performCaseDescriptionSearch(
             // Layer 1: 關鍵字大抓
             const layer1Candidates = await keywordBroadSearch(termGroups, lawDomain);
 
-            // Layer 2: 語義過濾（門檻 0.63，根據實測相似度範圍調整）
-            const layer2Candidates = semanticFilter(layer1Candidates, queryVector, 0.63);
+            // Layer 2: 語義過濾（門檻 0.61，根據實測相似度範圍調整）
+            const layer2Candidates = semanticFilter(layer1Candidates, queryVector, 0.61);
 
             // Layer 3: 法條一致性過濾
             const layer3Candidates = lawAlignmentFilter(layer2Candidates);
