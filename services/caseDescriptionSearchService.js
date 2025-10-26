@@ -216,13 +216,13 @@ async function keywordBroadSearch(termGroups, lawDomain) {
 
 /**
  * Layer 2: 語義過濾（summary_ai_vector 相似度）
- * 
+ *
  * @param {Array} candidates - Layer 1 的候選池
  * @param {Array} queryVector - 正規化摘要的向量
- * @param {number} threshold - 相似度門檻（預設 0.70）
+ * @param {number} threshold - 相似度門檻（預設 0.55）
  * @returns {Array} 過濾後的候選池（約60筆）
  */
-function semanticFilter(candidates, queryVector, threshold = 0.70) {
+function semanticFilter(candidates, queryVector, threshold = 0.55) {
     console.log(`[CaseDescriptionSearch] Layer 2: 語義過濾（門檻: ${threshold}）...`);
     console.log(`[CaseDescriptionSearch] queryVector 長度: ${queryVector ? queryVector.length : 'null'}`);
     console.log(`[CaseDescriptionSearch] 候選數量: ${candidates.length}`);
@@ -569,8 +569,8 @@ export async function performCaseDescriptionSearch(
             // Layer 1: 關鍵字大抓
             const layer1Candidates = await keywordBroadSearch(termGroups, lawDomain);
 
-            // Layer 2: 語義過濾
-            const layer2Candidates = semanticFilter(layer1Candidates, queryVector, 0.70);
+            // Layer 2: 語義過濾（降低門檻至 0.55，因為實測最高相似度約 0.65）
+            const layer2Candidates = semanticFilter(layer1Candidates, queryVector, 0.55);
 
             // Layer 3: 法條一致性過濾
             const layer3Candidates = lawAlignmentFilter(layer2Candidates);
