@@ -444,6 +444,38 @@ C. 是否不是完全不同領域？（例如：一個是買賣一個是繼承�
 }
 
 /**
+ * 從 Elasticsearch 批次獲取立場向量
+ * 用於從快取恢復時補充被移除的向量資料
+ */
+async function batchGetPerspectiveVectors(jids) {
+    try {
+        const esResult = await esClient.search({
+            index: ES_INDEX_NAME,
+            query: {
+                terms: { JID: jids }
+            },
+            _source: ['JID', 'plaintiff_combined_vector', 'defendant_combined_vector'],
+            size: jids.length
+        });
+
+        const vectorMap = {};
+        esResult.hits.hits.forEach(hit => {
+            vectorMap[hit._source.JID] = {
+                plaintiff_combined_vector: hit._source.plaintiff_combined_vector,
+                defendant_combined_vector: hit._source.defendant_combined_vector
+            };
+        });
+
+        console.log(`[CaseDescriptionSearch] 已獲取 ${Object.keys(vectorMap).length} 筆立場向量`);
+        return vectorMap;
+
+    } catch (error) {
+        console.error('[CaseDescriptionSearch] 獲取立場向量失敗:', error);
+        return {};
+    }
+}
+
+/**
  * 根據立場排序結果
  *
  * @param {Array} candidates - 候選池
@@ -524,6 +556,52 @@ async function getCachedResults(cacheKey) {
 }
 
 /**
+ * 精簡候選資料以符合 Firestore 1MB 限制
+ * 移除大型欄位（向量、完整內容等），只保留必要資訊
+ */
+function simplifyCandidate(candidate) {
+    return {
+        // 基本識別資訊
+        JID: candidate.JID,
+        JTITLE: candidate.JTITLE,
+        JDATE: candidate.JDATE,
+        JYEAR: candidate.JYEAR,
+        JCASE: candidate.JCASE,
+        JNO: candidate.JNO,
+        court: candidate.court,
+
+        // 案件分類
+        case_type: candidate.case_type,
+        stage0_case_type: candidate.stage0_case_type,
+        verdict_type: candidate.verdict_type,
+
+        // 法律依據（保留，用於 Layer 3 恢復）
+        legal_basis: candidate.legal_basis,
+
+        // 分數和排序資訊（保留，用於恢復排序）
+        keyword_score: candidate.keyword_score,
+        semantic_score: candidate.semantic_score,
+        law_alignment_score: candidate.law_alignment_score,
+        sanity_check_reason: candidate.sanity_check_reason,
+        core_statutes: candidate.core_statutes,
+
+        // 摘要（截斷到 500 字元以節省空間）
+        summary_ai_full: Array.isArray(candidate.summary_ai_full)
+            ? candidate.summary_ai_full[0]?.substring(0, 500)
+            : candidate.summary_ai_full?.substring(0, 500)
+
+        // 🚨 移除的大型欄位：
+        // - JFULL（完整判決書，數萬字）
+        // - summary_ai_vector（1536 維向量，12 KB）
+        // - plaintiff_combined_vector（1536 維向量，12 KB）
+        // - defendant_combined_vector（1536 維向量，12 KB）
+        // - legal_issues（nested，可能很大）
+        // - citable_paragraphs（nested，可能很大）
+        // - 其他不必要的欄位
+    };
+}
+
+/**
  * 將結果存入 Firebase 快取
  */
 async function saveCachedResults(cacheKey, relevantCases, normalizedSummary, termGroups) {
@@ -531,8 +609,11 @@ async function saveCachedResults(cacheKey, relevantCases, normalizedSummary, ter
         const db = admin.firestore();
         const docRef = db.collection(CACHE_COLLECTION).doc(cacheKey);
 
+        // 🔧 精簡候選資料以符合 Firestore 1MB 限制
+        const simplifiedCases = relevantCases.map(simplifyCandidate);
+
         await docRef.set({
-            relevantCases,
+            relevantCases: simplifiedCases,  // 🆕 使用精簡版本
             normalizedSummary,
             termGroups,
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -540,7 +621,7 @@ async function saveCachedResults(cacheKey, relevantCases, normalizedSummary, ter
             lastAccessedAt: admin.firestore.FieldValue.serverTimestamp()
         });
 
-        console.log(`[CaseDescriptionSearch] ✅ 結果已快取: ${cacheKey}`);
+        console.log(`[CaseDescriptionSearch] ✅ 結果已快取: ${cacheKey} (${simplifiedCases.length} 筆精簡候選)`);
 
     } catch (error) {
         console.error('[CaseDescriptionSearch] 快取儲存失敗:', error);
@@ -590,6 +671,19 @@ export async function performCaseDescriptionSearch(
             // 使用快取結果
             relevantCases = cachedResults;
             console.log(`[CaseDescriptionSearch] 使用快取結果，跳過 Layer 1-4`);
+
+            // 🔧 從 ES 批次獲取立場向量（用於排序，不持久化）
+            const jids = relevantCases.map(c => c.JID);
+            const vectorMap = await batchGetPerspectiveVectors(jids);
+
+            // 🔧 臨時補充立場向量（僅用於本次排序）
+            relevantCases = relevantCases.map(candidate => ({
+                ...candidate,
+                plaintiff_combined_vector: vectorMap[candidate.JID]?.plaintiff_combined_vector,
+                defendant_combined_vector: vectorMap[candidate.JID]?.defendant_combined_vector
+            }));
+
+            console.log(`[CaseDescriptionSearch] 已補充 ${Object.keys(vectorMap).length} 筆立場向量用於排序`);
         } else {
             // 執行完整檢索管線
             // Layer 1: 關鍵字大抓
@@ -604,11 +698,11 @@ export async function performCaseDescriptionSearch(
             // Layer 4: GPT sanity check
             relevantCases = await gptSanityCheck(layer3Candidates, normalized_summary);
 
-            // 存入快取
+            // 🔧 存入快取（精簡版，不包含向量）
             await saveCachedResults(cacheKey, relevantCases, normalized_summary, termGroups);
         }
 
-        // 最後一步：根據立場排序
+        // 最後一步：根據立場排序（使用臨時補充的向量或原始向量）
         const rankedResults = rankByPerspective(relevantCases, partySide, queryVector);
 
         // 分頁
