@@ -510,7 +510,9 @@ function rankByPerspective(candidates, partySide, queryVector) {
         };
     }).sort((a, b) => b.final_score - a.final_score);
 
-    return ranked.slice(0, 10); // 返回 Top 10
+    // 🔧 返回全部候選（已排序），不截斷
+    // 分頁邏輯在主函數中處理，這裡只負責排序
+    return ranked;
 }
 
 /**
