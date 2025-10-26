@@ -16,6 +16,7 @@ export const CREDIT_COSTS = {
 
   AI_SUCCESS_ANALYSIS: 5,
   SEMANTIC_SEARCH: 3, // 新增語意搜尋功能，消耗 3 積分
+  CASE_DESCRIPTION_SEARCH: 5, // 🆕 案由搜尋功能，消耗 5 積分
   SUMMARIZE_COMMON_POINTS: 4, // (圖板) AI歸納判例共同點
   CASE_PRECEDENT_ANALYSIS: 4, // 案例判決傾向分析
   AMOUNT_ANALYSIS: 2, // 🆕 請求獲准金額分析（基於現有數據的統計分析）
@@ -47,6 +48,7 @@ export const CREDIT_PURPOSES = {
   LAWYER_AI_ANALYSIS: 'lawyer_ai_analysis',
   JUDGE_AI_ANALYTICS: 'judge_ai_analytics',
   SEMANTIC_SEARCH: 'SEMANTIC_SEARCH',  // 新增語意搜尋用途
+  CASE_DESCRIPTION_SEARCH: 'CASE_DESCRIPTION_SEARCH', // 🆕 案由搜尋用途
   AI_SUCCESS_ANALYSIS: 'ai_success_analysis',
   SUMMARIZE_COMMON_POINTS: 'summarize_common_points', // (圖板) AI歸納判例共同點
   CASE_PRECEDENT_ANALYSIS: 'case_precedent_analysis', // 案例判決傾向分析

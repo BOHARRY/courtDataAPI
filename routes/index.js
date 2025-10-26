@@ -23,6 +23,7 @@ import auditLogRoutes from './auditLogs.js'; // 🔥 新增引用判決查詢路
 import adminUsersRoutes from './adminUsers.js';
 import satisfactionSurveyRoutes from './satisfactionSurvey.js'; // 🎯 滿意度調查路由
 import systemStatusRoutes from './systemStatus.js'; // 🎯 系統狀況路由
+import caseDescriptionSearchRoutes from './case-description-search.js'; // 🆕 案由搜尋路由
 import { getCaseDetailController } from '../controllers/judgment-controller.js';
 import { verifyToken } from '../middleware/auth.js';
 
@@ -53,6 +54,7 @@ router.use('/audit-logs', auditLogRoutes);
 router.use('/admin/users', adminUsersRoutes);
 router.use('/admin', systemStatusRoutes); // 🎯 系統狀況路由
 router.use('/satisfaction-survey', satisfactionSurveyRoutes); // 🎯 滿意度調查路由
+router.use('/case-description-search', caseDescriptionSearchRoutes); // 🆕 案由搜尋路由
 
 // 案件詳情路由（用於律師表現浮動視窗）
 router.get('/case-detail/:id', verifyToken, getCaseDetailController);
