@@ -718,7 +718,15 @@ export async function performCaseDescriptionSearch(
         return {
             success: true,
             results: paginatedResults.map(candidate => formatResult(candidate, fullDataMap[candidate.JID])),
-            jidList: rankedResults.map(r => r.JID),  // 🆕 返回完整的 JID 列表（已排序）
+            candidateList: rankedResults.map(r => ({
+                JID: r.JID,
+                keyword_score: r.keyword_score,
+                semantic_score: r.semantic_score,
+                law_alignment_score: r.law_alignment_score,
+                perspective_similarity: r.perspective_similarity,
+                final_score: r.final_score,
+                sanity_check_reason: r.sanity_check_reason
+            })),  // 🆕 返回完整的候選列表（包含分數，已排序）
             total: rankedResults.length,
             totalPages: Math.ceil(rankedResults.length / pageSize),
             currentPage: page,
