@@ -431,7 +431,7 @@ C. 是否不是完全不同領域？（例如：一個是買賣一個是繼承�
                 console.log(`[Layer 4] 🚀 處理候選 ${index + 1}/${candidates.length}: ${candidate.JID}`);
 
                 const response = await openai.chat.completions.create({
-                    model: "gpt-4o-mini",
+                    model: "gpt-4.1-nano",  // 🆕 升級到 GPT-4.1-nano（更快更便宜）
                     messages: [{ role: "user", content: prompt }],
                     temperature: 0.1,
                     max_tokens: 100,
@@ -801,6 +801,9 @@ async function batchGetFullJudgmentData(jids) {
                 'legal_basis',
                 'case_type',
                 'verdict_type',
+
+                // 🆕 立場分析（原告/被告勝敗結果）
+                'position_based_analysis',  // ✅ 包含 plaintiff_perspective 和 defendant_perspective
 
                 // 其他前端可能需要的欄位
                 'tags',
