@@ -622,6 +622,14 @@ export async function performCaseDescriptionSearch(
  * 格式化結果供前端使用
  */
 function formatResult(candidate) {
+    // 處理 summary_ai_full 可能是陣列的情況
+    let summaryText = '';
+    if (Array.isArray(candidate.summary_ai_full)) {
+        summaryText = candidate.summary_ai_full[0] || '';
+    } else if (typeof candidate.summary_ai_full === 'string') {
+        summaryText = candidate.summary_ai_full;
+    }
+
     return {
         id: candidate.JID,
         title: candidate.JTITLE,
@@ -629,7 +637,7 @@ function formatResult(candidate) {
         date: candidate.JDATE,
         caseType: candidate.case_type,
         verdict: candidate.disposition?.class,
-        summary: candidate.summary_ai_full?.substring(0, 200) + '...',
+        summary: summaryText.substring(0, 200) + '...',
         keyStatutes: candidate.legal_basis || [],
         whyRelevant: candidate.sanity_check_reason || '案情相似',
         scores: {
