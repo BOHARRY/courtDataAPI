@@ -699,6 +699,16 @@ function formatResult(candidate, fullData) {
         summaryText = candidate.summary_ai_full;
     }
 
+    // 🆕 處理 summary_ai 陣列 -> 字串（前端期望字串格式）
+    let summaryAiString = '';
+    if (fullData?.summary_ai) {
+        if (Array.isArray(fullData.summary_ai)) {
+            summaryAiString = fullData.summary_ai[0] || '';
+        } else {
+            summaryAiString = fullData.summary_ai;
+        }
+    }
+
     // 合併候選資料（包含分數）+ 完整資料（包含所有前端需要的欄位）
     return {
         ...fullData,        // 展開完整資料（包括 summary_ai, main_reasons_ai, legal_issues, JFULL 等）
@@ -708,6 +718,7 @@ function formatResult(candidate, fullData) {
         id: candidate.JID,
         title: fullData?.JTITLE || candidate.JTITLE,
         summary: summaryText.substring(0, 200) + '...',  // 簡短摘要供列表顯示
+        summary_ai: summaryAiString,  // 🆕 轉換為字串格式
 
         // 案由搜索特有的額外資訊
         whyRelevant: candidate.sanity_check_reason || '案情相似',
