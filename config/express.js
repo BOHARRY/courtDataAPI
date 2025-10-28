@@ -54,7 +54,13 @@ app.use(cors({
     return callback(null, true);
   },
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'], // 🎯 Stage 3: 新增 PATCH 方法
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Restore-Mode'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'X-Restore-Mode',
+    'X-Client-Instance-Id',  // 🔥 P0修復：允許分頁實例 ID (新增)
+    'X-Client-Created-At'    // 🔥 P0修復：允許分頁創建時間 (新增)
+  ],
   credentials: true // 允許帶有憑證的請求
 }));
 // 解析 JSON body，並增加大小限制
