@@ -59,7 +59,8 @@ app.use(cors({
     'Authorization',
     'X-Restore-Mode',
     'X-Client-Instance-Id',  // 🔥 P0修復：允許分頁實例 ID (新增)
-    'X-Client-Created-At'    // 🔥 P0修復：允許分頁創建時間 (新增)
+    'X-Client-Created-At',   // 🔥 P0修復：允許分頁創建時間 (新增)
+    'X-Device-Id'            // 🔥 裝置管理：允許裝置 ID (新增)
   ],
   credentials: true // 允許帶有憑證的請求
 }));
