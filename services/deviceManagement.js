@@ -11,36 +11,38 @@ import { getLocationFromIP, formatLocation } from './ipGeolocation.js';
  * 記錄裝置登入
  * @param {string} userId - 用戶 ID
  * @param {object} deviceInfo - 裝置資訊
- * @param {string} deviceInfo.clientInstanceId - 客戶端實例 ID
+ * @param {string} deviceInfo.deviceId - 裝置 ID (瀏覽器級別,跨分頁共享)
+ * @param {string} deviceInfo.clientInstanceId - 客戶端實例 ID (分頁級別)
  * @param {string} deviceInfo.userAgent - User Agent 字串
  * @param {string} deviceInfo.ip - IP 地址
  * @returns {Promise<object>} 裝置記錄
  */
 export async function recordDeviceLogin(userId, deviceInfo) {
   try {
-    const { clientInstanceId, userAgent, ip } = deviceInfo;
-    
-    if (!clientInstanceId || !userAgent) {
+    const { deviceId, clientInstanceId, userAgent, ip } = deviceInfo;
+
+    if (!deviceId || !clientInstanceId || !userAgent) {
       throw new Error('Missing required device information');
     }
-    
-    console.log(`[Device Management] Recording device login for user: ${userId}`);
-    
+
+    console.log(`[Device Management] Recording device login for user: ${userId}, device: ${deviceId}`);
+
     // 解析 User Agent
     const parsedUA = parseUserAgent(userAgent);
-    
+
     // 獲取 IP 地理位置
     const location = await getLocationFromIP(ip);
-    
+
     // 生成裝置名稱
     const deviceName = generateDeviceName(parsedUA);
-    
+
     // 獲取裝置圖示
     const deviceIcon = getDeviceIcon(parsedUA);
-    
+
     // 準備裝置資料
     const deviceData = {
-      deviceId: clientInstanceId,
+      deviceId: deviceId,
+      clientInstanceId: clientInstanceId,
       deviceName: deviceName,
       deviceType: parsedUA.deviceType,
       os: parsedUA.os,
@@ -59,28 +61,33 @@ export async function recordDeviceLogin(userId, deviceInfo) {
       deviceIcon: deviceIcon,
       lastLoginAt: admin.firestore.FieldValue.serverTimestamp(),
       lastActiveAt: admin.firestore.FieldValue.serverTimestamp(),
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     };
-    
-    // 寫入 Firestore
+
+    // 寫入 Firestore - 使用 deviceId 作為文檔 ID
     const deviceRef = admin.firestore()
       .collection('users')
       .doc(userId)
       .collection('devices')
-      .doc(clientInstanceId);
-    
+      .doc(deviceId);
+
+    // 檢查是否為新裝置
+    const docSnapshot = await deviceRef.get();
+    if (!docSnapshot.exists) {
+      deviceData.createdAt = admin.firestore.FieldValue.serverTimestamp();
+    }
+
     // 使用 set with merge 來更新或創建
     await deviceRef.set(deviceData, { merge: true });
-    
-    console.log(`[Device Management] Device login recorded: ${deviceName} (${clientInstanceId})`);
-    
+
+    console.log(`[Device Management] Device login recorded: ${deviceName} (${deviceId})`);
+
     return {
       success: true,
-      deviceId: clientInstanceId,
+      deviceId: deviceId,
       deviceName: deviceName
     };
-    
+
   } catch (error) {
     console.error('[Device Management] Error recording device login:', error);
     throw error;

@@ -180,21 +180,22 @@ export async function getUserSubscriptionStatusController(req, res, next) {
 export async function recordDeviceLoginController(req, res, next) {
   try {
     const userId = req.user.uid;
-    const { clientInstanceId, userAgent } = req.body;
+    const { deviceId, clientInstanceId, userAgent } = req.body;
 
-    if (!clientInstanceId || !userAgent) {
+    if (!deviceId || !clientInstanceId || !userAgent) {
       return res.status(400).json({
         error: 'Bad Request',
-        message: 'clientInstanceId and userAgent are required'
+        message: 'deviceId, clientInstanceId and userAgent are required'
       });
     }
 
     // 獲取客戶端 IP
     const ip = getClientIP(req);
 
-    console.log(`[UserController] Recording device login for user ${userId}, device ${clientInstanceId}`);
+    console.log(`[UserController] Recording device login for user ${userId}, device ${deviceId}`);
 
     const result = await deviceManagementService.recordDeviceLogin(userId, {
+      deviceId,
       clientInstanceId,
       userAgent,
       ip
@@ -214,9 +215,9 @@ export async function recordDeviceLoginController(req, res, next) {
 export async function getUserDevicesController(req, res, next) {
   try {
     const userId = req.user.uid;
-    const currentDeviceId = req.headers['x-client-instance-id'] || null;
+    const currentDeviceId = req.headers['x-device-id'] || null;
 
-    console.log(`[UserController] Getting devices for user ${userId}`);
+    console.log(`[UserController] Getting devices for user ${userId}, current device: ${currentDeviceId}`);
 
     const devices = await deviceManagementService.getUserDevices(userId, currentDeviceId);
 
