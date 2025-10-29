@@ -8,7 +8,13 @@ import {
     cancelPendingDowngradeController,
     getUserSubscriptionStatusController,
     recordSignupBonusController,
-    claimOnboardingTasksRewardController // 🎁 新手任務獎勵
+    claimOnboardingTasksRewardController, // 🎁 新手任務獎勵
+    // 裝置管理相關
+    recordDeviceLoginController,
+    getUserDevicesController,
+    logoutDeviceController,
+    deleteDeviceController,
+    updateDeviceActivityController
 } from '../controllers/user-controller.js';
 import { verifyToken } from '../middleware/auth.js';
 
@@ -38,6 +44,23 @@ router.post('/signup-bonus', verifyToken, recordSignupBonusController);
 
 // 🎁 新增：領取新手任務完成獎勵 (POST /api/users/claim-onboarding-reward)
 router.post('/claim-onboarding-reward', verifyToken, claimOnboardingTasksRewardController);
+
+// ==================== 裝置管理相關路由 ====================
+
+// 記錄裝置登入 (POST /api/users/devices/record)
+router.post('/devices/record', verifyToken, recordDeviceLoginController);
+
+// 獲取用戶的所有裝置 (GET /api/users/devices)
+router.get('/devices', verifyToken, getUserDevicesController);
+
+// 遠端登出裝置 (POST /api/users/devices/:deviceId/logout)
+router.post('/devices/:deviceId/logout', verifyToken, logoutDeviceController);
+
+// 刪除裝置記錄 (DELETE /api/users/devices/:deviceId)
+router.delete('/devices/:deviceId', verifyToken, deleteDeviceController);
+
+// 更新裝置活動時間 (POST /api/users/devices/:deviceId/activity)
+router.post('/devices/:deviceId/activity', verifyToken, updateDeviceActivityController);
 
 // 未來可以添加其他用戶相關路由，例如獲取用戶資料、更新用戶資料等
 // router.get('/profile', verifyToken, getUserProfileController);

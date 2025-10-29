@@ -6,6 +6,8 @@ import {
   grantSignupBonus as grantSignupBonusService,
   grantOnboardingTasksCompletionReward as grantOnboardingRewardService // 🎁 新手任務獎勵
 } from '../services/credit.js';
+import * as deviceManagementService from '../services/deviceManagement.js';
+import { getClientIP } from '../services/ipGeolocation.js';
 
 
 // 這裡的 plans 是從 config/plansData.js 引入的，
@@ -160,11 +162,149 @@ export async function getUserSubscriptionStatusController(req, res, next) {
   try {
     const userId = req.user.uid;
     console.log(`[UserController] Getting subscription status for user ${userId}`);
-    
+
     const status = await userService.getUserSubscriptionStatus(userId);
     res.status(200).json(status);
   } catch (error) {
     console.error('[UserController] Error in getUserSubscriptionStatusController:', error);
     next(error); // 交給錯誤處理中間件
+  }
+}
+
+// ==================== 裝置管理相關 Controllers ====================
+
+/**
+ * 記錄裝置登入
+ * POST /api/users/devices/record
+ */
+export async function recordDeviceLoginController(req, res, next) {
+  try {
+    const userId = req.user.uid;
+    const { clientInstanceId, userAgent } = req.body;
+
+    if (!clientInstanceId || !userAgent) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'clientInstanceId and userAgent are required'
+      });
+    }
+
+    // 獲取客戶端 IP
+    const ip = getClientIP(req);
+
+    console.log(`[UserController] Recording device login for user ${userId}, device ${clientInstanceId}`);
+
+    const result = await deviceManagementService.recordDeviceLogin(userId, {
+      clientInstanceId,
+      userAgent,
+      ip
+    });
+
+    res.status(200).json(result);
+  } catch (error) {
+    console.error('[UserController] Error in recordDeviceLoginController:', error);
+    next(error);
+  }
+}
+
+/**
+ * 獲取用戶的所有裝置
+ * GET /api/users/devices
+ */
+export async function getUserDevicesController(req, res, next) {
+  try {
+    const userId = req.user.uid;
+    const currentDeviceId = req.headers['x-client-instance-id'] || null;
+
+    console.log(`[UserController] Getting devices for user ${userId}`);
+
+    const devices = await deviceManagementService.getUserDevices(userId, currentDeviceId);
+
+    res.status(200).json({
+      devices,
+      currentDeviceId
+    });
+  } catch (error) {
+    console.error('[UserController] Error in getUserDevicesController:', error);
+    next(error);
+  }
+}
+
+/**
+ * 遠端登出裝置
+ * POST /api/users/devices/:deviceId/logout
+ */
+export async function logoutDeviceController(req, res, next) {
+  try {
+    const userId = req.user.uid;
+    const { deviceId } = req.params;
+
+    if (!deviceId) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'deviceId is required'
+      });
+    }
+
+    console.log(`[UserController] Logging out device ${deviceId} for user ${userId}`);
+
+    const result = await deviceManagementService.logoutDevice(userId, deviceId);
+
+    res.status(200).json(result);
+  } catch (error) {
+    console.error('[UserController] Error in logoutDeviceController:', error);
+    next(error);
+  }
+}
+
+/**
+ * 刪除裝置記錄
+ * DELETE /api/users/devices/:deviceId
+ */
+export async function deleteDeviceController(req, res, next) {
+  try {
+    const userId = req.user.uid;
+    const { deviceId } = req.params;
+
+    if (!deviceId) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'deviceId is required'
+      });
+    }
+
+    console.log(`[UserController] Deleting device ${deviceId} for user ${userId}`);
+
+    const result = await deviceManagementService.deleteDevice(userId, deviceId);
+
+    res.status(200).json(result);
+  } catch (error) {
+    console.error('[UserController] Error in deleteDeviceController:', error);
+    next(error);
+  }
+}
+
+/**
+ * 更新裝置活動時間
+ * POST /api/users/devices/:deviceId/activity
+ */
+export async function updateDeviceActivityController(req, res, next) {
+  try {
+    const userId = req.user.uid;
+    const { deviceId } = req.params;
+
+    if (!deviceId) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'deviceId is required'
+      });
+    }
+
+    await deviceManagementService.updateDeviceActivity(userId, deviceId);
+
+    res.status(200).json({ success: true });
+  } catch (error) {
+    console.error('[UserController] Error in updateDeviceActivityController:', error);
+    next(error);
   }
 }
