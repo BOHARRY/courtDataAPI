@@ -170,13 +170,23 @@ export async function updateWorkspace(userId, workspaceId, updateData) {
     // 返回更新後的資料
     const updatedDoc = await workspaceRef.get();
     const data = updatedDoc.data();
+
+    // 🔧 安全地轉換 Firestore Timestamp 為毫秒數
+    const toMillis = (timestamp) => {
+      if (!timestamp) return null;
+      if (typeof timestamp === 'number') return timestamp;
+      if (typeof timestamp.toMillis === 'function') return timestamp.toMillis();
+      if (timestamp._seconds) return timestamp._seconds * 1000;
+      if (timestamp.seconds) return timestamp.seconds * 1000;
+      return null;
+    };
+
     return {
       id: workspaceId,
       ...data,
-      // 🔧 修復：將 Firestore Timestamp 轉換為毫秒數
-      createdAt: data.createdAt?.toMillis?.() || null,
+      createdAt: toMillis(data.createdAt),
       updatedAt: Date.now(), // 剛剛更新，使用當前時間
-      lastAccessedAt: data.lastAccessedAt?.toMillis?.() || null
+      lastAccessedAt: toMillis(data.lastAccessedAt)
     };
   } catch (error) {
     console.error('[WorkspaceService] Error updating workspace:', error);
@@ -216,13 +226,23 @@ export async function getUserWorkspaces(userId, options = {}) {
 
     snapshot.forEach(doc => {
       const data = doc.data();
+
+      // 🔧 安全地轉換 Firestore Timestamp 為毫秒數
+      const toMillis = (timestamp) => {
+        if (!timestamp) return null;
+        if (typeof timestamp === 'number') return timestamp; // 已經是毫秒數
+        if (typeof timestamp.toMillis === 'function') return timestamp.toMillis();
+        if (timestamp._seconds) return timestamp._seconds * 1000; // Firestore Timestamp 對象
+        if (timestamp.seconds) return timestamp.seconds * 1000; // 序列化後的格式
+        return null;
+      };
+
       workspaces.push({
         id: doc.id,
         ...data,
-        // 🔧 修復：將 Firestore Timestamp 轉換為毫秒數（前端可直接使用）
-        createdAt: data.createdAt?.toMillis?.() || null,
-        updatedAt: data.updatedAt?.toMillis?.() || null,
-        lastAccessedAt: data.lastAccessedAt?.toMillis?.() || null
+        createdAt: toMillis(data.createdAt),
+        updatedAt: toMillis(data.updatedAt),
+        lastAccessedAt: toMillis(data.lastAccessedAt)
       });
     });
 
@@ -253,12 +273,22 @@ export async function getWorkspaceById(userId, workspaceId) {
     });
 
     const data = doc.data();
+
+    // 🔧 安全地轉換 Firestore Timestamp 為毫秒數
+    const toMillis = (timestamp) => {
+      if (!timestamp) return null;
+      if (typeof timestamp === 'number') return timestamp;
+      if (typeof timestamp.toMillis === 'function') return timestamp.toMillis();
+      if (timestamp._seconds) return timestamp._seconds * 1000;
+      if (timestamp.seconds) return timestamp.seconds * 1000;
+      return null;
+    };
+
     return {
       id: doc.id,
       ...data,
-      // 🔧 修復：將 Firestore Timestamp 轉換為毫秒數
-      createdAt: data.createdAt?.toMillis?.() || null,
-      updatedAt: data.updatedAt?.toMillis?.() || null,
+      createdAt: toMillis(data.createdAt),
+      updatedAt: toMillis(data.updatedAt),
       lastAccessedAt: Date.now() // 剛剛更新，使用當前時間
     };
   } catch (error) {
