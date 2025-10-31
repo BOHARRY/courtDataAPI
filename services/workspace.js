@@ -120,9 +120,14 @@ export async function createWorkspace(userId, workspaceData) {
         throw new Error('Failed to verify workspace creation after multiple attempts.');
     }
 
+    const data = newDoc.data();
     return {
-      ...newDoc.data(),
-      id: workspaceRef.id
+      ...data,
+      id: workspaceRef.id,
+      // 🔧 修復：將 Firestore Timestamp 轉換為毫秒數
+      createdAt: Date.now(), // 剛剛創建，使用當前時間
+      updatedAt: Date.now(),
+      lastAccessedAt: Date.now()
     };
   } catch (error) {
     console.error('[WorkspaceService] Error creating workspace:', error);
@@ -164,9 +169,14 @@ export async function updateWorkspace(userId, workspaceId, updateData) {
 
     // 返回更新後的資料
     const updatedDoc = await workspaceRef.get();
+    const data = updatedDoc.data();
     return {
       id: workspaceId,
-      ...updatedDoc.data()
+      ...data,
+      // 🔧 修復：將 Firestore Timestamp 轉換為毫秒數
+      createdAt: data.createdAt?.toMillis?.() || null,
+      updatedAt: Date.now(), // 剛剛更新，使用當前時間
+      lastAccessedAt: data.lastAccessedAt?.toMillis?.() || null
     };
   } catch (error) {
     console.error('[WorkspaceService] Error updating workspace:', error);
@@ -182,31 +192,42 @@ export async function getUserWorkspaces(userId, options = {}) {
     const { limit = 20, orderBy = 'lastAccessedAt' } = options;
     
     let query = db.collection('users').doc(userId).collection('workspaces');
-    
-    // 排序
+
+    // 排序（🔧 修復：添加次要排序鍵以確保穩定排序）
     if (orderBy === 'lastAccessedAt') {
-      query = query.orderBy('lastAccessedAt', 'desc');
+      query = query
+        .orderBy('lastAccessedAt', 'desc')
+        .orderBy('createdAt', 'desc'); // 次要排序：創建時間
     } else if (orderBy === 'createdAt') {
-      query = query.orderBy('createdAt', 'desc');
+      query = query
+        .orderBy('createdAt', 'desc')
+        .orderBy('name', 'asc'); // 次要排序：名稱
     } else if (orderBy === 'name') {
-      query = query.orderBy('name', 'asc');
+      query = query
+        .orderBy('name', 'asc')
+        .orderBy('createdAt', 'desc'); // 次要排序：創建時間
     }
-    
+
     // 限制數量
     query = query.limit(limit);
     
     const snapshot = await query.get();
     const workspaces = [];
-    
+
     snapshot.forEach(doc => {
+      const data = doc.data();
       workspaces.push({
         id: doc.id,
-        ...doc.data()
+        ...data,
+        // 🔧 修復：將 Firestore Timestamp 轉換為毫秒數（前端可直接使用）
+        createdAt: data.createdAt?.toMillis?.() || null,
+        updatedAt: data.updatedAt?.toMillis?.() || null,
+        lastAccessedAt: data.lastAccessedAt?.toMillis?.() || null
       });
     });
-    
+
     console.log(`[WorkspaceService] Retrieved ${workspaces.length} workspaces for user ${userId}`);
-    
+
     return workspaces;
   } catch (error) {
     console.error('[WorkspaceService] Error getting user workspaces:', error);
@@ -230,10 +251,15 @@ export async function getWorkspaceById(userId, workspaceId) {
     await workspaceRef.update({
       lastAccessedAt: admin.firestore.FieldValue.serverTimestamp()
     });
-    
+
+    const data = doc.data();
     return {
       id: doc.id,
-      ...doc.data()
+      ...data,
+      // 🔧 修復：將 Firestore Timestamp 轉換為毫秒數
+      createdAt: data.createdAt?.toMillis?.() || null,
+      updatedAt: data.updatedAt?.toMillis?.() || null,
+      lastAccessedAt: Date.now() // 剛剛更新，使用當前時間
     };
   } catch (error) {
     console.error('[WorkspaceService] Error getting workspace:', error);
