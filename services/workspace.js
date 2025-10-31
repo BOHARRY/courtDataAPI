@@ -173,12 +173,17 @@ export async function updateWorkspace(userId, workspaceId, updateData) {
 
     // 🔧 安全地轉換 Firestore Timestamp 為毫秒數
     const toMillis = (timestamp) => {
-      if (!timestamp) return null;
-      if (typeof timestamp === 'number') return timestamp;
-      if (typeof timestamp.toMillis === 'function') return timestamp.toMillis();
-      if (timestamp._seconds) return timestamp._seconds * 1000;
-      if (timestamp.seconds) return timestamp.seconds * 1000;
-      return null;
+      try {
+        if (!timestamp) return null;
+        if (typeof timestamp === 'number') return timestamp;
+        if (typeof timestamp.toMillis === 'function') return timestamp.toMillis();
+        if (timestamp._seconds) return timestamp._seconds * 1000;
+        if (timestamp.seconds) return timestamp.seconds * 1000;
+        return null;
+      } catch (error) {
+        console.error('[WorkspaceService] toMillis 轉換錯誤:', error, timestamp);
+        return null;
+      }
     };
 
     return {
@@ -203,19 +208,13 @@ export async function getUserWorkspaces(userId, options = {}) {
     
     let query = db.collection('users').doc(userId).collection('workspaces');
 
-    // 排序（🔧 修復：添加次要排序鍵以確保穩定排序）
+    // 排序
     if (orderBy === 'lastAccessedAt') {
-      query = query
-        .orderBy('lastAccessedAt', 'desc')
-        .orderBy('createdAt', 'desc'); // 次要排序：創建時間
+      query = query.orderBy('lastAccessedAt', 'desc');
     } else if (orderBy === 'createdAt') {
-      query = query
-        .orderBy('createdAt', 'desc')
-        .orderBy('name', 'asc'); // 次要排序：名稱
+      query = query.orderBy('createdAt', 'desc');
     } else if (orderBy === 'name') {
-      query = query
-        .orderBy('name', 'asc')
-        .orderBy('createdAt', 'desc'); // 次要排序：創建時間
+      query = query.orderBy('name', 'asc');
     }
 
     // 限制數量
@@ -229,12 +228,17 @@ export async function getUserWorkspaces(userId, options = {}) {
 
       // 🔧 安全地轉換 Firestore Timestamp 為毫秒數
       const toMillis = (timestamp) => {
-        if (!timestamp) return null;
-        if (typeof timestamp === 'number') return timestamp; // 已經是毫秒數
-        if (typeof timestamp.toMillis === 'function') return timestamp.toMillis();
-        if (timestamp._seconds) return timestamp._seconds * 1000; // Firestore Timestamp 對象
-        if (timestamp.seconds) return timestamp.seconds * 1000; // 序列化後的格式
-        return null;
+        try {
+          if (!timestamp) return null;
+          if (typeof timestamp === 'number') return timestamp; // 已經是毫秒數
+          if (typeof timestamp.toMillis === 'function') return timestamp.toMillis();
+          if (timestamp._seconds) return timestamp._seconds * 1000; // Firestore Timestamp 對象
+          if (timestamp.seconds) return timestamp.seconds * 1000; // 序列化後的格式
+          return null;
+        } catch (error) {
+          console.error('[WorkspaceService] toMillis 轉換錯誤:', error, timestamp);
+          return null;
+        }
       };
 
       workspaces.push({
@@ -276,12 +280,17 @@ export async function getWorkspaceById(userId, workspaceId) {
 
     // 🔧 安全地轉換 Firestore Timestamp 為毫秒數
     const toMillis = (timestamp) => {
-      if (!timestamp) return null;
-      if (typeof timestamp === 'number') return timestamp;
-      if (typeof timestamp.toMillis === 'function') return timestamp.toMillis();
-      if (timestamp._seconds) return timestamp._seconds * 1000;
-      if (timestamp.seconds) return timestamp.seconds * 1000;
-      return null;
+      try {
+        if (!timestamp) return null;
+        if (typeof timestamp === 'number') return timestamp;
+        if (typeof timestamp.toMillis === 'function') return timestamp.toMillis();
+        if (timestamp._seconds) return timestamp._seconds * 1000;
+        if (timestamp.seconds) return timestamp.seconds * 1000;
+        return null;
+      } catch (error) {
+        console.error('[WorkspaceService] toMillis 轉換錯誤:', error, timestamp);
+        return null;
+      }
     };
 
     return {
