@@ -75,10 +75,11 @@ export async function createWorkspace(userId, workspaceData) {
       id: workspaceRef.id,
       name: newWorkspaceName,
       description: hasTemplate ? workspaceData.template.description || '' : workspaceData.description || '',
+      color: hasTemplate ? workspaceData.template.color || '#5a8f5a' : workspaceData.color || '#5a8f5a', // 🆕 預設綠色
       createdAt: now,
       updatedAt: now,
       lastAccessedAt: now, // 創建即訪問
-      
+
       // 使用範本資料或預設值
       searchState: hasTemplate ? workspaceData.template.searchState || null : null,
       tabs: hasTemplate ? workspaceData.template.tabs || [INITIAL_TABS[0]] : [{
@@ -88,7 +89,7 @@ export async function createWorkspace(userId, workspaceData) {
         order: 0
       }],
       activeTabId: hasTemplate ? workspaceData.template.activeTabId || 'SEARCH_LIST' : 'SEARCH_LIST',
-      
+
       // 統計資訊總是從零開始
       stats: {
         totalSearches: 0,
@@ -145,6 +146,7 @@ export async function updateWorkspace(userId, workspaceId, updateData) {
     // 選擇性更新欄位
     if (updateData.name !== undefined) updates.name = updateData.name;
     if (updateData.description !== undefined) updates.description = updateData.description;
+    if (updateData.color !== undefined) updates.color = updateData.color; // 🆕 支援顏色更新
     if (updateData.searchState !== undefined) updates.searchState = updateData.searchState; // 🔧 保持向後相容（舊版單一模式）
     if (updateData.searchStates !== undefined) updates.searchStates = updateData.searchStates; // 🆕 新增三模式結構支援
     if (updateData.tabs !== undefined) updates.tabs = updateData.tabs;
