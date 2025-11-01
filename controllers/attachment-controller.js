@@ -127,7 +127,16 @@ async function saveAttachmentToFirestore(judgmentId, attachmentTitle, parsedData
 
     if (doc.exists) {
       const data = doc.data();
-      existingAttachments = data.attachments || {};
+      const rawAttachments = data.attachments || {};
+
+      // 🔍 調試：檢查現有附表
+      console.log(`[Firestore] 現有附表數量: ${Object.keys(rawAttachments).length}`);
+      console.log(`[Firestore] 現有附表列表: ${Object.keys(rawAttachments).join(', ')}`);
+
+      // ⚠️ 關鍵修復：將現有附表序列化再反序列化，清除 Timestamp 等特殊對象
+      existingAttachments = JSON.parse(JSON.stringify(rawAttachments));
+
+      console.log(`[Firestore] 清理後附表數量: ${Object.keys(existingAttachments).length}`);
     }
 
     // 2. 清理並序列化 parsedData，確保所有數據都是 Firestore 兼容的
