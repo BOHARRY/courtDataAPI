@@ -103,24 +103,35 @@ async function getAttachmentFromFirestore(judgmentId, attachmentTitle) {
 
 /**
  * 保存附表數據到 Firestore
+ * 方案 1：先讀取現有數據，更新特定附表，再整個寫回
  */
 async function saveAttachmentToFirestore(judgmentId, attachmentTitle, parsedData) {
   try {
     const docRef = admin.firestore().collection('judgmentAttachments').doc(judgmentId);
 
-    // 🔧 修正：使用正確的嵌套對象結構，而不是點號路徑
+    // 1. 讀取現有文檔
+    const doc = await docRef.get();
+    let existingAttachments = {};
+
+    if (doc.exists) {
+      const data = doc.data();
+      existingAttachments = data.attachments || {};
+    }
+
+    // 2. 更新特定附表
+    existingAttachments[attachmentTitle] = {
+      ...parsedData,
+      parsedAt: admin.firestore.FieldValue.serverTimestamp(),
+      parsedBy: 'gpt-4o-mini',
+      version: '1.0'
+    };
+
+    // 3. 整個寫回（不使用 merge）
     await docRef.set({
       judgmentId,
-      attachments: {
-        [attachmentTitle]: {
-          ...parsedData,
-          parsedAt: admin.firestore.FieldValue.serverTimestamp(),
-          parsedBy: 'gpt-4o-mini',
-          version: '1.0'
-        }
-      },
+      attachments: existingAttachments,
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
-    }, { merge: true });
+    });
 
     console.log(`[Firestore] 保存附表成功: ${judgmentId} - ${attachmentTitle}`);
   } catch (error) {
