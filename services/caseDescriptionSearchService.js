@@ -856,6 +856,7 @@ async function batchGetFullJudgmentData(jids) {
             _source: [
                 // 基本資訊
                 'JID', 'court', 'JDATE', 'JTITLE',
+                'JYEAR', 'JCASE', 'JNO',  // 🆕 JID 格式化所需欄位
 
                 // 摘要和理由
                 'summary_ai',           // AI 摘要（陣列）
