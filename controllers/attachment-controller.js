@@ -109,6 +109,18 @@ async function saveAttachmentToFirestore(judgmentId, attachmentTitle, parsedData
   try {
     const docRef = admin.firestore().collection('judgmentAttachments').doc(judgmentId);
 
+    // 🔍 調試：打印 parsedData 的詳細信息
+    console.log(`[Firestore] 準備保存附表: ${attachmentTitle}`);
+    console.log(`[Firestore] parsedData 類型:`, typeof parsedData);
+    console.log(`[Firestore] parsedData 鍵:`, Object.keys(parsedData));
+    console.log(`[Firestore] parsedData.rows 類型:`, typeof parsedData.rows);
+    console.log(`[Firestore] parsedData.rows 是否為數組:`, Array.isArray(parsedData.rows));
+    if (parsedData.rows && parsedData.rows.length > 0) {
+      console.log(`[Firestore] parsedData.rows[0] 類型:`, typeof parsedData.rows[0]);
+      console.log(`[Firestore] parsedData.rows[0] 是否為數組:`, Array.isArray(parsedData.rows[0]));
+      console.log(`[Firestore] parsedData.rows[0] 內容:`, JSON.stringify(parsedData.rows[0]));
+    }
+
     // 1. 讀取現有文檔
     const doc = await docRef.get();
     let existingAttachments = {};
@@ -118,15 +130,19 @@ async function saveAttachmentToFirestore(judgmentId, attachmentTitle, parsedData
       existingAttachments = data.attachments || {};
     }
 
-    // 2. 更新特定附表
+    // 2. 清理並序列化 parsedData，確保所有數據都是 Firestore 兼容的
+    // 先序列化 parsedData（不包含 FieldValue）
+    const cleanedParsedData = JSON.parse(JSON.stringify(parsedData));
+
+    // 3. 更新特定附表（添加 FieldValue）
     existingAttachments[attachmentTitle] = {
-      ...parsedData,
+      ...cleanedParsedData,
       parsedAt: admin.firestore.FieldValue.serverTimestamp(),
       parsedBy: 'gpt-4o-mini',
       version: '1.0'
     };
 
-    // 3. 整個寫回（不使用 merge）
+    // 4. 整個寫回（不使用 merge）
     await docRef.set({
       judgmentId,
       attachments: existingAttachments,
@@ -183,13 +199,27 @@ ${attachmentText}
     });
 
     const result = JSON.parse(response.choices[0].message.content);
-    
+
+    // 🔍 調試：檢查 OpenAI 返回的數據類型
+    console.log(`[OpenAI] 原始結果類型:`, typeof result);
+    console.log(`[OpenAI] 原始結果鍵:`, Object.keys(result));
+
     // 添加原始文字
     result.rawText = attachmentText;
-    
+
     console.log(`[OpenAI] 解析結果: 表頭 ${result.headers?.length || 0} 個, 資料 ${result.rows?.length || 0} 行`);
-    
-    return result;
+
+    // 🔧 確保返回的是純 JavaScript 對象，沒有任何特殊原型
+    const cleanResult = {
+      title: result.title || attachmentTitle,
+      headers: Array.isArray(result.headers) ? [...result.headers] : [],
+      rows: Array.isArray(result.rows) ? result.rows.map(row => Array.isArray(row) ? [...row] : []) : [],
+      rawText: attachmentText
+    };
+
+    console.log(`[OpenAI] 清理後結果: 表頭 ${cleanResult.headers.length} 個, 資料 ${cleanResult.rows.length} 行`);
+
+    return cleanResult;
   } catch (error) {
     console.error('[OpenAI] 解析失敗:', error);
     throw new Error(`AI 解析失敗: ${error.message}`);
