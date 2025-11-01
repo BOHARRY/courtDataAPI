@@ -134,15 +134,17 @@ async function saveAttachmentToFirestore(judgmentId, attachmentTitle, parsedData
     // 先序列化 parsedData（不包含 FieldValue）
     const cleanedParsedData = JSON.parse(JSON.stringify(parsedData));
 
-    // 3. 更新特定附表（添加 FieldValue）
+    // 3. 更新特定附表（不使用 FieldValue.serverTimestamp()）
+    // ⚠️ 關鍵修復：在嵌套對象中使用 Date 而不是 FieldValue.serverTimestamp()
     existingAttachments[attachmentTitle] = {
       ...cleanedParsedData,
-      parsedAt: admin.firestore.FieldValue.serverTimestamp(),
+      parsedAt: new Date(),  // 使用 Date 而不是 FieldValue
       parsedBy: 'gpt-4o-mini',
       version: '1.0'
     };
 
     // 4. 整個寫回（不使用 merge）
+    // ⚠️ 只在根層級使用 FieldValue.serverTimestamp()
     await docRef.set({
       judgmentId,
       attachments: existingAttachments,
