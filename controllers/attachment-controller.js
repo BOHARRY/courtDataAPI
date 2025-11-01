@@ -131,19 +131,29 @@ async function saveAttachmentToFirestore(judgmentId, attachmentTitle, parsedData
     }
 
     // 2. 清理並序列化 parsedData，確保所有數據都是 Firestore 兼容的
-    // 先序列化 parsedData（不包含 FieldValue）
     const cleanedParsedData = JSON.parse(JSON.stringify(parsedData));
 
-    // 3. 更新特定附表（不使用 FieldValue.serverTimestamp()）
-    // ⚠️ 關鍵修復：在嵌套對象中使用 Timestamp.fromDate() 而不是 FieldValue.serverTimestamp()
+    // 3. 將 rows 序列化成字串（Firestore 不支持直接嵌套的陣列）
+    // ⚠️ 關鍵修復：Firestore 不支持 array of array，必須序列化成字串
+    const rowsString = Array.isArray(cleanedParsedData.rows)
+      ? JSON.stringify(cleanedParsedData.rows)
+      : '[]';
+
+    console.log(`[Firestore] rows 序列化前長度: ${cleanedParsedData.rows?.length || 0}`);
+    console.log(`[Firestore] rows 序列化後長度: ${rowsString.length} 字元`);
+
+    // 4. 更新特定附表
     existingAttachments[attachmentTitle] = {
-      ...cleanedParsedData,
-      parsedAt: admin.firestore.Timestamp.fromDate(new Date()),  // 使用 Timestamp.fromDate()
+      title: cleanedParsedData.title || attachmentTitle,
+      headers: cleanedParsedData.headers || [],
+      rows: rowsString,  // ✅ 存成字串
+      rawText: cleanedParsedData.rawText || '',
+      parsedAt: admin.firestore.Timestamp.fromDate(new Date()),
       parsedBy: 'gpt-4o-mini',
       version: '1.0'
     };
 
-    // 4. 整個寫回（不使用 merge）
+    // 5. 整個寫回（不使用 merge）
     // ⚠️ 只在根層級使用 FieldValue.serverTimestamp()
     await docRef.set({
       judgmentId,
