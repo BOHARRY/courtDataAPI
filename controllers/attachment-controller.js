@@ -107,19 +107,21 @@ async function getAttachmentFromFirestore(judgmentId, attachmentTitle) {
 async function saveAttachmentToFirestore(judgmentId, attachmentTitle, parsedData) {
   try {
     const docRef = admin.firestore().collection('judgmentAttachments').doc(judgmentId);
-    
-    // 使用 merge 模式，避免覆蓋其他附表
+
+    // 🔧 修正：使用正確的嵌套對象結構，而不是點號路徑
     await docRef.set({
       judgmentId,
-      [`attachments.${attachmentTitle}`]: {
-        ...parsedData,
-        parsedAt: admin.firestore.FieldValue.serverTimestamp(),
-        parsedBy: 'gpt-4o-mini',
-        version: '1.0'
+      attachments: {
+        [attachmentTitle]: {
+          ...parsedData,
+          parsedAt: admin.firestore.FieldValue.serverTimestamp(),
+          parsedBy: 'gpt-4o-mini',
+          version: '1.0'
+        }
       },
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     }, { merge: true });
-    
+
     console.log(`[Firestore] 保存附表成功: ${judgmentId} - ${attachmentTitle}`);
   } catch (error) {
     console.error('[Firestore] 保存附表失敗:', error);
