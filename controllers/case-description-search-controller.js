@@ -49,12 +49,14 @@ export async function performCaseDescriptionSearchController(req, res, next) {
         }
 
         // 執行案由搜尋
+        const userId = req.user?.uid;
         const results = await caseDescriptionSearchService.performCaseDescriptionSearch(
             description,
             caseType,
             perspective,
             parseInt(page, 10),
-            parseInt(pageSize, 10)
+            parseInt(pageSize, 10),
+            userId
         );
 
         // 加入積分扣除資訊

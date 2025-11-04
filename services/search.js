@@ -3,6 +3,7 @@ import esClient from '../config/elasticsearch.js';
 import { buildEsQuery } from '../utils/query-builder.js';
 import { formatEsResponse } from '../utils/response-formatter.js';
 import { getStructuredCourtList } from './courtNormalizer.js';
+import logger from '../utils/logger.js';
 
 const ES_INDEX_NAME = 'search-boooook';
 
@@ -15,7 +16,25 @@ const ES_INDEX_NAME = 'search-boooook';
  * @param {number} pageSize - 每頁結果數量。
  * @returns {Promise<object>} 格式化後的搜尋結果。
  */
-export async function performSearch(searchFilters, page, pageSize) {
+export async function performSearch(searchFilters, page, pageSize, userId = null) {
+  const startTime = Date.now();
+
+  // 記錄搜尋開始
+  logger.info('開始執行判決書關鍵字搜尋', {
+    userId,
+    operation: 'judgment_keyword_search',
+    filters: {
+      keyword: searchFilters.keyword || '無',
+      caseTypes: searchFilters.caseTypes || '全部',
+      court: searchFilters.court || '全部',
+      verdict: searchFilters.verdict || '全部',
+      dateRange: searchFilters.startDate && searchFilters.endDate ?
+        `${searchFilters.startDate} ~ ${searchFilters.endDate}` : '不限'
+    },
+    page,
+    pageSize
+  });
+
   // 🆕 buildEsQuery 現在是異步的（支持 AI 案號解析）
   const esQueryBody = await buildEsQuery(searchFilters);
   const from = (page - 1) * pageSize;
@@ -90,14 +109,48 @@ export async function performSearch(searchFilters, page, pageSize) {
       ]
     });
 
+    const duration = Date.now() - startTime;
+    const resultCount = esResult.hits.total.value;
+
+    // 記錄搜尋成功
+    logger.business('判決書關鍵字搜尋完成', {
+      userId,
+      operation: 'judgment_keyword_search',
+      keyword: searchFilters.keyword || '無',
+      resultCount,
+      duration,
+      page,
+      pageSize,
+      hasResults: resultCount > 0
+    });
+
+    // 性能監控
+    if (duration > 3000) {
+      logger.performance('判決書搜尋響應較慢', {
+        userId,
+        operation: 'judgment_keyword_search',
+        duration,
+        resultCount,
+        threshold: 3000
+      });
+    }
+
     return formatEsResponse(esResult, pageSize);
   } catch (error) {
-    if (error.meta && error.meta.body && error.meta.body.error) {
-      console.error('[Search Service] Elasticsearch Error Body:', JSON.stringify(error.meta.body.error, null, 2));
-    } else {
-      console.error('[Search Service] Error during Elasticsearch search (meta or body missing):', error);
-    }
-    const serviceError = new Error('Failed to perform search due to a database error.');
+    const duration = Date.now() - startTime;
+
+    // 記錄詳細錯誤
+    logger.error('判決書關鍵字搜尋失敗', {
+      userId,
+      operation: 'judgment_keyword_search',
+      filters: searchFilters,
+      duration,
+      error: error.message,
+      stack: error.stack,
+      esError: error.meta?.body?.error || null
+    });
+
+    const serviceError = new Error('搜尋服務暫時無法使用，請稍後再試');
     serviceError.statusCode = error.statusCode || 500;
     serviceError.esErrorDetails = error.meta ? (error.meta.body ? error.meta.body.error : error.meta) : error.message;
     throw serviceError;

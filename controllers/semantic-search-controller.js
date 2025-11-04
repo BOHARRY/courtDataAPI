@@ -32,12 +32,14 @@ export async function performSemanticSearchController(req, res, next) {
         }
 
         // 執行語意搜尋
+        const userId = req.user?.uid;
         const results = await semanticSearchService.performSemanticSearch(
             query,
             caseType,
             filters,
             parseInt(page, 10),
-            parseInt(pageSize, 10)
+            parseInt(pageSize, 10),
+            userId
         );
 
         // 加入積分資訊（從中間件傳遞過來）

@@ -15,6 +15,7 @@ import { OPENAI_API_KEY, OPENAI_MODEL_NAME_EMBEDDING } from '../config/environme
 import admin from 'firebase-admin';
 import pLimit from 'p-limit';
 import crypto from 'crypto';
+import logger from '../utils/logger.js';
 
 const openai = new OpenAI({
     apiKey: OPENAI_API_KEY,
@@ -32,9 +33,16 @@ const CACHE_COLLECTION = 'caseDescriptionSearchCache';
  * @returns {Promise<Object>} 正規化結果
  * @throws {Error} 如果輸入與法律案由無關
  */
-async function normalizeAndExtractTerms(userCaseDescription, lawDomain) {
+async function normalizeAndExtractTerms(userCaseDescription, lawDomain, userId = null) {
+    const startTime = Date.now();
+
     try {
-        console.log(`[CaseDescriptionSearch] Layer 0: 正規化案情描述...`);
+        logger.debug('開始正規化案情描述', {
+            userId,
+            operation: 'case_description_normalization',
+            descriptionLength: userCaseDescription.length,
+            lawDomain
+        });
 
         const prompt = `你是台灣法律專家。請先判斷使用者輸入是否與法律案由相關，然後進行處理。
 
@@ -76,20 +84,56 @@ ${userCaseDescription}
         });
 
         const result = JSON.parse(response.choices[0].message.content);
-        console.log(`[CaseDescriptionSearch] Layer 0 完成:`, result);
+        const duration = Date.now() - startTime;
 
         // 🆕 檢查案由相關性
         if (result.is_legal_case === false) {
             const reason = result.rejection_reason || '您的輸入似乎與法律案由無關';
-            console.log(`[CaseDescriptionSearch] Layer 0 拒絕: ${reason}`);
+
+            logger.business('案情描述被拒絕（非法律案由）', {
+                userId,
+                operation: 'case_description_normalization',
+                descriptionLength: userCaseDescription.length,
+                rejectionReason: reason,
+                duration
+            });
+
             throw new Error(`INVALID_CASE_DESCRIPTION: ${reason}`);
         }
+
+        logger.info('案情描述正規化完成', {
+            userId,
+            operation: 'case_description_normalization',
+            normalizedSummary: result.normalized_summary,
+            termGroupsCount: {
+                parties: result.parties_terms?.length || 0,
+                technical: result.technical_terms?.length || 0,
+                legalAction: result.legal_action_terms?.length || 0,
+                statute: result.statute_terms?.length || 0
+            },
+            duration
+        });
 
         return result;
 
     } catch (error) {
-        console.error('[CaseDescriptionSearch] Layer 0 失敗:', error);
-        // 🆕 保留原始錯誤訊息（包含 INVALID_CASE_DESCRIPTION 前綴）
+        const duration = Date.now() - startTime;
+
+        // 如果是 INVALID_CASE_DESCRIPTION，直接拋出
+        if (error.message.startsWith('INVALID_CASE_DESCRIPTION')) {
+            throw error;
+        }
+
+        logger.error('案情描述正規化失敗', {
+            userId,
+            operation: 'case_description_normalization',
+            descriptionLength: userCaseDescription.length,
+            lawDomain,
+            duration,
+            error: error.message,
+            stack: error.stack
+        });
+
         throw error;
     }
 }
@@ -726,15 +770,22 @@ export async function performCaseDescriptionSearch(
     lawDomain,
     partySide,
     page = 1,
-    pageSize = 10
+    pageSize = 10,
+    userId = null
 ) {
     const startTime = Date.now();
 
+    logger.info('開始執行案由搜尋', {
+        userId,
+        operation: 'case_description_search',
+        descriptionLength: userCaseDescription.length,
+        lawDomain,
+        partySide,
+        page,
+        pageSize
+    });
+
     try {
-        console.log(`[CaseDescriptionSearch] 開始搜尋...`);
-        console.log(`案情長度: ${userCaseDescription.length} 字`);
-        console.log(`案件類型: ${lawDomain}`);
-        console.log(`立場: ${partySide}`);
 
         // 🆕 檢查快取（使用原始輸入）
         const cacheKey = generateCacheKey(lawDomain, userCaseDescription);
@@ -746,15 +797,28 @@ export async function performCaseDescriptionSearch(
         let termGroups;
 
         if (cachedResults) {
+            logger.info('案由搜尋快取命中', {
+                userId,
+                operation: 'case_description_search',
+                cacheKey,
+                cachedResultCount: cachedResults.length
+            });
+
             // 快取命中，仍需生成向量用於立場排序
-            layer0Result = await normalizeAndExtractTerms(userCaseDescription, lawDomain);
+            layer0Result = await normalizeAndExtractTerms(userCaseDescription, lawDomain, userId);
             normalized_summary = layer0Result.normalized_summary;
             termGroups = layer0Result;
             delete termGroups.normalized_summary;
             queryVector = await getEmbedding(normalized_summary);
         } else {
+            logger.info('案由搜尋快取未命中，執行完整檢索管線', {
+                userId,
+                operation: 'case_description_search',
+                cacheKey
+            });
+
             // 快取未命中，執行完整流程
-            layer0Result = await normalizeAndExtractTerms(userCaseDescription, lawDomain);
+            layer0Result = await normalizeAndExtractTerms(userCaseDescription, lawDomain, userId);
             normalized_summary = layer0Result.normalized_summary;
             termGroups = layer0Result;
             delete termGroups.normalized_summary;
@@ -811,7 +875,32 @@ export async function performCaseDescriptionSearch(
         const fullDataMap = await batchGetFullJudgmentData(jidsToFetch);
 
         const elapsedTime = Date.now() - startTime;
-        console.log(`[CaseDescriptionSearch] 搜尋完成，耗時 ${elapsedTime}ms`);
+
+        // 記錄成功
+        logger.business('案由搜尋完成', {
+            userId,
+            operation: 'case_description_search',
+            descriptionLength: userCaseDescription.length,
+            lawDomain,
+            partySide,
+            resultCount: rankedResults.length,
+            cached: !!cachedResults,
+            duration: elapsedTime,
+            page,
+            pageSize
+        });
+
+        // 性能監控
+        if (elapsedTime > 8000) {
+            logger.performance('案由搜尋響應較慢', {
+                userId,
+                operation: 'case_description_search',
+                duration: elapsedTime,
+                resultCount: rankedResults.length,
+                cached: !!cachedResults,
+                threshold: 8000
+            });
+        }
 
         return {
             success: true,
@@ -835,7 +924,19 @@ export async function performCaseDescriptionSearch(
         };
 
     } catch (error) {
-        console.error('[CaseDescriptionSearch] 搜尋失敗:', error);
+        const elapsedTime = Date.now() - startTime;
+
+        logger.error('案由搜尋失敗', {
+            userId,
+            operation: 'case_description_search',
+            descriptionLength: userCaseDescription.length,
+            lawDomain,
+            partySide,
+            duration: elapsedTime,
+            error: error.message,
+            stack: error.stack
+        });
+
         throw error;
     }
 }

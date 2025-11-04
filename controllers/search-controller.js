@@ -5,12 +5,14 @@ import * as searchService from '../services/search.js';
 export async function searchJudgmentsController(req, res, next) {
   const searchFilters = req.query;
   const { page = 1, pageSize = 10 } = searchFilters;
+  const userId = req.user?.uid;
 
   try {
     const searchResponseData = await searchService.performSearch(
       searchFilters,
       parseInt(page, 10),
-      parseInt(pageSize, 10)
+      parseInt(pageSize, 10),
+      userId
     );
 
     // 加入實際扣除的積分資訊

@@ -3,6 +3,7 @@ import esClient from '../config/elasticsearch.js';
 import { OpenAI } from 'openai';
 import { OPENAI_API_KEY, OPENAI_MODEL_NAME_EMBEDDING } from '../config/environment.js';
 import { kmeans } from 'ml-kmeans';
+import logger from '../utils/logger.js';
 
 const openai = new OpenAI({
     apiKey: OPENAI_API_KEY,
@@ -14,10 +15,17 @@ const EMBEDDING_MODEL = OPENAI_MODEL_NAME_EMBEDDING || 'text-embedding-3-large';
 /**
  * 使用 GPT-4o-mini 優化用戶的查詢
  */
-async function enhanceQuery(userQuery, caseType) {
+async function enhanceQuery(userQuery, caseType, userId = null) {
+    const startTime = Date.now();
+
     try {
-        console.log(`[SemanticSearch] 使用 GPT-4o-mini 優化查詢: "${userQuery}"`);
-        
+        logger.debug('開始使用 GPT-4o-mini 優化查詢', {
+            userId,
+            operation: 'semantic_query_enhancement',
+            userQuery,
+            caseType
+        });
+
         const prompt = `你是台灣法律搜尋助手。請將以下${caseType}案件的法律問題擴充為更精準的搜尋查詢，用於搜尋相關的判決書案例。
 
 **重要：請務必使用繁體中文回應，不可使用簡體中文。**
@@ -47,11 +55,32 @@ async function enhanceQuery(userQuery, caseType) {
         });
 
         const enhanced = JSON.parse(response.choices[0].message.content);
-        console.log(`[SemanticSearch] 查詢優化結果:`, enhanced);
+        const duration = Date.now() - startTime;
+
+        logger.info('GPT 查詢優化完成', {
+            userId,
+            operation: 'semantic_query_enhancement',
+            userQuery,
+            enhanced: enhanced.enhanced,
+            keywords: enhanced.keywords,
+            duration
+        });
+
         return enhanced;
-        
+
     } catch (error) {
-        console.error('[SemanticSearch] GPT 優化查詢失敗:', error);
+        const duration = Date.now() - startTime;
+
+        logger.error('GPT 查詢優化失敗', {
+            userId,
+            operation: 'semantic_query_enhancement',
+            userQuery,
+            caseType,
+            duration,
+            error: error.message,
+            stack: error.stack
+        });
+
         throw new Error(`查詢優化失敗: ${error.message}`);
     }
 }
@@ -259,22 +288,32 @@ function formatHit(hit) {
 /**
  * 執行語意搜尋
  */
-export async function performSemanticSearch(userQuery, caseType, filters = {}, page = 1, pageSize = 10) {
+export async function performSemanticSearch(userQuery, caseType, filters = {}, page = 1, pageSize = 10, userId = null) {
     const startTime = Date.now();
-    
+
+    logger.info('開始執行判決書語意搜尋', {
+        userId,
+        operation: 'judgment_semantic_search',
+        userQuery,
+        caseType,
+        filters,
+        page,
+        pageSize
+    });
+
     try {
         // 步驟 1: 驗證輸入
         if (!userQuery || userQuery.trim().length < 10) {
             throw new Error('查詢內容至少需要 10 個字');
         }
-        
+
         if (!['民事', '刑事', '行政'].includes(caseType)) {
             throw new Error('請選擇有效的案件類型');
         }
 
         // 步驟 2: GPT 優化查詢
-        const enhancedData = await enhanceQuery(userQuery, caseType);
-        
+        const enhancedData = await enhanceQuery(userQuery, caseType, userId);
+
         // 步驟 3: 向量化
         const queryVector = await getEmbedding(enhancedData.enhanced || userQuery);
         
@@ -408,6 +447,31 @@ export async function performSemanticSearch(userQuery, caseType, filters = {}, p
             cluster.clusterName = clusterNames[index] || `爭點類別 ${index + 1}`;
         });
 
+        const duration = Date.now() - startTime;
+
+        // 記錄成功
+        logger.business('判決書語意搜尋完成', {
+            userId,
+            operation: 'judgment_semantic_search',
+            userQuery,
+            caseType,
+            resultCount: hitsWithVectors.length,
+            clusterCount: populatedClusters.length,
+            duration,
+            searchMode: 'semantic_clustered'
+        });
+
+        // 性能監控
+        if (duration > 5000) {
+            logger.performance('語意搜尋響應較慢', {
+                userId,
+                operation: 'judgment_semantic_search',
+                duration,
+                resultCount: hitsWithVectors.length,
+                threshold: 5000
+            });
+        }
+
         return {
             success: true,
             totalResults: hitsWithVectors.length,
@@ -420,7 +484,19 @@ export async function performSemanticSearch(userQuery, caseType, filters = {}, p
         };
 
     } catch (error) {
-        console.error('[SemanticSearch] 搜尋失敗:', error);
+        const duration = Date.now() - startTime;
+
+        logger.error('判決書語意搜尋失敗', {
+            userId,
+            operation: 'judgment_semantic_search',
+            userQuery,
+            caseType,
+            filters,
+            duration,
+            error: error.message,
+            stack: error.stack
+        });
+
         throw error;
     }
 }
