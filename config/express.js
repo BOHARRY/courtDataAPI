@@ -4,6 +4,7 @@ import cors from 'cors';
 import mainRouter from '../routes/index.js';
 import judgmentProxyRouter from '../routes/judgmentProxy.js';
 import auditLogger from '../middleware/auditLogger.js';
+import logger from '../utils/logger.js';
 
 const app = express();
 
@@ -48,7 +49,7 @@ app.use(cors({
 
     if (!allowedOrigins.includes(origin)) {
       const msg = '此來源的 CORS 政策不允許存取: ' + origin;
-      console.log(`CORS 錯誤: ${msg}`);
+      logger.security('CORS policy violation', { origin, allowedOrigins });
       return callback(new Error(msg), false);
     }
     return callback(null, true);
@@ -69,9 +70,14 @@ app.use(express.json({ limit: '50mb' }));
 // 解析 URL-encoded body，並增加大小限制
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-// 基本的日誌中間件 (可選, 只是示例)
+// HTTP 請求日誌中間件
 app.use((req, _res, next) => {
-  console.log(`[Request] ${new Date().toISOString()} ${req.method} ${req.originalUrl}`);
+  logger.http('Incoming request', {
+    method: req.method,
+    url: req.originalUrl,
+    ip: req.ip,
+    userAgent: req.get('user-agent')
+  });
   next();
 });
 
@@ -109,10 +115,20 @@ app.use((req, res, _next) => {
   res.status(404).json({ error: 'Not Found', message: `The requested URL ${req.originalUrl} was not found on this server.` });
 });
 
-// 基本的錯誤處理中間件 (應該放在所有路由和中間件之後)
+// 全局錯誤處理中間件 (應該放在所有路由和中間件之後)
 // eslint-disable-next-line no-unused-vars
-app.use((err, _req, res, _next) => {
-  console.error("Unhandled error:", err.stack || err.message || err);
+app.use((err, req, res, _next) => {
+  // 記錄錯誤到 Logz.io
+  logger.error('Unhandled error', {
+    error: err.message,
+    stack: err.stack,
+    statusCode: err.statusCode || 500,
+    method: req.method,
+    url: req.originalUrl,
+    userId: req.user?.uid,
+    ip: req.ip
+  });
+
   // 避免在生產環境洩露堆疊追蹤
   const statusCode = err.statusCode || 500;
   const message = process.env.NODE_ENV === 'production' && statusCode === 500

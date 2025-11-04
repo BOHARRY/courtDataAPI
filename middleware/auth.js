@@ -1,5 +1,6 @@
 // middleware/auth.js
 import admin from 'firebase-admin'; // Firebase Admin SDK 已經在 config/firebase.js 中初始化
+import logger from '../utils/logger.js';
 
 export async function verifyToken(req, res, next) {
   const authHeader = req.headers.authorization || '';
@@ -8,7 +9,11 @@ export async function verifyToken(req, res, next) {
   const idToken = authHeader.startsWith('Bearer ') ? authHeader.substring(7) : null;
 
   if (!idToken) {
-    // console.warn("verifyToken: No token provided or invalid format. Header format incorrect.");
+    logger.security('Authentication failed: No token provided', {
+      ip: req.ip,
+      url: req.originalUrl,
+      method: req.method
+    });
     return res.status(401).json({
       error: 'Unauthorized',
       message: 'No token provided or invalid format. Please include a Bearer token in the Authorization header.'
@@ -21,10 +26,20 @@ export async function verifyToken(req, res, next) {
   try {
     const decodedToken = await admin.auth().verifyIdToken(idToken);
     req.user = decodedToken; // 將解碼後的 token (包含 uid 等信息) 附加到 req.user
-    // console.log("verifyToken: Token verified for UID:", req.user.uid); // 開發時調試用
+
+    logger.debug('Token verified successfully', {
+      userId: req.user.uid,
+      email: req.user.email
+    });
+
     next(); // Token 驗證通過，繼續處理請求
   } catch (error) {
-    console.error('Error verifying Firebase ID token:', error.code, error.message);
+    logger.security('Token verification failed', {
+      errorCode: error.code,
+      errorMessage: error.message,
+      ip: req.ip,
+      url: req.originalUrl
+    });
 
     if (error.code === 'auth/id-token-expired') {
       return res.status(401).json({
@@ -67,7 +82,12 @@ export async function verifyAdmin(req, res, next) {
     const userData = userDoc.data();
 
     if (!userData.isAdmin) {
-      console.warn(`[verifyAdmin] 非管理員嘗試訪問: ${req.user.email}`);
+      logger.security('Non-admin access attempt', {
+        userId: req.user.uid,
+        email: req.user.email,
+        url: req.originalUrl,
+        method: req.method
+      });
       return res.status(403).json({
         error: 'Forbidden',
         message: '需要管理員權限'
@@ -80,7 +100,11 @@ export async function verifyAdmin(req, res, next) {
 
     next();
   } catch (error) {
-    console.error('[verifyAdmin] 驗證管理員權限失敗:', error);
+    logger.error('Admin verification failed', {
+      userId: req.user?.uid,
+      error: error.message,
+      stack: error.stack
+    });
     return res.status(500).json({
       error: 'Internal Server Error',
       message: '驗證權限時發生錯誤'

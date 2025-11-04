@@ -2,6 +2,7 @@
 import admin from 'firebase-admin';
 import { checkAndDeductUserCreditsInTransaction } from '../services/credit.js';
 import { CREDIT_PURPOSES } from '../config/creditCosts.js';
+import logger from '../utils/logger.js';
 
 /**
  * 創建一個檢查並扣除積分的中間件。
@@ -21,7 +22,11 @@ export const checkAndDeductCredits = (baseCost, purpose, logDetailsOptions = {})
     const userId = req.user?.uid;
 
     if (!userId) {
-      console.error('[Credit Middleware] User not authenticated.');
+      logger.security('Credit check failed: User not authenticated', {
+        url: req.originalUrl,
+        method: req.method,
+        ip: req.ip
+      });
       return res.status(401).json({ error: '使用者未認證。' });
     }
 
@@ -32,7 +37,11 @@ export const checkAndDeductCredits = (baseCost, purpose, logDetailsOptions = {})
       : false;
 
     if (isRestoreMode) {
-      console.log(`[Credit Middleware] 🔄 恢復模式檢測到，跳過積分扣除 (用戶: ${userId}, 用途: ${purpose})`);
+      logger.info('Restore mode detected, skipping credit deduction', {
+        userId,
+        purpose,
+        url: req.originalUrl
+      });
       // 設置為 0 積分扣除，但仍然記錄
       req.creditDeducted = 0;
       req.userCreditsAfter = null; // 不查詢用戶積分
@@ -46,7 +55,11 @@ export const checkAndDeductCredits = (baseCost, purpose, logDetailsOptions = {})
       // 如果是搜索請求，根據篩選條件計算積分
       if (purpose === CREDIT_PURPOSES.SEARCH_JUDGEMENT) {
         dynamicCost = calculateSearchCost(req.query);
-        console.log(`[Credit Middleware] Dynamic cost calculated for search: ${dynamicCost}`);
+        logger.debug('Dynamic search cost calculated', {
+          userId,
+          cost: dynamicCost,
+          filters: req.query
+        });
       }
 
       // 構建日誌詳情
@@ -85,28 +98,46 @@ export const checkAndDeductCredits = (baseCost, purpose, logDetailsOptions = {})
       // 將扣除的積分數和剩餘積分附加到 req 對象
       req.creditDeducted = dynamicCost;
       req.userCreditsAfter = result.newCredits;
-      
-      console.log(`[Credit Middleware] Successfully deducted ${dynamicCost} credits from user ${userId}. Remaining: ${result.newCredits}`);
+
+      logger.business('Credits deducted successfully', {
+        userId,
+        purpose,
+        deducted: dynamicCost,
+        remaining: result.newCredits,
+        url: req.originalUrl
+      });
+
       next();
       
     } catch (error) {
-      // 現在 dynamicCost 在這裡是可訪問的
-      console.error(`[Credit Middleware] Error for user ${userId} (cost: ${dynamicCost}, purpose: ${purpose}):`, error.message);
-      
+      logger.error('Credit deduction failed', {
+        userId,
+        purpose,
+        cost: dynamicCost,
+        errorMessage: error.message,
+        statusCode: error.statusCode,
+        stack: error.stack
+      });
+
       if (error.statusCode === 402) {
+        logger.business('Insufficient credits', {
+          userId,
+          currentCredits: error.currentCredits,
+          requiredCredits: error.requiredCredits,
+          purpose
+        });
         return res.status(402).json({
           error: error.message,
           currentCredits: error.currentCredits,
           requiredCredits: error.requiredCredits
         });
       }
-      
+
       if (error.statusCode === 404) {
         return res.status(404).json({ error: '使用者資料不存在。' });
       }
-      
+
       // 其他未預期的錯誤
-      console.error('[Credit Middleware] Unexpected error:', error);
       return res.status(500).json({ error: '扣除積分時發生錯誤。' });
     }
   };
