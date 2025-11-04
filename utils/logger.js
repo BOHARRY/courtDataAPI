@@ -66,6 +66,11 @@ const transports = [
 // 生產環境添加 Logz.io Transport
 if (NODE_ENV === 'production' && LOGZIO_TOKEN) {
   try {
+    console.log('🔧 Initializing Logz.io transport...');
+    console.log(`   - Host: ${LOGZIO_HOST}`);
+    console.log(`   - Type: ${LOGZIO_TYPE}`);
+    console.log(`   - Token: ${LOGZIO_TOKEN.substring(0, 8)}...`);
+
     const logzioTransport = new LogzioWinstonTransport({
       level: 'info', // Logz.io 只記錄 info 以上級別
       name: 'winston_logzio',
@@ -74,7 +79,7 @@ if (NODE_ENV === 'production' && LOGZIO_TOKEN) {
       type: LOGZIO_TYPE,
       protocol: 'https',
       port: 8071,
-      
+
       // 額外欄位（所有日誌都會包含）
       extraFields: {
         service: 'courtDataAPI',
@@ -82,26 +87,30 @@ if (NODE_ENV === 'production' && LOGZIO_TOKEN) {
         version: '3.0',
         platform: 'render.com'
       },
-      
+
       // 批次發送配置
       bufferSize: 100,
       sendIntervalMs: 2000,
       numberOfRetries: 3,
-      
-      // 調試模式（可選）
-      debug: false,
-      
+
+      // 調試模式（啟用以查看發送狀態）
+      debug: true,
+
       // 添加 OpenTelemetry 上下文（如果有的話）
       addOtelContext: true
     });
-    
+
     transports.push(logzioTransport);
     console.log('✅ Logz.io transport initialized successfully');
+    console.log(`   - Transports count: ${transports.length}`);
   } catch (error) {
     console.error('❌ Failed to initialize Logz.io transport:', error.message);
+    console.error('   - Stack:', error.stack);
   }
 } else if (NODE_ENV === 'production' && !LOGZIO_TOKEN) {
   console.warn('⚠️  LOGZIO_TOKEN not found. Logz.io logging disabled.');
+} else {
+  console.log(`ℹ️  Logz.io disabled (NODE_ENV: ${NODE_ENV})`);
 }
 
 // 創建 Logger 實例
@@ -226,13 +235,24 @@ const enhancedLogger = {
   }
 };
 
-// 開發環境顯示配置資訊
-if (NODE_ENV === 'development') {
-  console.log('📋 Logger Configuration:');
-  console.log(`  - Environment: ${NODE_ENV}`);
-  console.log(`  - Log Level: ${LOG_LEVEL}`);
-  console.log(`  - Logz.io: ${LOGZIO_TOKEN ? '✅ Enabled' : '❌ Disabled'}`);
-  console.log(`  - Transports: ${transports.length} (${transports.map(t => t.name || t.constructor.name).join(', ')})`);
+// 顯示配置資訊（所有環境）
+console.log('📋 Logger Configuration:');
+console.log(`  - Environment: ${NODE_ENV}`);
+console.log(`  - Log Level: ${LOG_LEVEL}`);
+console.log(`  - Logz.io: ${LOGZIO_TOKEN ? '✅ Enabled' : '❌ Disabled'}`);
+console.log(`  - Transports: ${transports.length} (${transports.map(t => t.name || t.constructor.name).join(', ')})`);
+
+// 生產環境發送測試日誌
+if (NODE_ENV === 'production' && LOGZIO_TOKEN) {
+  // 延遲發送，確保 transport 完全初始化
+  setTimeout(() => {
+    enhancedLogger.info('Logger initialized successfully', {
+      timestamp: new Date().toISOString(),
+      transports: transports.length,
+      logLevel: LOG_LEVEL
+    });
+    console.log('📤 Test log sent to Logz.io');
+  }, 1000);
 }
 
 export default enhancedLogger;
