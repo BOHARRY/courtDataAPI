@@ -62,7 +62,8 @@ async function enhanceQuery(userQuery, caseType, userId = null) {
             operation: 'semantic_query_enhancement',
             userQuery,
             enhanced: enhanced.enhanced,
-            keywords: enhanced.keywords,
+            keywordsJson: JSON.stringify(enhanced.keywords),
+            lawsJson: JSON.stringify(enhanced.laws || []),
             duration
         });
 
@@ -296,7 +297,9 @@ export async function performSemanticSearch(userQuery, caseType, filters = {}, p
         operation: 'judgment_semantic_search',
         userQuery,
         caseType,
-        filters,
+        filter_court: filters.court || '全部',
+        filter_dateRange: filters.startDate && filters.endDate ?
+            `${filters.startDate} ~ ${filters.endDate}` : '不限',
         page,
         pageSize
     });
@@ -491,7 +494,9 @@ export async function performSemanticSearch(userQuery, caseType, filters = {}, p
             operation: 'judgment_semantic_search',
             userQuery,
             caseType,
-            filters,
+            filter_court: filters.court || '全部',
+            filter_dateRange: filters.startDate && filters.endDate ?
+                `${filters.startDate} ~ ${filters.endDate}` : '不限',
             duration,
             error: error.message,
             stack: error.stack

@@ -23,14 +23,12 @@ export async function performSearch(searchFilters, page, pageSize, userId = null
   logger.info('開始執行判決書關鍵字搜尋', {
     userId,
     operation: 'judgment_keyword_search',
-    filters: {
-      keyword: searchFilters.keyword || '無',
-      caseTypes: searchFilters.caseTypes || '全部',
-      court: searchFilters.court || '全部',
-      verdict: searchFilters.verdict || '全部',
-      dateRange: searchFilters.startDate && searchFilters.endDate ?
-        `${searchFilters.startDate} ~ ${searchFilters.endDate}` : '不限'
-    },
+    filter_keyword: searchFilters.keyword || '無',
+    filter_caseTypes: searchFilters.caseTypes || '全部',
+    filter_court: searchFilters.court || '全部',
+    filter_verdict: searchFilters.verdict || '全部',
+    filter_dateRange: searchFilters.startDate && searchFilters.endDate ?
+      `${searchFilters.startDate} ~ ${searchFilters.endDate}` : '不限',
     page,
     pageSize
   });
@@ -143,11 +141,14 @@ export async function performSearch(searchFilters, page, pageSize, userId = null
     logger.error('判決書關鍵字搜尋失敗', {
       userId,
       operation: 'judgment_keyword_search',
-      filters: searchFilters,
+      filter_keyword: searchFilters.keyword || '無',
+      filter_caseTypes: searchFilters.caseTypes || '全部',
+      filter_court: searchFilters.court || '全部',
+      filter_verdict: searchFilters.verdict || '全部',
       duration,
       error: error.message,
       stack: error.stack,
-      esError: error.meta?.body?.error || null
+      esError: error.meta?.body?.error ? JSON.stringify(error.meta.body.error) : null
     });
 
     const serviceError = new Error('搜尋服務暫時無法使用，請稍後再試');

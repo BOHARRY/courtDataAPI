@@ -105,12 +105,14 @@ ${userCaseDescription}
             userId,
             operation: 'case_description_normalization',
             normalizedSummary: result.normalized_summary,
-            termGroupsCount: {
-                parties: result.parties_terms?.length || 0,
-                technical: result.technical_terms?.length || 0,
-                legalAction: result.legal_action_terms?.length || 0,
-                statute: result.statute_terms?.length || 0
-            },
+            termCount_parties: result.parties_terms?.length || 0,
+            termCount_technical: result.technical_terms?.length || 0,
+            termCount_legalAction: result.legal_action_terms?.length || 0,
+            termCount_statute: result.statute_terms?.length || 0,
+            partiesTermsJson: JSON.stringify(result.parties_terms || []),
+            technicalTermsJson: JSON.stringify(result.technical_terms || []),
+            legalActionTermsJson: JSON.stringify(result.legal_action_terms || []),
+            statuteTermsJson: JSON.stringify(result.statute_terms || []),
             duration
         });
 
