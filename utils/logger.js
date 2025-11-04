@@ -72,7 +72,7 @@ if (NODE_ENV === 'production' && LOGZIO_TOKEN) {
     console.log(`   - Token: ${LOGZIO_TOKEN.substring(0, 8)}...`);
 
     const logzioTransport = new LogzioWinstonTransport({
-      level: 'info', // Logz.io 只記錄 info 以上級別
+      level: 'http', // Logz.io 記錄 http 以上級別（包含 http, info, warn, error）
       name: 'winston_logzio',
       token: LOGZIO_TOKEN,
       host: LOGZIO_HOST,
@@ -193,10 +193,12 @@ const enhancedLogger = {
   /**
    * HTTP 請求日誌
    * 專門用於記錄 API 請求
+   * 使用 info 級別以確保發送到 Logz.io
    */
   http: (message, meta = {}) => {
-    logger.http(message, {
+    logger.info(message, {
       type: 'http_request',
+      logLevel: 'http',
       ...meta
     });
   },
