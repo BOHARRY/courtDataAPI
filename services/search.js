@@ -19,10 +19,22 @@ const ES_INDEX_NAME = 'search-boooook';
 export async function performSearch(searchFilters, page, pageSize, userId = null) {
   const startTime = Date.now();
 
+  // 構建簡潔的篩選摘要
+  const filterParts = [];
+  if (searchFilters.keyword) filterParts.push(`"${searchFilters.keyword}"`);
+  if (searchFilters.caseTypes && searchFilters.caseTypes !== '全部') filterParts.push(searchFilters.caseTypes);
+  if (searchFilters.court && searchFilters.court !== '全部') filterParts.push(searchFilters.court);
+  if (searchFilters.verdict && searchFilters.verdict !== '全部') filterParts.push(searchFilters.verdict);
+
+  const filterSummary = filterParts.length > 0 ? filterParts.join(' | ') : '全文搜尋';
+
   // 記錄搜尋開始
-  logger.info('開始執行判決書關鍵字搜尋', {
-    userId,
+  logger.info(`🔍 判決搜尋: ${filterSummary}`, {
+    event: 'judgment_search',
     operation: 'judgment_keyword_search',
+    status: 'started',
+    userId,
+    keyword: searchFilters.keyword || null,
     filter_keyword: searchFilters.keyword || '無',
     filter_caseTypes: searchFilters.caseTypes || '全部',
     filter_court: searchFilters.court || '全部',
@@ -108,13 +120,19 @@ export async function performSearch(searchFilters, page, pageSize, userId = null
     });
 
     const duration = Date.now() - startTime;
-    const resultCount = esResult.hits.total.value;
+    const resultCount = typeof esResult.hits.total === 'number'
+      ? esResult.hits.total
+      : esResult.hits.total.value;
 
     // 記錄搜尋成功
-    logger.business('判決書關鍵字搜尋完成', {
-      userId,
+    logger.business(`✅ 判決搜尋完成: ${resultCount}筆 (${duration}ms)`, {
+      event: 'judgment_search',
       operation: 'judgment_keyword_search',
-      keyword: searchFilters.keyword || '無',
+      status: 'completed',
+      userId,
+      keyword: searchFilters.keyword || null,
+      filter_keyword: searchFilters.keyword || '無',
+      filter_caseTypes: searchFilters.caseTypes || '全部',
       resultCount,
       duration,
       page,
@@ -124,9 +142,12 @@ export async function performSearch(searchFilters, page, pageSize, userId = null
 
     // 性能監控
     if (duration > 3000) {
-      logger.performance('判決書搜尋響應較慢', {
-        userId,
+      logger.performance(`⚠️ 判決搜尋較慢: ${duration}ms (${resultCount}筆)`, {
+        event: 'judgment_search',
         operation: 'judgment_keyword_search',
+        status: 'slow_query',
+        userId,
+        keyword: searchFilters.keyword || null,
         duration,
         resultCount,
         threshold: 3000
@@ -138,9 +159,12 @@ export async function performSearch(searchFilters, page, pageSize, userId = null
     const duration = Date.now() - startTime;
 
     // 記錄詳細錯誤
-    logger.error('判決書關鍵字搜尋失敗', {
-      userId,
+    logger.error(`❌ 判決搜尋失敗: ${error.message}`, {
+      event: 'judgment_search',
       operation: 'judgment_keyword_search',
+      status: 'failed',
+      userId,
+      keyword: searchFilters.keyword || null,
       filter_keyword: searchFilters.keyword || '無',
       filter_caseTypes: searchFilters.caseTypes || '全部',
       filter_court: searchFilters.court || '全部',

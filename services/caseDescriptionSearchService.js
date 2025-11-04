@@ -37,9 +37,13 @@ async function normalizeAndExtractTerms(userCaseDescription, lawDomain, userId =
     const startTime = Date.now();
 
     try {
-        logger.debug('開始正規化案情描述', {
-            userId,
+        const descPreview = `"${userCaseDescription.substring(0, 30)}${userCaseDescription.length > 30 ? '...' : ''}"`;
+
+        logger.info(`📝 正規化案情: ${descPreview}`, {
+            event: 'case_description_normalization',
             operation: 'case_description_normalization',
+            status: 'started',
+            userId,
             descriptionLength: userCaseDescription.length,
             lawDomain
         });
@@ -90,9 +94,11 @@ ${userCaseDescription}
         if (result.is_legal_case === false) {
             const reason = result.rejection_reason || '您的輸入似乎與法律案由無關';
 
-            logger.business('案情描述被拒絕（非法律案由）', {
-                userId,
+            logger.business(`🚫 案情被拒絕: ${reason}`, {
+                event: 'case_description_normalization',
                 operation: 'case_description_normalization',
+                status: 'rejected',
+                userId,
                 descriptionLength: userCaseDescription.length,
                 rejectionReason: reason,
                 duration
@@ -101,10 +107,18 @@ ${userCaseDescription}
             throw new Error(`INVALID_CASE_DESCRIPTION: ${reason}`);
         }
 
-        logger.info('案情描述正規化完成', {
-            userId,
+        const totalTerms = (result.parties_terms?.length || 0) +
+                          (result.technical_terms?.length || 0) +
+                          (result.legal_action_terms?.length || 0) +
+                          (result.statute_terms?.length || 0);
+
+        logger.info(`✅ 正規化完成: ${totalTerms}個關鍵詞`, {
+            event: 'case_description_normalization',
             operation: 'case_description_normalization',
+            status: 'completed',
+            userId,
             normalizedSummary: result.normalized_summary,
+            totalTerms,
             termCount_parties: result.parties_terms?.length || 0,
             termCount_technical: result.technical_terms?.length || 0,
             termCount_legalAction: result.legal_action_terms?.length || 0,
@@ -126,9 +140,11 @@ ${userCaseDescription}
             throw error;
         }
 
-        logger.error('案情描述正規化失敗', {
-            userId,
+        logger.error(`❌ 正規化失敗: ${error.message}`, {
+            event: 'case_description_normalization',
             operation: 'case_description_normalization',
+            status: 'failed',
+            userId,
             descriptionLength: userCaseDescription.length,
             lawDomain,
             duration,
@@ -799,9 +815,11 @@ export async function performCaseDescriptionSearch(
         let termGroups;
 
         if (cachedResults) {
-            logger.info('案由搜尋快取命中', {
-                userId,
+            logger.info(`⚡ 案由搜尋快取命中: ${cachedResults.length}筆`, {
+                event: 'judgment_search',
                 operation: 'case_description_search',
+                status: 'cache_hit',
+                userId,
                 cacheKey,
                 cachedResultCount: cachedResults.length
             });
@@ -813,9 +831,14 @@ export async function performCaseDescriptionSearch(
             delete termGroups.normalized_summary;
             queryVector = await getEmbedding(normalized_summary);
         } else {
-            logger.info('案由搜尋快取未命中，執行完整檢索管線', {
-                userId,
+            logger.info(`🔍 案由搜尋: ${lawDomain} | ${partySide}`, {
+                event: 'judgment_search',
                 operation: 'case_description_search',
+                status: 'started',
+                userId,
+                lawDomain,
+                partySide,
+                descriptionLength: userCaseDescription.length,
                 cacheKey
             });
 
@@ -879,9 +902,11 @@ export async function performCaseDescriptionSearch(
         const elapsedTime = Date.now() - startTime;
 
         // 記錄成功
-        logger.business('案由搜尋完成', {
-            userId,
+        logger.business(`✅ 案由搜尋完成: ${rankedResults.length}筆 (${cachedResults ? '快取' : '檢索'}, ${elapsedTime}ms)`, {
+            event: 'judgment_search',
             operation: 'case_description_search',
+            status: 'completed',
+            userId,
             descriptionLength: userCaseDescription.length,
             lawDomain,
             partySide,
@@ -894,9 +919,13 @@ export async function performCaseDescriptionSearch(
 
         // 性能監控
         if (elapsedTime > 8000) {
-            logger.performance('案由搜尋響應較慢', {
-                userId,
+            logger.performance(`⚠️ 案由搜尋較慢: ${elapsedTime}ms (${rankedResults.length}筆, ${cachedResults ? '快取' : '檢索'})`, {
+                event: 'judgment_search',
                 operation: 'case_description_search',
+                status: 'slow_query',
+                userId,
+                lawDomain,
+                partySide,
                 duration: elapsedTime,
                 resultCount: rankedResults.length,
                 cached: !!cachedResults,
@@ -928,9 +957,11 @@ export async function performCaseDescriptionSearch(
     } catch (error) {
         const elapsedTime = Date.now() - startTime;
 
-        logger.error('案由搜尋失敗', {
-            userId,
+        logger.error(`❌ 案由搜尋失敗: ${error.message}`, {
+            event: 'judgment_search',
             operation: 'case_description_search',
+            status: 'failed',
+            userId,
             descriptionLength: userCaseDescription.length,
             lawDomain,
             partySide,

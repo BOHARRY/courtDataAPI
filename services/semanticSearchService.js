@@ -19,10 +19,13 @@ async function enhanceQuery(userQuery, caseType, userId = null) {
     const startTime = Date.now();
 
     try {
-        logger.debug('開始使用 GPT-4o-mini 優化查詢', {
-            userId,
+        logger.info(`🤖 GPT 優化查詢: "${userQuery.substring(0, 30)}${userQuery.length > 30 ? '...' : ''}"`, {
+            event: 'semantic_query_enhancement',
             operation: 'semantic_query_enhancement',
+            status: 'started',
+            userId,
             userQuery,
+            queryLength: userQuery.length,
             caseType
         });
 
@@ -57,12 +60,16 @@ async function enhanceQuery(userQuery, caseType, userId = null) {
         const enhanced = JSON.parse(response.choices[0].message.content);
         const duration = Date.now() - startTime;
 
-        logger.info('GPT 查詢優化完成', {
-            userId,
+        logger.info(`✨ GPT 優化完成: ${enhanced.keywords?.length || 0}個關鍵字`, {
+            event: 'semantic_query_enhancement',
             operation: 'semantic_query_enhancement',
+            status: 'completed',
+            userId,
             userQuery,
             enhanced: enhanced.enhanced,
-            keywordsJson: JSON.stringify(enhanced.keywords),
+            keywordCount: enhanced.keywords?.length || 0,
+            lawCount: enhanced.laws?.length || 0,
+            keywordsJson: JSON.stringify(enhanced.keywords || []),
             lawsJson: JSON.stringify(enhanced.laws || []),
             duration
         });
@@ -72,9 +79,11 @@ async function enhanceQuery(userQuery, caseType, userId = null) {
     } catch (error) {
         const duration = Date.now() - startTime;
 
-        logger.error('GPT 查詢優化失敗', {
-            userId,
+        logger.error(`❌ GPT 優化失敗: ${error.message}`, {
+            event: 'semantic_query_enhancement',
             operation: 'semantic_query_enhancement',
+            status: 'failed',
+            userId,
             userQuery,
             caseType,
             duration,
@@ -292,10 +301,15 @@ function formatHit(hit) {
 export async function performSemanticSearch(userQuery, caseType, filters = {}, page = 1, pageSize = 10, userId = null) {
     const startTime = Date.now();
 
-    logger.info('開始執行判決書語意搜尋', {
-        userId,
+    const querySummary = `"${userQuery.substring(0, 30)}${userQuery.length > 30 ? '...' : ''}"`;
+
+    logger.info(`🎯 語意搜尋: ${querySummary}`, {
+        event: 'judgment_search',
         operation: 'judgment_semantic_search',
+        status: 'started',
+        userId,
         userQuery,
+        queryLength: userQuery.length,
         caseType,
         filter_court: filters.court || '全部',
         filter_dateRange: filters.startDate && filters.endDate ?
@@ -453,9 +467,11 @@ export async function performSemanticSearch(userQuery, caseType, filters = {}, p
         const duration = Date.now() - startTime;
 
         // 記錄成功
-        logger.business('判決書語意搜尋完成', {
-            userId,
+        logger.business(`✅ 語意搜尋完成: ${hitsWithVectors.length}筆, ${populatedClusters.length}個爭點 (${duration}ms)`, {
+            event: 'judgment_search',
             operation: 'judgment_semantic_search',
+            status: 'completed',
+            userId,
             userQuery,
             caseType,
             resultCount: hitsWithVectors.length,
@@ -466,11 +482,15 @@ export async function performSemanticSearch(userQuery, caseType, filters = {}, p
 
         // 性能監控
         if (duration > 5000) {
-            logger.performance('語意搜尋響應較慢', {
-                userId,
+            logger.performance(`⚠️ 語意搜尋較慢: ${duration}ms (${hitsWithVectors.length}筆, ${populatedClusters.length}個爭點)`, {
+                event: 'judgment_search',
                 operation: 'judgment_semantic_search',
+                status: 'slow_query',
+                userId,
+                userQuery,
                 duration,
                 resultCount: hitsWithVectors.length,
+                clusterCount: populatedClusters.length,
                 threshold: 5000
             });
         }
@@ -489,9 +509,11 @@ export async function performSemanticSearch(userQuery, caseType, filters = {}, p
     } catch (error) {
         const duration = Date.now() - startTime;
 
-        logger.error('判決書語意搜尋失敗', {
-            userId,
+        logger.error(`❌ 語意搜尋失敗: ${error.message}`, {
+            event: 'judgment_search',
             operation: 'judgment_semantic_search',
+            status: 'failed',
+            userId,
             userQuery,
             caseType,
             filter_court: filters.court || '全部',
