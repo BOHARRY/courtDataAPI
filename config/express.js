@@ -72,9 +72,14 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // HTTP 請求日誌中間件
 app.use((req, _res, next) => {
-  logger.http('Incoming request', {
-    method: req.method,
-    url: req.originalUrl,
+  // 構建更有辨識度的 Message
+  const method = req.method;
+  const url = req.originalUrl;
+  const message = `📥 HTTP 請求: ${method} ${url}`;
+
+  logger.http(message, {
+    method,
+    url,
     ip: req.ip,
     userAgent: req.get('user-agent')
   });
