@@ -112,7 +112,7 @@ ${userCaseDescription}
                           (result.legal_action_terms?.length || 0) +
                           (result.statute_terms?.length || 0);
 
-        logger.info(`✅ 正規化完成: ${totalTerms}個關鍵詞`, {
+        logger.info(`✅ 正規化完成: ${totalTerms} 個關鍵詞`, {
             event: 'case_description_normalization',
             operation: 'case_description_normalization',
             status: 'completed',
@@ -815,7 +815,7 @@ export async function performCaseDescriptionSearch(
         let termGroups;
 
         if (cachedResults) {
-            logger.info(`⚡ 案由搜尋快取命中: ${cachedResults.length}筆`, {
+            logger.info(`⚡ 案由搜尋快取命中: ${cachedResults.length} 筆結果`, {
                 event: 'judgment_search',
                 operation: 'case_description_search',
                 status: 'cache_hit',
@@ -902,7 +902,7 @@ export async function performCaseDescriptionSearch(
         const elapsedTime = Date.now() - startTime;
 
         // 記錄成功
-        logger.business(`✅ 案由搜尋完成: ${rankedResults.length}筆 (${cachedResults ? '快取' : '檢索'}, ${elapsedTime}ms)`, {
+        logger.business(`✅ 案由搜尋完成: ${rankedResults.length} 筆結果 (${cachedResults ? '快取' : '檢索'}, ${elapsedTime}ms)`, {
             event: 'judgment_search',
             operation: 'case_description_search',
             status: 'completed',
@@ -919,7 +919,7 @@ export async function performCaseDescriptionSearch(
 
         // 性能監控
         if (elapsedTime > 8000) {
-            logger.performance(`⚠️ 案由搜尋較慢: ${elapsedTime}ms (${rankedResults.length}筆, ${cachedResults ? '快取' : '檢索'})`, {
+            logger.performance(`⚠️ 案由搜尋較慢: ${elapsedTime}ms (${rankedResults.length} 筆結果, ${cachedResults ? '快取' : '檢索'})`, {
                 event: 'judgment_search',
                 operation: 'case_description_search',
                 status: 'slow_query',

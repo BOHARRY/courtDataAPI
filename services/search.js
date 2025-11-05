@@ -20,11 +20,24 @@ export async function performSearch(searchFilters, page, pageSize, userId = null
   const startTime = Date.now();
 
   // 構建簡潔的篩選摘要
+  const keyword = searchFilters.keyword?.trim() || '';
   const filterParts = [];
-  if (searchFilters.keyword) filterParts.push(`"${searchFilters.keyword}"`);
-  if (searchFilters.caseTypes && searchFilters.caseTypes !== '全部') filterParts.push(searchFilters.caseTypes);
-  if (searchFilters.court && searchFilters.court !== '全部') filterParts.push(searchFilters.court);
-  if (searchFilters.verdict && searchFilters.verdict !== '全部') filterParts.push(searchFilters.verdict);
+
+  // 優先顯示關鍵字
+  if (keyword) {
+    filterParts.push(`"${keyword}"`);
+  }
+
+  // 添加其他篩選條件
+  if (searchFilters.caseTypes && searchFilters.caseTypes !== '全部') {
+    filterParts.push(searchFilters.caseTypes);
+  }
+  if (searchFilters.court && searchFilters.court !== '全部') {
+    filterParts.push(searchFilters.court);
+  }
+  if (searchFilters.verdict && searchFilters.verdict !== '全部') {
+    filterParts.push(searchFilters.verdict);
+  }
 
   const filterSummary = filterParts.length > 0 ? filterParts.join(' | ') : '全文搜尋';
 
@@ -34,8 +47,8 @@ export async function performSearch(searchFilters, page, pageSize, userId = null
     operation: 'judgment_keyword_search',
     status: 'started',
     userId,
-    keyword: searchFilters.keyword || null,
-    filter_keyword: searchFilters.keyword || '無',
+    keyword: keyword || null,
+    filter_keyword: keyword || '無',
     filter_caseTypes: searchFilters.caseTypes || '全部',
     filter_court: searchFilters.court || '全部',
     filter_verdict: searchFilters.verdict || '全部',
@@ -125,13 +138,13 @@ export async function performSearch(searchFilters, page, pageSize, userId = null
       : esResult.hits.total.value;
 
     // 記錄搜尋成功
-    logger.business(`✅ 判決搜尋完成: ${resultCount}筆 (${duration}ms)`, {
+    logger.business(`✅ 判決搜尋完成: ${resultCount} 筆結果 (${duration}ms)`, {
       event: 'judgment_search',
       operation: 'judgment_keyword_search',
       status: 'completed',
       userId,
-      keyword: searchFilters.keyword || null,
-      filter_keyword: searchFilters.keyword || '無',
+      keyword: keyword || null,
+      filter_keyword: keyword || '無',
       filter_caseTypes: searchFilters.caseTypes || '全部',
       resultCount,
       duration,
@@ -142,12 +155,12 @@ export async function performSearch(searchFilters, page, pageSize, userId = null
 
     // 性能監控
     if (duration > 3000) {
-      logger.performance(`⚠️ 判決搜尋較慢: ${duration}ms (${resultCount}筆)`, {
+      logger.performance(`⚠️ 判決搜尋較慢: ${duration}ms (${resultCount} 筆結果)`, {
         event: 'judgment_search',
         operation: 'judgment_keyword_search',
         status: 'slow_query',
         userId,
-        keyword: searchFilters.keyword || null,
+        keyword: keyword || null,
         duration,
         resultCount,
         threshold: 3000
@@ -164,8 +177,8 @@ export async function performSearch(searchFilters, page, pageSize, userId = null
       operation: 'judgment_keyword_search',
       status: 'failed',
       userId,
-      keyword: searchFilters.keyword || null,
-      filter_keyword: searchFilters.keyword || '無',
+      keyword: keyword || null,
+      filter_keyword: keyword || '無',
       filter_caseTypes: searchFilters.caseTypes || '全部',
       filter_court: searchFilters.court || '全部',
       filter_verdict: searchFilters.verdict || '全部',

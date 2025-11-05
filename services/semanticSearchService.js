@@ -60,7 +60,7 @@ async function enhanceQuery(userQuery, caseType, userId = null) {
         const enhanced = JSON.parse(response.choices[0].message.content);
         const duration = Date.now() - startTime;
 
-        logger.info(`✨ GPT 優化完成: ${enhanced.keywords?.length || 0}個關鍵字`, {
+        logger.info(`✨ GPT 優化完成: ${enhanced.keywords?.length || 0} 個關鍵字`, {
             event: 'semantic_query_enhancement',
             operation: 'semantic_query_enhancement',
             status: 'completed',
@@ -467,7 +467,7 @@ export async function performSemanticSearch(userQuery, caseType, filters = {}, p
         const duration = Date.now() - startTime;
 
         // 記錄成功
-        logger.business(`✅ 語意搜尋完成: ${hitsWithVectors.length}筆, ${populatedClusters.length}個爭點 (${duration}ms)`, {
+        logger.business(`✅ 語意搜尋完成: ${hitsWithVectors.length} 筆結果, ${populatedClusters.length} 個爭點 (${duration}ms)`, {
             event: 'judgment_search',
             operation: 'judgment_semantic_search',
             status: 'completed',
@@ -482,7 +482,7 @@ export async function performSemanticSearch(userQuery, caseType, filters = {}, p
 
         // 性能監控
         if (duration > 5000) {
-            logger.performance(`⚠️ 語意搜尋較慢: ${duration}ms (${hitsWithVectors.length}筆, ${populatedClusters.length}個爭點)`, {
+            logger.performance(`⚠️ 語意搜尋較慢: ${duration}ms (${hitsWithVectors.length} 筆結果, ${populatedClusters.length} 個爭點)`, {
                 event: 'judgment_search',
                 operation: 'judgment_semantic_search',
                 status: 'slow_query',
