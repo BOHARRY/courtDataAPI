@@ -19,6 +19,16 @@ const ES_INDEX_NAME = 'search-boooook';
 export async function performSearch(searchFilters, page, pageSize, userId = null) {
   const startTime = Date.now();
 
+  // 🔍 調試日誌：檢查 Service 接收到的參數
+  logger.debug('🔍 Service 接收到的搜尋參數', {
+    operation: 'search_service_debug',
+    userId,
+    searchFilters,
+    keywordFromFilters: searchFilters.keyword,
+    queryFromFilters: searchFilters.query,
+    allFilterKeys: Object.keys(searchFilters)
+  });
+
   // 構建簡潔的篩選摘要
   const keyword = searchFilters.keyword?.trim() || '';
   const filterParts = [];
