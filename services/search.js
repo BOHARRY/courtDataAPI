@@ -19,18 +19,9 @@ const ES_INDEX_NAME = 'search-boooook';
 export async function performSearch(searchFilters, page, pageSize, userId = null) {
   const startTime = Date.now();
 
-  // 🔍 調試日誌：檢查 Service 接收到的參數
-  logger.debug('🔍 Service 接收到的搜尋參數', {
-    operation: 'search_service_debug',
-    userId,
-    searchFilters,
-    keywordFromFilters: searchFilters.keyword,
-    queryFromFilters: searchFilters.query,
-    allFilterKeys: Object.keys(searchFilters)
-  });
-
-  // 構建簡潔的篩選摘要
-  const keyword = searchFilters.keyword?.trim() || '';
+  // 🔧 修正：前端傳的是 'query'，不是 'keyword'
+  // 同時支援兩者以保持向後兼容
+  const keyword = (searchFilters.query || searchFilters.keyword || '').trim();
   const filterParts = [];
 
   // 優先顯示關鍵字
