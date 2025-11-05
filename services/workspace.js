@@ -1,5 +1,6 @@
 // services/workspace.js
 import admin from 'firebase-admin';
+import logger from '../utils/logger.js';
 
 const db = admin.firestore();
 
@@ -51,9 +52,11 @@ function inferNodeTypeFromId(nodeId) {
  * 創建新工作區
  */
 export async function createWorkspace(userId, workspaceData) {
+  const startTime = Date.now();
+
   try {
     const workspaceRef = db.collection('users').doc(userId).collection('workspaces').doc();
-    
+
     const now = admin.firestore.FieldValue.serverTimestamp();
 
     // ===== 核心修改點：檢查是否有範本資料 =====
@@ -70,6 +73,16 @@ export async function createWorkspace(userId, workspaceData) {
       return `${yyyy}.${mm}${dd}.${hh}${min}`;
     }
     const newWorkspaceName = workspaceData.name || `工作區 ${getCompactDateString()}`;
+
+    // 📁 日誌：創建開始
+    logger.info(`📁 創建工作區: "${newWorkspaceName}"`, {
+      event: 'workspace_create',
+      operation: 'create_workspace',
+      status: 'started',
+      userId,
+      workspaceName: newWorkspaceName,
+      hasTemplate
+    });
 
     const workspace = {
       id: workspaceRef.id,
@@ -99,10 +112,10 @@ export async function createWorkspace(userId, workspaceData) {
     };
 
     await workspaceRef.set(workspace);
-    
+
     // 設定為當前活動工作區
     await setActiveWorkspace(userId, workspaceRef.id);
-    
+
     console.log(`[WorkspaceService] Created workspace ${workspaceRef.id} for user ${userId}`);
 
     // ===== 增加一步驗證讀取（加上重試機制） =====
@@ -121,6 +134,20 @@ export async function createWorkspace(userId, workspaceData) {
     }
 
     const data = newDoc.data();
+    const duration = Date.now() - startTime;
+
+    // ✅ 日誌：創建成功
+    logger.info(`✅ 工作區創建成功: "${newWorkspaceName}" (${duration}ms)`, {
+      event: 'workspace_create',
+      operation: 'create_workspace',
+      status: 'completed',
+      userId,
+      workspaceId: workspaceRef.id,
+      workspaceName: newWorkspaceName,
+      hasTemplate,
+      duration
+    });
+
     return {
       ...data,
       id: workspaceRef.id,
@@ -130,6 +157,20 @@ export async function createWorkspace(userId, workspaceData) {
       lastAccessedAt: Date.now()
     };
   } catch (error) {
+    const duration = Date.now() - startTime;
+
+    // ❌ 日誌：創建失敗
+    logger.error(`❌ 工作區創建失敗: ${error.message} (${duration}ms)`, {
+      event: 'workspace_create',
+      operation: 'create_workspace',
+      status: 'failed',
+      userId,
+      workspaceName: workspaceData.name,
+      error: error.message,
+      errorStack: error.stack,
+      duration
+    });
+
     console.error('[WorkspaceService] Error creating workspace:', error);
     throw new Error('創建工作區失敗');
   }
@@ -139,6 +180,8 @@ export async function createWorkspace(userId, workspaceData) {
  * 更新工作區
  */
 export async function updateWorkspace(userId, workspaceId, updateData) {
+  const startTime = Date.now();
+
   try {
     const workspaceRef = db.collection('users').doc(userId).collection('workspaces').doc(workspaceId);
 
@@ -161,6 +204,35 @@ export async function updateWorkspace(userId, workspaceId, updateData) {
     if (updateData.tabs) {
       const judgementCount = updateData.tabs.filter(tab => tab.type === 'judgement').length;
       updates['stats.totalJudgements'] = judgementCount;
+    }
+
+    // 計算數據大小和更新欄位
+    const updateDataStr = JSON.stringify(updateData);
+    const dataSizeKB = (updateDataStr.length / 1024).toFixed(1);
+    const updateFields = Object.keys(updateData);
+
+    // 📁 日誌：更新開始
+    logger.info(`📁 更新工作區: ${updateFields.join(', ')} (${dataSizeKB} KB)`, {
+      event: 'workspace_update',
+      operation: 'update_workspace',
+      status: 'started',
+      userId,
+      workspaceId,
+      updateFields,
+      dataSizeKB: parseFloat(dataSizeKB)
+    });
+
+    // ⚠️ 數據過大警告
+    if (parseFloat(dataSizeKB) > 100) {
+      logger.warn(`⚠️ 工作區數據較大: ${dataSizeKB} KB`, {
+        event: 'workspace_update',
+        operation: 'update_workspace',
+        status: 'large_data',
+        userId,
+        workspaceId,
+        dataSizeKB: parseFloat(dataSizeKB),
+        updateFields
+      });
     }
 
     await workspaceRef.update(updates);
@@ -186,6 +258,20 @@ export async function updateWorkspace(userId, workspaceId, updateData) {
       }
     };
 
+    const duration = Date.now() - startTime;
+
+    // ✅ 日誌：更新成功
+    logger.info(`✅ 工作區更新成功 (${duration}ms)`, {
+      event: 'workspace_update',
+      operation: 'update_workspace',
+      status: 'completed',
+      userId,
+      workspaceId,
+      updateFields,
+      dataSizeKB: parseFloat(dataSizeKB),
+      duration
+    });
+
     return {
       id: workspaceId,
       ...data,
@@ -194,6 +280,20 @@ export async function updateWorkspace(userId, workspaceId, updateData) {
       lastAccessedAt: toMillis(data.lastAccessedAt)
     };
   } catch (error) {
+    const duration = Date.now() - startTime;
+
+    // ❌ 日誌：更新失敗
+    logger.error(`❌ 工作區更新失敗: ${error.message} (${duration}ms)`, {
+      event: 'workspace_update',
+      operation: 'update_workspace',
+      status: 'failed',
+      userId,
+      workspaceId,
+      error: error.message,
+      errorStack: error.stack,
+      duration
+    });
+
     console.error('[WorkspaceService] Error updating workspace:', error);
     throw new Error('更新工作區失敗');
   }
@@ -314,7 +414,21 @@ export async function getWorkspaceById(userId, workspaceId) {
  * @returns {Object} 修復結果
  */
 export async function checkAndRepairNodeConsistency(userId, workspaceId, frontendNodeIds) {
+  const startTime = Date.now();
+
   try {
+    const frontendNodeCount = frontendNodeIds.length;
+
+    // 🔧 日誌：檢查開始
+    logger.info(`🔧 檢查節點一致性: ${frontendNodeCount} 個節點`, {
+      event: 'workspace_consistency_check',
+      operation: 'check_node_consistency',
+      status: 'started',
+      userId,
+      workspaceId,
+      frontendNodeCount
+    });
+
     console.log(`[WorkspaceService] 開始檢查節點一致性: ${frontendNodeIds.length} 個前端節點`);
 
     const result = {
@@ -381,6 +495,23 @@ export async function checkAndRepairNodeConsistency(userId, workspaceId, fronten
       await updateWorkspaceAccess(userId, workspaceId);
     }
 
+    const duration = Date.now() - startTime;
+
+    // ✅ 日誌：檢查成功
+    logger.info(`✅ 一致性檢查完成: ${result.createdNodes.length} 個節點已修復 (${duration}ms)`, {
+      event: 'workspace_consistency_check',
+      operation: 'check_node_consistency',
+      status: 'completed',
+      userId,
+      workspaceId,
+      frontendNodeCount,
+      existingCount: result.existingNodes.length,
+      missingCount: result.missingNodes.length,
+      createdCount: result.createdNodes.length,
+      errorCount: result.errors.length,
+      duration
+    });
+
     console.log(`[WorkspaceService] 節點一致性檢查完成:`, {
       existing: result.existingNodes.length,
       missing: result.missingNodes.length,
@@ -390,6 +521,21 @@ export async function checkAndRepairNodeConsistency(userId, workspaceId, fronten
 
     return result;
   } catch (error) {
+    const duration = Date.now() - startTime;
+
+    // ❌ 日誌：檢查失敗
+    logger.error(`❌ 一致性檢查失敗: ${error.message} (${duration}ms)`, {
+      event: 'workspace_consistency_check',
+      operation: 'check_node_consistency',
+      status: 'failed',
+      userId,
+      workspaceId,
+      frontendNodeCount: frontendNodeIds?.length || 0,
+      error: error.message,
+      errorStack: error.stack,
+      duration
+    });
+
     console.error('[WorkspaceService] 節點一致性檢查失敗:', error);
     throw new Error('節點一致性檢查失敗');
   }
@@ -399,25 +545,68 @@ export async function checkAndRepairNodeConsistency(userId, workspaceId, fronten
  * 刪除工作區
  */
 export async function deleteWorkspace(userId, workspaceId) {
+  const startTime = Date.now();
+
   try {
     const workspaceRef = db.collection('users').doc(userId).collection('workspaces').doc(workspaceId);
-    
+
+    // 獲取工作區名稱用於日誌
+    const workspaceDoc = await workspaceRef.get();
+    const workspaceName = workspaceDoc.exists ? workspaceDoc.data().name : '未知工作區';
+
+    // 📁 日誌：刪除開始
+    logger.info(`📁 刪除工作區: "${workspaceName}"`, {
+      event: 'workspace_delete',
+      operation: 'delete_workspace',
+      status: 'started',
+      userId,
+      workspaceId,
+      workspaceName
+    });
+
     // 檢查是否為當前活動工作區
     const settingsRef = db.collection('users').doc(userId).collection('settings').doc('workspace');
     const settingsDoc = await settingsRef.get();
-    
+
     if (settingsDoc.exists && settingsDoc.data().currentWorkspaceId === workspaceId) {
       // 如果是當前工作區，清除設定
       await settingsRef.update({
         currentWorkspaceId: null
       });
     }
-    
+
     // 刪除工作區
     await workspaceRef.delete();
-    
+
+    const duration = Date.now() - startTime;
+
+    // ✅ 日誌：刪除成功
+    logger.info(`✅ 工作區刪除成功: "${workspaceName}" (${duration}ms)`, {
+      event: 'workspace_delete',
+      operation: 'delete_workspace',
+      status: 'completed',
+      userId,
+      workspaceId,
+      workspaceName,
+      duration
+    });
+
     console.log(`[WorkspaceService] Deleted workspace ${workspaceId} for user ${userId}`);
   } catch (error) {
+    const duration = Date.now() - startTime;
+
+    // ❌ 日誌：刪除失敗
+    logger.error(`❌ 工作區刪除失敗: ${error.message} (${duration}ms)`, {
+      event: 'workspace_delete',
+      operation: 'delete_workspace',
+      status: 'failed',
+      userId,
+      workspaceId,
+      error: error.message,
+      errorStack: error.stack,
+      duration
+    });
+
     console.error('[WorkspaceService] Error deleting workspace:', error);
     throw new Error('刪除工作區失敗');
   }
@@ -699,10 +888,24 @@ export async function batchGetNodes(userId, workspaceId, nodeIds) {
  * 批次保存 Nodes
  */
 export async function batchSaveNodes(userId, workspaceId, nodes) {
+  const startTime = Date.now();
+
   try {
     if (!Array.isArray(nodes) || nodes.length === 0) {
       return [];
     }
+
+    const nodeCount = nodes.length;
+
+    // 🎨 日誌：批次保存開始
+    logger.info(`🎨 批次保存節點: ${nodeCount} 個節點`, {
+      event: 'workspace_batch_save',
+      operation: 'batch_save_nodes',
+      status: 'started',
+      userId,
+      workspaceId,
+      nodeCount
+    });
 
     // Firestore 批次寫入限制為 500 個操作，但為了安全起見使用較小的批次
     const batchSize = 100;
@@ -747,9 +950,37 @@ export async function batchSaveNodes(userId, workspaceId, nodes) {
     // 更新工作區的 lastAccessedAt
     await updateWorkspaceAccess(userId, workspaceId);
 
+    const duration = Date.now() - startTime;
+
+    // ✅ 日誌：批次保存成功
+    logger.info(`✅ 批次保存完成: ${nodeCount} 個節點 (${duration}ms)`, {
+      event: 'workspace_batch_save',
+      operation: 'batch_save_nodes',
+      status: 'completed',
+      userId,
+      workspaceId,
+      nodeCount,
+      duration
+    });
+
     console.log(`[WorkspaceService] Batch save nodes: ${savedNodes.length} saved`);
     return savedNodes;
   } catch (error) {
+    const duration = Date.now() - startTime;
+
+    // ❌ 日誌：批次保存失敗
+    logger.error(`❌ 批次保存失敗: ${error.message} (${duration}ms)`, {
+      event: 'workspace_batch_save',
+      operation: 'batch_save_nodes',
+      status: 'failed',
+      userId,
+      workspaceId,
+      nodeCount: nodes?.length || 0,
+      error: error.message,
+      errorStack: error.stack,
+      duration
+    });
+
     console.error('[WorkspaceService] Error batch saving nodes:', error);
     throw new Error('批次保存節點失敗');
   }
