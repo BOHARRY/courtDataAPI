@@ -11,6 +11,7 @@ import {
   createFinalOutcomeStats,
   calculateDetailedWinRates
 } from '../utils/win-rate-calculator.js';
+import logger from '../utils/logger.js';
 
 const ES_INDEX_NAME = 'search-boooook';
 
@@ -228,10 +229,21 @@ function calculateEnhancedWinRates(cases) {
 /**
  * 搜尋律師並分析其案件數據。
  * @param {string} lawyerName - 律師名稱。
+ * @param {string} userId - 用戶 ID（可選）
  * @returns {Promise<object>} 包含律師分析數據的物件。
  */
-export async function searchLawyerData(lawyerName) {
-  // console.log(`[Lawyer Service] Searching and analyzing data for lawyer: ${lawyerName}`);
+export async function searchLawyerData(lawyerName, userId = null) {
+  const startTime = Date.now();
+
+  // 記錄搜尋開始
+  logger.info(`👨‍⚖️ 律師搜尋: "${lawyerName}"`, {
+    event: 'lawyer_search',
+    operation: 'lawyer_data_search',
+    status: 'started',
+    userId,
+    lawyerName
+  });
+
   try {
     const lawyerNameExact = lawyerName;
     const esQueryBody = {
@@ -280,13 +292,41 @@ export async function searchLawyerData(lawyerName) {
       ]
     });
 
+    const caseCount = esResult.hits.hits.length;
+    const duration = Date.now() - startTime;
 
-
-    // console.log(`[Lawyer Service] ES search for ${lawyerName} returned ${esResult.hits.hits.length} hits.`);
     // 調用內部輔助函數進行數據分析
-    return analyzeAndStructureLawyerData(esResult.hits.hits, lawyerName, esResult.aggregations);
+    const result = analyzeAndStructureLawyerData(esResult.hits.hits, lawyerName, esResult.aggregations);
+
+    // 記錄搜尋完成
+    logger.info(`✅ 律師搜尋完成: ${caseCount} 筆案件 (${duration}ms)`, {
+      event: 'lawyer_search',
+      operation: 'lawyer_data_search',
+      status: 'completed',
+      userId,
+      lawyerName,
+      caseCount,
+      duration,
+      hasResults: caseCount > 0
+    });
+
+    return result;
 
   } catch (error) {
+    const duration = Date.now() - startTime;
+
+    // 記錄搜尋失敗
+    logger.error(`❌ 律師搜尋失敗: ${error.message} (${duration}ms)`, {
+      event: 'lawyer_search',
+      operation: 'lawyer_data_search',
+      status: 'failed',
+      userId,
+      lawyerName,
+      duration,
+      error: error.message,
+      errorStack: error.stack
+    });
+
     console.error(`[Lawyer Service] Error searching for lawyer ${lawyerName}:`, error.meta || error);
     const serviceError = new Error(`Failed to search data for lawyer ${lawyerName}.`);
     serviceError.statusCode = error.statusCode || 500;

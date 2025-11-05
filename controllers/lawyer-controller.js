@@ -17,7 +17,7 @@ export async function searchLawyerByNameController(req, res, next) {
   try {
     // 直接執行律師搜尋 (調用 lawyerService)
     // 積分已由路由層的 checkAndDeductCredits 中介軟體處理
-    const lawyerApiData = await lawyerService.searchLawyerData(lawyerName);
+    const lawyerApiData = await lawyerService.searchLawyerData(lawyerName, userId);
 
     if (lawyerApiData) {
       // 異步記錄搜尋歷史

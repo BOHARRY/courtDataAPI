@@ -3,6 +3,7 @@ import * as judgeService from '../services/judgeService.js';
 
 export async function getJudgeAnalyticsController(req, res, next) {
   // userId 已經由 verifyToken (和即將加入的 checkAndDeductCredits) 處理
+  const userId = req.user?.uid;
   const judgeName = req.params.judgeName;
 
   if (!judgeName) {
@@ -13,7 +14,7 @@ export async function getJudgeAnalyticsController(req, res, next) {
 
   try {
     // 積分已由路由層的 checkAndDeductCredits 中介軟體處理
-    const result = await judgeService.getJudgeAnalytics(judgeName);
+    const result = await judgeService.getJudgeAnalytics(judgeName, userId);
 
     // judgeService 返回的結果結構是 { status: "complete" | "partial", data: object }
     // status 用於前端判斷是否需要輪詢 AI 狀態

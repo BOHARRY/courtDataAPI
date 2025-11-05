@@ -4,6 +4,7 @@ import esClient from '../config/elasticsearch.js';
 // 從 utils/judgeAnalysisUtils.js 導入實際函數
 import { buildEsQueryForJudgeCases, aggregateJudgeCaseData } from '../utils/judgeAnalysisUtils.js';
 // 🗑️ 已移除: triggerAIAnalysis import (AI 分析功能已廢棄)
+import logger from '../utils/logger.js';
 
 export const JUDGES_COLLECTION = 'judges'; // 導出以便 aiAnalysisService 可以引用
 const ES_INDEX_NAME = 'search-boooook';
@@ -15,13 +16,25 @@ const DATA_FRESHNESS_THRESHOLD_HOURS = 24;
  * 則從 Elasticsearch 提取數據，進行基礎分析，並異步觸發 AI 深度分析。
  *
  * @param {string} judgeName - 法官姓名。
+ * @param {string} userId - 用戶 ID（可選）
  * @returns {Promise<{status: string, data: object, processingStatus?: string, estimatedTimeRemaining?: number}>}
  *          status: "complete" | "partial"
  *          data: 法官分析數據
  *          processingStatus: "complete" | "partial" | "failed" (AI分析狀態)
  *          estimatedTimeRemaining: 預估 AI 分析剩餘時間 (秒)
  */
-export async function getJudgeAnalytics(judgeName) {
+export async function getJudgeAnalytics(judgeName, userId = null) {
+    const startTime = Date.now();
+
+    // 記錄搜尋開始
+    logger.info(`⚖️ 法官搜尋: "${judgeName}"`, {
+        event: 'judge_search',
+        operation: 'judge_analytics_search',
+        status: 'started',
+        userId,
+        judgeName
+    });
+
     console.log(`[JudgeService] Getting analytics for judge: ${judgeName}`);
     const judgeDocRef = admin.firestore().collection(JUDGES_COLLECTION).doc(judgeName);
 
@@ -37,13 +50,43 @@ export async function getJudgeAnalytics(judgeName) {
             console.log(`[JudgeService] Found judge ${judgeName} in Firestore. Last updated: ${lastUpdated}, Hours diff: ${hoursDiff.toFixed(2)}`);
 
             if (hoursDiff <= DATA_FRESHNESS_THRESHOLD_HOURS && judgeData.processingStatus === 'complete') {
+                const duration = Date.now() - startTime;
+                const caseCount = judgeData.caseStats?.totalCases || 0;
+
                 console.log(`[JudgeService] Data for ${judgeName} is fresh and complete. Returning from cache.`);
+
+                // 記錄快取命中
+                logger.info(`⚡ 法官搜尋快取命中: ${caseCount} 筆案件 (${duration}ms)`, {
+                    event: 'judge_search',
+                    operation: 'judge_analytics_search',
+                    status: 'cache_hit',
+                    userId,
+                    judgeName,
+                    caseCount,
+                    duration,
+                    cacheAge: hoursDiff.toFixed(2) + ' 小時'
+                });
+
                 return {
                     status: "complete",
                     data: { ...judgeData, name: judgeName, processingStatus: 'complete' },
                 };
             } else if (hoursDiff <= DATA_FRESHNESS_THRESHOLD_HOURS && (judgeData.processingStatus === 'partial' || judgeData.processingStatus === 'pending-analysis')) {
+                const duration = Date.now() - startTime;
+
                 console.log(`[JudgeService] Data for ${judgeName} is fresh but AI analysis is partial. Returning cached base data, frontend will poll.`);
+
+                // 記錄部分快取命中
+                logger.info(`⚡ 法官搜尋部分快取命中 (${duration}ms)`, {
+                    event: 'judge_search',
+                    operation: 'judge_analytics_search',
+                    status: 'partial_cache_hit',
+                    userId,
+                    judgeName,
+                    duration,
+                    processingStatus: judgeData.processingStatus
+                });
+
                 // 即使AI是partial，基礎數據也可能是最新的，直接返回讓前端輪詢AI狀態
                 return {
                     status: "partial", // 告訴前端基礎數據OK，但AI可能未完成
@@ -76,7 +119,22 @@ export async function getJudgeAnalytics(judgeName) {
         });
 
         if (!esResult.hits.hits || esResult.hits.hits.length === 0) {
+            const duration = Date.now() - startTime;
+
             console.log(`[JudgeService] No cases found in ES for judge ${judgeName}.`);
+
+            // 記錄無結果
+            logger.info(`✅ 法官搜尋完成: 0 筆案件 (${duration}ms)`, {
+                event: 'judge_search',
+                operation: 'judge_analytics_search',
+                status: 'completed',
+                userId,
+                judgeName,
+                caseCount: 0,
+                duration,
+                hasResults: false
+            });
+
             // 可以在 Firestore 中創建一個記錄標記此法官無案件，避免重複查詢 ES
             const noCaseDataForFirestore = {
                 name: judgeName,
@@ -103,7 +161,9 @@ export async function getJudgeAnalytics(judgeName) {
             };
         }
 
-        console.log(`[JudgeService] Found ${esResult.hits.hits.length} cases for judge ${judgeName} in ES.`);
+        const caseCount = esResult.hits.hits.length;
+        console.log(`[JudgeService] Found ${caseCount} cases for judge ${judgeName} in ES.`);
+
         // 對 ES 結果進行聚合分析，生成基礎統計數據
         const baseAnalyticsData = aggregateJudgeCaseData(esResult.hits.hits, judgeName); // 需要實作此工具函數
 
@@ -122,6 +182,20 @@ export async function getJudgeAnalytics(judgeName) {
         // 🗑️ 已移除: AI 分析觸發 (traits/tendency 功能已廢棄)
         // triggerAIAnalysis(...) 不再調用
 
+        const duration = Date.now() - startTime;
+
+        // 記錄搜尋完成
+        logger.info(`✅ 法官搜尋完成: ${caseCount} 筆案件 (${duration}ms)`, {
+            event: 'judge_search',
+            operation: 'judge_analytics_search',
+            status: 'completed',
+            userId,
+            judgeName,
+            caseCount,
+            duration,
+            hasResults: true
+        });
+
         // 返回給前端的數據,將 serverTimestamp() 替換為 ISO 字串
         const responseData = {
             ...dataToStoreInFirestore,
@@ -135,6 +209,20 @@ export async function getJudgeAnalytics(judgeName) {
         };
 
     } catch (error) {
+        const duration = Date.now() - startTime;
+
+        // 記錄搜尋失敗
+        logger.error(`❌ 法官搜尋失敗: ${error.message} (${duration}ms)`, {
+            event: 'judge_search',
+            operation: 'judge_analytics_search',
+            status: 'failed',
+            userId,
+            judgeName,
+            duration,
+            error: error.message,
+            errorStack: error.stack
+        });
+
         console.error(`[JudgeService] Error in getJudgeAnalytics for ${judgeName}:`, error);
         // 考慮更新 Firestore 狀態為 failed
         try {
